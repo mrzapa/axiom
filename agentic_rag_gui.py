@@ -793,6 +793,12 @@ class AgenticRAGApp:
         else:
             self.log("Dependencies missing. App may crash.")
 
+    def _prompt_dependency_install(self, packages, label, err):
+        self.log(f"{label} dependency issue: {err}")
+        if not self.dependency_prompted:
+            self.dependency_prompted = True
+            self.prompt_install(packages)
+
     def install_packages(self, packages, extra_args=None):
         self.log("Starting automatic installation...")
         cmd = [sys.executable, "-m", "pip", "install"]
@@ -926,21 +932,39 @@ class AgenticRAGApp:
         model_name = self._resolve_embedding_model()
 
         if provider == "openai":
-            from langchain_openai import OpenAIEmbeddings
+            try:
+                from langchain_openai import OpenAIEmbeddings
+            except ImportError as err:
+                self._prompt_dependency_install(
+                    ["langchain-openai"], "OpenAI embeddings", err
+                )
+                raise
 
             if not api_key:
                 raise ValueError("OpenAI API Key missing")
             return OpenAIEmbeddings(openai_api_key=api_key, model=model_name)
 
         if provider == "google":
-            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            try:
+                from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            except ImportError as err:
+                self._prompt_dependency_install(
+                    ["langchain-google-genai"], "Google embeddings", err
+                )
+                raise
 
             if not api_key:
                 raise ValueError("Google API Key missing")
             return GoogleGenerativeAIEmbeddings(google_api_key=api_key, model=model_name)
 
         if provider == "voyage":
-            from langchain_voyageai import VoyageEmbeddings
+            try:
+                from langchain_voyageai import VoyageEmbeddings
+            except (ImportError, AttributeError) as err:
+                self._prompt_dependency_install(
+                    ["langchain-voyageai"], "Voyage embeddings", err
+                )
+                raise
 
             if not api_key:
                 raise ValueError("Voyage API Key missing")
@@ -948,7 +972,13 @@ class AgenticRAGApp:
 
         if provider == "local_huggingface":
             # Uses local CPU/GPU via HuggingFace
-            from langchain_community.embeddings import HuggingFaceEmbeddings
+            try:
+                from langchain_community.embeddings import HuggingFaceEmbeddings
+            except (ImportError, AttributeError) as err:
+                self._prompt_dependency_install(
+                    ["langchain-community"], "Local HuggingFace embeddings", err
+                )
+                raise
 
             resolved_model = model_name or "all-MiniLM-L6-v2"
             self.log(f"Loading local HuggingFace embeddings ({resolved_model})...")
@@ -966,7 +996,11 @@ class AgenticRAGApp:
         model_name = self._resolve_llm_model()
 
         if provider == "openai":
-            from langchain_openai import ChatOpenAI
+            try:
+                from langchain_openai import ChatOpenAI
+            except ImportError as err:
+                self._prompt_dependency_install(["langchain-openai"], "OpenAI LLM", err)
+                raise
 
             key = self.api_keys["openai"].get()
             return ChatOpenAI(
@@ -974,7 +1008,13 @@ class AgenticRAGApp:
             )
 
         if provider == "anthropic":
-            from langchain_anthropic import ChatAnthropic
+            try:
+                from langchain_anthropic import ChatAnthropic
+            except ImportError as err:
+                self._prompt_dependency_install(
+                    ["langchain-anthropic"], "Anthropic LLM", err
+                )
+                raise
 
             key = self.api_keys["anthropic"].get()
             return ChatAnthropic(
@@ -982,7 +1022,13 @@ class AgenticRAGApp:
             )
 
         if provider == "google":
-            from langchain_google_genai import ChatGoogleGenerativeAI
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+            except ImportError as err:
+                self._prompt_dependency_install(
+                    ["langchain-google-genai"], "Google LLM", err
+                )
+                raise
 
             key = self.api_keys["google"].get()
             return ChatGoogleGenerativeAI(
@@ -993,7 +1039,13 @@ class AgenticRAGApp:
             )
 
         if provider == "local_lm_studio":
-            from langchain_openai import ChatOpenAI
+            try:
+                from langchain_openai import ChatOpenAI
+            except ImportError as err:
+                self._prompt_dependency_install(
+                    ["langchain-openai"], "Local LLM Studio", err
+                )
+                raise
 
             url = self.local_llm_url.get()
             self.log(f"Connecting to Local LLM at {url}...")
@@ -1062,7 +1114,13 @@ class AgenticRAGApp:
 
             if db_type == "chroma":
                 persist_dir = os.path.join(os.getcwd(), "chroma_db")
-                from langchain_chroma import Chroma
+                try:
+                    from langchain_chroma import Chroma
+                except ImportError as err:
+                    self._prompt_dependency_install(
+                        ["langchain-chroma", "chromadb"], "Chroma vector store", err
+                    )
+                    raise
 
                 # Using a new client per ingestion to ensure clean slate or append
                 self.vector_store = Chroma(
@@ -1071,8 +1129,16 @@ class AgenticRAGApp:
                     persist_directory=persist_dir,
                 )
             elif db_type == "weaviate":
-                import weaviate
-                from langchain_weaviate import WeaviateVectorStore
+                try:
+                    import weaviate
+                    from langchain_weaviate import WeaviateVectorStore
+                except ImportError as err:
+                    self._prompt_dependency_install(
+                        ["langchain-weaviate", "weaviate-client"],
+                        "Weaviate vector store",
+                        err,
+                    )
+                    raise
 
                 url = self.api_keys["weaviate_url"].get()
                 key = self.api_keys["weaviate_key"].get()
