@@ -9,7 +9,7 @@ import subprocess
 from datetime import datetime
 
 # --- Libraries check is done inside the class to prevent instant crash ---
-# Required: pip install langchain langchain-community langchain-openai langchain-anthropic langchain-google-genai langchain-cohere chromadb beautifulsoup4 tiktoken
+# Required: pip install langchain langchain-community langchain-openai langchain-anthropic langchain-google-genai langchain-cohere langchain-text-splitters chromadb beautifulsoup4 tiktoken
 
 
 class AgenticRAGApp:
@@ -74,6 +74,22 @@ class AgenticRAGApp:
 
         # Defer dependency check slightly to allow UI to render first
         self.root.after(100, self.check_dependencies)
+
+    def _get_required_packages(self):
+        return [
+            "langchain",
+            "langchain-community",
+            "langchain-openai",
+            "langchain-anthropic",
+            "langchain-google-genai",
+            "langchain-cohere",
+            "langchain-voyageai",
+            "langchain-text-splitters",
+            "chromadb",
+            "beautifulsoup4",
+            "tiktoken",
+            "weaviate-client",
+        ]
 
     def setup_ui(self):
         # Styles
@@ -476,6 +492,24 @@ class AgenticRAGApp:
                 key_frame, textvariable=self.api_keys[key_name], show="*", width=50
             ).grid(row=i, column=1, sticky="w", padx=10, pady=2)
 
+        deps_frame = ttk.LabelFrame(frame, text="Dependencies", padding=15)
+        deps_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=10)
+        deps_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            deps_frame,
+            text="Check for required packages or reinstall them if needed.",
+            wraplength=720,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+
+        ttk.Button(
+            deps_frame, text="Check Dependencies", command=self.check_dependencies
+        ).grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(8, 0))
+        ttk.Button(
+            deps_frame, text="Install / Reinstall Dependencies", command=self.reinstall_dependencies
+        ).grid(row=1, column=1, sticky="w", pady=(8, 0))
+
     def build_ingest_tab(self):
         frame = ttk.Frame(self.tab_ingest, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -610,20 +644,7 @@ class AgenticRAGApp:
         self._run_on_ui(_append)
 
     def check_dependencies(self):
-        required_packages = [
-            "langchain",
-            "langchain-community",
-            "langchain-openai",
-            "langchain-anthropic",
-            "langchain-google-genai",
-            "langchain-cohere",
-            "langchain-voyageai",
-            "langchain-text-splitters",
-            "chromadb",
-            "beautifulsoup4",
-            "tiktoken",
-            "weaviate-client",
-        ]
+        required_packages = self._get_required_packages()
 
         try:
             import langchain
@@ -635,17 +656,36 @@ class AgenticRAGApp:
         except ImportError:
             self.prompt_install(required_packages)
 
+    def reinstall_dependencies(self):
+        packages = self._get_required_packages()
+        if messagebox.askyesno(
+            "Install Dependencies",
+            "Install or re-install required libraries now?",
+        ):
+            threading.Thread(
+                target=self.install_packages,
+                args=(packages, ["--upgrade", "--force-reinstall"]),
+                daemon=True,
+            ).start()
+        else:
+            self.log("Dependency install canceled.")
+
     def prompt_install(self, packages):
         if messagebox.askyesno(
             "Missing Dependencies", "Required libraries are missing. Install them automatically now?"
         ):
-            threading.Thread(target=self.install_packages, args=(packages,), daemon=True).start()
+            threading.Thread(
+                target=self.install_packages, args=(packages,), daemon=True
+            ).start()
         else:
             self.log("Dependencies missing. App may crash.")
 
-    def install_packages(self, packages):
+    def install_packages(self, packages, extra_args=None):
         self.log("Starting automatic installation...")
-        cmd = [sys.executable, "-m", "pip", "install"] + packages
+        cmd = [sys.executable, "-m", "pip", "install"]
+        if extra_args:
+            cmd.extend(extra_args)
+        cmd.extend(packages)
 
         try:
             process = subprocess.Popen(
