@@ -1489,6 +1489,56 @@ class AgenticRAGApp:
 
             if self.selected_file.lower().endswith(".html"):
                 from bs4 import BeautifulSoup
+                from bs4 import NavigableString
+
+                def _append_text_line(lines, text):
+                    clean = text.strip()
+                    if clean:
+                        lines.append(clean)
+
+                def _process_table(table_tag, lines):
+                    for row in table_tag.find_all("tr"):
+                        cells = [
+                            cell.get_text(" ", strip=True)
+                            for cell in row.find_all(["th", "td"])
+                        ]
+                        if any(cells):
+                            lines.append(" | ".join(cells))
+
+                def _process_list(list_tag, lines):
+                    for item in list_tag.find_all("li", recursive=False):
+                        nested_lists = item.find_all(["ul", "ol"], recursive=False)
+                        for nested in nested_lists:
+                            nested.extract()
+                        item_text = " ".join(item.stripped_strings)
+                        if item_text:
+                            lines.append(f"- {item_text}")
+                        for nested in nested_lists:
+                            _process_list(nested, lines)
+
+                def _process_children(parent, lines):
+                    for child in parent.children:
+                        if isinstance(child, NavigableString):
+                            _append_text_line(lines, str(child))
+                            continue
+                        if not hasattr(child, "name"):
+                            continue
+                        if child.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                            heading_text = child.get_text(" ", strip=True)
+                            if heading_text:
+                                lines.append(f"### {heading_text}")
+                            continue
+                        if child.name in {"ul", "ol"}:
+                            _process_list(child, lines)
+                            continue
+                        if child.name == "table":
+                            _process_table(child, lines)
+                            continue
+                        if child.name in {"p", "pre", "blockquote"}:
+                            paragraph_text = child.get_text(" ", strip=True)
+                            _append_text_line(lines, paragraph_text)
+                            continue
+                        _process_children(child, lines)
 
                 with open(self.selected_file, "r", encoding="utf-8", errors="ignore") as f:
                     soup = BeautifulSoup(f, "html.parser")
@@ -1498,7 +1548,10 @@ class AgenticRAGApp:
                     # Aggressive cleaning for RAG
                     for tag in soup(["script", "style", "svg", "path", "nav", "footer"]):
                         tag.extract()
-                    text_content = soup.get_text(separator="\n")
+                    lines = []
+                    root = soup.body or soup
+                    _process_children(root, lines)
+                    text_content = "\n".join(lines)
             else:
                 with open(self.selected_file, "r", encoding="utf-8") as f:
                     text_content = f.read()
@@ -1521,7 +1574,21 @@ class AgenticRAGApp:
             docs = splitter.create_documents([text_content])
             ingest_id = datetime.utcnow().isoformat()
             source_basename = os.path.basename(self.selected_file)
+            def _last_section_title(text):
+                last_heading = None
+                for line in text.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("### "):
+                        candidate = stripped[4:].strip()
+                        if candidate:
+                            last_heading = candidate
+                return last_heading
+
+            last_section_title = None
             for chunk_id, doc in enumerate(docs, start=1):
+                section_title = _last_section_title(doc.page_content)
+                if section_title:
+                    last_section_title = section_title
                 metadata = (doc.metadata or {}).copy()
                 metadata.update(
                     {
@@ -1532,6 +1599,8 @@ class AgenticRAGApp:
                 )
                 if doc_title:
                     metadata["doc_title"] = doc_title
+                if last_section_title:
+                    metadata["section_title"] = last_section_title
                 doc.metadata = metadata
             self.log(f"Created {len(docs)} text chunks.")
 
