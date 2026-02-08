@@ -1689,7 +1689,11 @@ class AgenticRAGApp:
                     or metadata.get("filename")
                     or "unknown"
                 )
-                header = f"[Chunk {idx} | score: {score} | source: {source}]"
+                chunk_id = metadata.get("chunk_id", "N/A")
+                header = (
+                    f"[Chunk {idx} | chunk_id: {chunk_id} | "
+                    f"score: {score} | source: {source}]"
+                )
                 content = doc.page_content.strip()
                 chunk_text = f"{header}\n{content}"
 
@@ -1741,7 +1745,8 @@ class AgenticRAGApp:
             sources_text = "\n".join(
                 [
                     (
-                        f"- [Chunk {idx} | score: "
+                        f"- [Chunk {idx} | chunk_id: "
+                        f"{getattr(d, 'metadata', {}).get('chunk_id', 'N/A')} | score: "
                         f"{getattr(d, 'metadata', {}).get('relevance_score', 'N/A')} | "
                         f"source: "
                         f"{(getattr(d, 'metadata', {}) or {}).get('source') or (getattr(d, 'metadata', {}) or {}).get('file_path') or (getattr(d, 'metadata', {}) or {}).get('filename') or 'unknown'}]"
