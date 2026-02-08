@@ -622,12 +622,12 @@ class AgenticRAGApp:
         chunk_frame = ttk.LabelFrame(frame, text="Chunking Strategy", padding=10)
         chunk_frame.pack(fill="x", pady=10)
 
-        ttk.Label(chunk_frame, text="Chunk Size (Tokens):").pack(side="left")
+        ttk.Label(chunk_frame, text="Chunk Size (chars):").pack(side="left")
         ttk.Entry(chunk_frame, textvariable=self.chunk_size, width=10).pack(
             side="left", padx=5
         )
 
-        ttk.Label(chunk_frame, text="Overlap:").pack(side="left", padx=(20, 0))
+        ttk.Label(chunk_frame, text="Overlap (chars):").pack(side="left", padx=(20, 0))
         ttk.Entry(chunk_frame, textvariable=self.chunk_overlap, width=10).pack(
             side="left", padx=5
         )
