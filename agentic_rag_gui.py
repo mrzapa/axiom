@@ -743,6 +743,10 @@ class AgenticRAGApp:
             text="Use Cohere Reranker (Higher Precision)",
             variable=self.use_reranker,
         ).pack(side="left")
+        ttk.Label(opt_frame, text="Fallback Final K:").pack(side="left", padx=(15, 4))
+        ttk.Entry(opt_frame, textvariable=self.fallback_final_k, width=6).pack(
+            side="left"
+        )
 
     # --- Logic ---
 
