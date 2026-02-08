@@ -1928,7 +1928,7 @@ class AgenticRAGApp:
                 self.log(f"Long-form intent detected; adjusted final_k to {final_k}.")
             search_type = self.search_type.get() or "similarity"
             mmr_lambda = float(self.mmr_lambda.get())
-            total_docs_cap = 200
+            total_docs_cap = max(10, min(500, int(self.subquery_max_docs.get())))
 
             def _extract_json_payload(text):
                 cleaned = text.strip()
