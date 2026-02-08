@@ -97,6 +97,8 @@ class AgenticRAGApp:
         self.fallback_final_k = tk.IntVar(value=self.final_k.get())
         self.search_type = tk.StringVar(value="similarity")
         self.mmr_lambda = tk.DoubleVar(value=0.5)
+        self.use_sub_queries = tk.BooleanVar(value=False)
+        self.subquery_max_docs = tk.IntVar(value=40)
 
         self.vector_store = None
         self.index_embedding_signature = ""
@@ -745,6 +747,15 @@ class AgenticRAGApp:
             text="Use Cohere Reranker (Higher Precision)",
             variable=self.use_reranker,
         ).pack(side="left")
+        ttk.Checkbutton(
+            opt_frame,
+            text="Use Sub-Queries (Broader Recall)",
+            variable=self.use_sub_queries,
+        ).pack(side="left", padx=(12, 0))
+        ttk.Label(opt_frame, text="Max Merged Docs:").pack(side="left", padx=(12, 4))
+        ttk.Entry(opt_frame, textvariable=self.subquery_max_docs, width=6).pack(
+            side="left"
+        )
         ttk.Label(opt_frame, text="Fallback Final K:").pack(side="left", padx=(15, 4))
         ttk.Entry(opt_frame, textvariable=self.fallback_final_k, width=6).pack(
             side="left"
@@ -781,6 +792,76 @@ class AgenticRAGApp:
         if len(history) > max_messages:
             history = history[-max_messages:]
         return history
+
+    def _parse_subquery_response(self, text):
+        cleaned = text.strip()
+        if "```" in cleaned:
+            parts = cleaned.split("```")
+            if len(parts) >= 2:
+                cleaned = parts[1].strip()
+                if cleaned.lower().startswith("json"):
+                    cleaned = cleaned.split("\n", 1)[-1].strip()
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+        lines = []
+        for line in cleaned.splitlines():
+            item = line.strip().lstrip("-*0123456789. ").strip()
+            if item:
+                lines.append(item)
+        return lines
+
+    def _generate_sub_queries(self, query):
+        try:
+            llm = self.get_llm()
+            system_prompt = (
+                "You generate search sub-queries for retrieval. "
+                "Return 3-5 concise sub-queries as a JSON array of strings. "
+                "Do not include any extra text."
+            )
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=query),
+            ]
+            response = llm.invoke(messages)
+            candidates = self._parse_subquery_response(response.content)
+        except Exception as exc:
+            self.log(f"Sub-query generation failed, using base query only. ({exc})")
+            return []
+        seen = set()
+        sub_queries = []
+        for candidate in candidates:
+            normalized = candidate.strip()
+            if not normalized or normalized.lower() == query.strip().lower():
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            sub_queries.append(normalized)
+        return sub_queries[:5]
+
+    def _merge_dedupe_docs(self, docs):
+        seen = set()
+        merged = []
+        for doc in docs:
+            metadata = getattr(doc, "metadata", {}) or {}
+            source = (
+                metadata.get("source")
+                or metadata.get("file_path")
+                or metadata.get("filename")
+                or ""
+            )
+            content = (getattr(doc, "page_content", "") or "").strip()
+            key = (source, content)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(doc)
+        return merged
 
     def log(self, msg):
         def _append():
@@ -1555,12 +1636,36 @@ class AgenticRAGApp:
                 search_kwargs.update(
                     {"fetch_k": candidate_k, "lambda_mult": mmr_lambda}
                 )
-            retriever = self.vector_store.as_retriever(
-                search_type=search_type, search_kwargs=search_kwargs
-            )
-            docs = retriever.invoke(query)
+            queries = [query]
+            if self.use_sub_queries.get():
+                sub_queries = self._generate_sub_queries(query)
+                if sub_queries:
+                    queries = [query, *sub_queries]
+            max_total_docs = max(1, int(self.subquery_max_docs.get()))
+            if len(queries) == 1:
+                retriever = self.vector_store.as_retriever(
+                    search_type=search_type, search_kwargs=search_kwargs
+                )
+                docs = retriever.invoke(query)
+            else:
+                per_query_k = max(1, min(candidate_k, max_total_docs // len(queries)))
+                per_query_kwargs = dict(search_kwargs)
+                per_query_kwargs["k"] = per_query_k
+                if search_type == "mmr":
+                    per_query_kwargs["fetch_k"] = per_query_k
+                retriever = self.vector_store.as_retriever(
+                    search_type=search_type, search_kwargs=per_query_kwargs
+                )
+                docs = []
+                for sub_query in queries:
+                    docs.extend(retriever.invoke(sub_query))
+                docs = self._merge_dedupe_docs(docs)
+                if len(docs) > max_total_docs:
+                    docs = docs[:max_total_docs]
 
-            self.log(f"Retrieved {len(docs)} initial candidates.")
+            self.log(
+                f"Retrieved {len(docs)} initial candidates from {len(queries)} query(s)."
+            )
 
             # 2. Reranking (Cohere)
             final_docs = docs
