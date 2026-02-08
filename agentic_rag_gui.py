@@ -81,6 +81,7 @@ class AgenticRAGApp:
         self.llm_temperature = tk.DoubleVar(value=0.0)
         self.llm_max_tokens = tk.IntVar(value=1024)
         self.force_embedding_compat = tk.BooleanVar(value=False)
+        self.fallback_final_k = tk.IntVar(value=8)
         self.system_instructions = tk.StringVar(
             value=self.default_system_instructions
         )
@@ -309,6 +310,9 @@ class AgenticRAGApp:
         self.force_embedding_compat.set(
             data.get("force_embedding_compat", self.force_embedding_compat.get())
         )
+        self.fallback_final_k.set(
+            data.get("fallback_final_k", self.fallback_final_k.get())
+        )
         self.index_embedding_signature = data.get(
             "index_embedding_signature", self.index_embedding_signature
         )
@@ -338,6 +342,7 @@ class AgenticRAGApp:
             "llm_max_tokens": self.llm_max_tokens.get(),
             "system_instructions": self.system_instructions.get(),
             "force_embedding_compat": self.force_embedding_compat.get(),
+            "fallback_final_k": self.fallback_final_k.get(),
             "index_embedding_signature": self.index_embedding_signature,
         }
         try:
@@ -668,6 +673,10 @@ class AgenticRAGApp:
             text="Use Cohere Reranker (Higher Precision)",
             variable=self.use_reranker,
         ).pack(side="left")
+        ttk.Label(opt_frame, text="Fallback Final K:").pack(side="left", padx=(15, 4))
+        ttk.Entry(opt_frame, textvariable=self.fallback_final_k, width=6).pack(
+            side="left"
+        )
 
     # --- Logic ---
 
@@ -695,6 +704,31 @@ class AgenticRAGApp:
 
         self._run_on_ui(_append)
         self._emit_log_to_console(msg)
+
+    def _get_fallback_final_k(self):
+        try:
+            fallback_k = int(self.fallback_final_k.get())
+        except (TypeError, ValueError):
+            fallback_k = 8
+        if fallback_k <= 0:
+            fallback_k = 8
+        return fallback_k
+
+    def _run_fallback_retrieval(self, query, fallback_k):
+        try:
+            self.log(f"Fallback retrieval with MMR (k={fallback_k})...")
+            retriever = self.vector_store.as_retriever(
+                search_type="mmr", search_kwargs={"k": fallback_k}
+            )
+            docs = retriever.invoke(query)
+            self.log(f"MMR fallback returned {len(docs)} chunks.")
+            return docs
+        except Exception as e:
+            self.log(f"MMR fallback failed ({e}); using similarity top {fallback_k}.")
+            retriever = self.vector_store.as_retriever(
+                search_kwargs={"k": fallback_k}
+            )
+            return retriever.invoke(query)
 
     @staticmethod
     def _emit_log_to_console(msg):
@@ -1451,6 +1485,7 @@ class AgenticRAGApp:
 
             # 2. Reranking (Cohere)
             final_docs = docs
+            fallback_k = self._get_fallback_final_k()
             if self.use_reranker.get() and self.api_keys["cohere"].get():
                 try:
                     self.log("Reranking with Cohere...")
@@ -1467,10 +1502,21 @@ class AgenticRAGApp:
                         f"Reranked down to {len(final_docs)} high-relevance chunks."
                     )
                 except Exception as e:
-                    self.log(f"Rerank Error (Using raw retrieval instead): {e}")
-                    final_docs = docs[:5]  # Fallback to top 5 raw
+                    self.log(f"Rerank Error (Using fallback retrieval instead): {e}")
+                    self.append_chat(
+                        "system",
+                        "System: Reranking failed. Using fallback retrieval for quality.",
+                    )
+                    final_docs = self._run_fallback_retrieval(query, fallback_k)
             else:
-                final_docs = docs[:5]  # No reranker, just take top 5
+                if self.use_reranker.get():
+                    self.append_chat(
+                        "system",
+                        "System: Reranking unavailable. Using fallback retrieval.",
+                    )
+                    final_docs = self._run_fallback_retrieval(query, fallback_k)
+                else:
+                    final_docs = docs[:fallback_k]
 
             # 3. Context Construction
             context_text = "\n\n---\n\n".join([d.page_content for d in final_docs])
