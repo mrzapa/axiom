@@ -88,6 +88,7 @@ class AgenticRAGApp:
         self.llm_temperature = tk.DoubleVar(value=0.0)
         self.llm_max_tokens = tk.IntVar(value=1024)
         self.force_embedding_compat = tk.BooleanVar(value=False)
+        self.verbose_mode = tk.BooleanVar(value=False)
         self.system_instructions = tk.StringVar(
             value=self.default_system_instructions
         )
