@@ -387,7 +387,7 @@ class AgenticRAGApp:
             )
         except (TypeError, ValueError):
             max_iterations = self.agentic_max_iterations.get()
-        self.agentic_max_iterations.set(max(1, min(3, max_iterations)))
+        self.agentic_max_iterations.set(max(1, min(20, max_iterations)))
         self.show_retrieved_context.set(
             data.get("show_retrieved_context", self.show_retrieved_context.get())
         )
@@ -2566,8 +2566,6 @@ class AgenticRAGApp:
             retrieve_k = max(1, int(self.retrieval_k.get()))
             final_k = max(1, int(self.final_k.get()))
             candidate_k = max(retrieve_k, final_k)
-            output_style = self.output_style.get()
-            is_evidence_pack = self.is_evidence_pack_query(query, output_style)
             long_form_keywords = (
                 "evidence",
                 "evidence pack",
@@ -2585,16 +2583,14 @@ class AgenticRAGApp:
             )
             if is_long_form:
                 boosted_final_k = min(candidate_k, max(final_k, 12))
-                if boosted_final_k > 20:
-                    boosted_final_k = min(candidate_k, 20)
-                final_k = boosted_final_k
-                self.log(f"Long-form intent detected; adjusted final_k to {final_k}.")
-            if is_evidence_pack:
-                boosted_final_k = min(candidate_k, max(final_k, 10))
-                if boosted_final_k > 20:
-                    boosted_final_k = min(candidate_k, 20)
-                final_k = boosted_final_k
-                self.log(f"Evidence pack intent detected; adjusted final_k to {final_k}.")
+                if boosted_final_k > final_k:
+                    original_final_k = final_k
+                    final_k = boosted_final_k
+                    self.log(
+                        "Long-form intent detected; raised final_k from "
+                        f"{original_final_k} to {final_k} "
+                        "(no hard cap; bounded by context budget)."
+                    )
             search_type = self.search_type.get() or "similarity"
             mmr_lambda = float(self.mmr_lambda.get())
             total_docs_cap = max(10, min(500, int(self.subquery_max_docs.get())))
@@ -3059,7 +3055,11 @@ class AgenticRAGApp:
                 max_iterations_value = int(self.agentic_max_iterations.get())
             except (TypeError, ValueError):
                 max_iterations_value = 2
-            max_iterations = max(1, min(3, max_iterations_value))
+            max_iterations = max(1, min(20, max_iterations_value))
+            self.log(
+                "Agentic run starting with resolved max_iterations="
+                f"{max_iterations} (requested {max_iterations_value})."
+            )
             total_retrieved = 0
             all_docs = []
             checklist = []
@@ -3071,6 +3071,9 @@ class AgenticRAGApp:
 
             last_iteration_id = 1
             planner_subquery_count = 0
+            convergence_patience = 2
+            stagnant_iterations = 0
+            last_unique_incident_count = 0
             for iteration in range(1, max_iterations + 1):
                 if iteration == 1:
                     planner_llm = self._get_llm_with_temperature(0.2)
@@ -3162,6 +3165,13 @@ class AgenticRAGApp:
                 )
                 total_retrieved += len(docs)
                 all_docs = self._merge_dedupe_docs(all_docs + docs)
+                unique_incident_count = len(all_docs)
+                if unique_incident_count <= last_unique_incident_count:
+                    stagnant_iterations += 1
+                else:
+                    stagnant_iterations = 0
+                    last_unique_incident_count = unique_incident_count
+                stop_due_to_convergence = stagnant_iterations >= convergence_patience
                 if use_mini_digest:
                     routed_docs = self._route_with_mini_digest(all_docs, query, final_k)
                     self.log(
@@ -3244,6 +3254,13 @@ class AgenticRAGApp:
                 latest_context_text = context_text
                 last_iteration_id = iteration
 
+                if stop_due_to_convergence:
+                    self.log(
+                        "Unique incident count stalled at "
+                        f"{unique_incident_count} for {stagnant_iterations} "
+                        "iteration(s); stopping early."
+                    )
+                    break
                 if iteration < max_iterations:
                     critic_llm = self._get_llm_with_temperature(0.2)
                     critic_prompt = (
