@@ -1703,7 +1703,7 @@ class AgenticRAGApp:
                 "extract all",
                 "every",
                 "required details",
-            )
+                )
             normalized_query = query.lower()
             if any(keyword in normalized_query for keyword in long_form_keywords):
                 boosted_final_k = min(candidate_k, max(final_k, 12))
@@ -1711,12 +1711,39 @@ class AgenticRAGApp:
                     boosted_final_k = min(candidate_k, 20)
                 final_k = boosted_final_k
                 self.log(f"Long-form intent detected; adjusted final_k to {final_k}.")
+
+            detail_cue_keywords = ("section", "clause", "title", "attendees")
+            quoted_phrases = re.findall(r"[\"']([^\"']+)[\"']", query)
+            has_quotes = bool(quoted_phrases)
+            has_dates = bool(re.search(r"\b\d{4}-\d{2}-\d{2}\b", query))
+            has_numbers = bool(re.search(r"\b\d+\b", query))
+            has_ids = bool(
+                re.search(r"\b[A-Za-z]{2,}-\d+\b", query)
+                or re.search(r"\b[A-Za-z]+\d+[A-Za-z0-9_-]*\b", query)
+            )
+            has_detail_keywords = any(
+                keyword in normalized_query for keyword in detail_cue_keywords
+            )
+            has_detail_cues = any(
+                (has_quotes, has_dates, has_numbers, has_ids, has_detail_keywords)
+            )
+            if has_detail_cues:
+                boosted_candidate_k = min(candidate_k * 2, 200)
+                if boosted_candidate_k > candidate_k:
+                    candidate_k = boosted_candidate_k
+                    self.log(
+                        "Exact-detail cue detected; increased candidate pool "
+                        f"to {candidate_k}."
+                    )
             search_type = self.search_type.get() or "similarity"
             mmr_lambda = float(self.mmr_lambda.get())
             search_kwargs = {"k": candidate_k}
             if search_type == "mmr":
                 search_kwargs.update(
-                    {"fetch_k": candidate_k, "lambda_mult": mmr_lambda}
+                    {
+                        "fetch_k": min(max(4 * candidate_k, 50), 200),
+                        "lambda_mult": mmr_lambda,
+                    }
                 )
             queries = [query]
             if self.use_sub_queries.get():
@@ -1734,7 +1761,7 @@ class AgenticRAGApp:
                 per_query_kwargs = dict(search_kwargs)
                 per_query_kwargs["k"] = per_query_k
                 if search_type == "mmr":
-                    per_query_kwargs["fetch_k"] = per_query_k
+                    per_query_kwargs["fetch_k"] = min(max(4 * per_query_k, 50), 200)
                 retriever = self.vector_store.as_retriever(
                     search_type=search_type, search_kwargs=per_query_kwargs
                 )
@@ -1771,6 +1798,45 @@ class AgenticRAGApp:
                     final_docs = docs[:final_k]  # Fallback to top K raw
             else:
                 final_docs = docs[:final_k]  # No reranker, just take top K
+
+            if has_detail_cues and docs:
+                keyword_hits = []
+                normalized_terms = set(
+                    term.lower()
+                    for term in re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]{1,}", query)
+                )
+                normalized_terms.update(term.lower() for term in quoted_phrases)
+                normalized_terms.update(detail_cue_keywords)
+                normalized_terms.discard("")
+                for idx, doc in enumerate(docs):
+                    content = doc.page_content.lower()
+                    hit_count = sum(content.count(term) for term in normalized_terms)
+                    keyword_hits.append((hit_count, idx, doc))
+                keyword_hits.sort(key=lambda item: (-item[0], item[1]))
+                promoted_docs = [doc for hit, _, doc in keyword_hits if hit > 0]
+                if promoted_docs:
+                    seen = set()
+                    boosted_docs = []
+                    for doc in promoted_docs:
+                        doc_key = id(doc)
+                        if doc_key not in seen:
+                            seen.add(doc_key)
+                            boosted_docs.append(doc)
+                        if len(boosted_docs) >= final_k:
+                            break
+                    if len(boosted_docs) < final_k:
+                        for doc in final_docs:
+                            doc_key = id(doc)
+                            if doc_key not in seen:
+                                seen.add(doc_key)
+                                boosted_docs.append(doc)
+                            if len(boosted_docs) >= final_k:
+                                break
+                    if boosted_docs:
+                        final_docs = boosted_docs[:final_k]
+                        self.log(
+                            "Applied lexical boost for exact-detail cues before packing."
+                        )
 
             # 3. Context Construction
             def _clamp(value, min_value, max_value):
