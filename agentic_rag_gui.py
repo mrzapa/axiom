@@ -1300,10 +1300,34 @@ class AgenticRAGApp:
 
     def _schedule_startup_pipeline(self):
         self.root.after(0, self._startup_step_build_full_ui)
-        self.root.after(50, self._startup_step_load_config)
-        self.root.after(100, self._startup_step_post_load)
-        self.root.after(150, self._startup_step_scan_indexes)
-        self.root.after(200, self._startup_step_check_dependencies)
+
+    def _safe_widget_exists(self, widget):
+        try:
+            return widget is not None and bool(widget.winfo_exists())
+        except Exception:
+            return False
+
+    def _startup_error(self, step_name, exc):
+        self._startup_pipeline_finished = False
+        error_msg = f"Startup step '{step_name}' failed: {exc}"
+        print(error_msg, file=sys.stderr)
+        try:
+            self.log(error_msg)
+        except Exception:
+            print(error_msg)
+        try:
+            messagebox.showerror("Startup Error", error_msg)
+        except Exception:
+            print("Startup Error dialog could not be displayed.", file=sys.stderr)
+
+    def _run_startup_step(self, step_name, step_func, next_step=None):
+        try:
+            step_func()
+        except Exception as exc:
+            self._startup_error(step_name, exc)
+            return
+        if next_step is not None:
+            self.root.after(0, next_step)
 
     def _set_startup_status(self, text):
         elapsed_ms = int((time.perf_counter() - self._startup_started_at) * 1000)
@@ -1313,28 +1337,54 @@ class AgenticRAGApp:
             self.startup_elapsed_var.set(f"{elapsed_ms} ms")
 
     def _startup_step_build_full_ui(self):
-        self._set_startup_status("Initialising UI...")
-        self.notebook.destroy()
-        self._build_full_ui()
+        def _step():
+            self._set_startup_status("Initialising UI...")
+            self._ensure_tab_aliases()
+
+        self._run_startup_step("build_full_ui", _step, self._startup_step_load_config)
 
     def _startup_step_load_config(self):
-        self._set_startup_status("Loading settings...")
-        self.load_config()
+        def _step():
+            self._set_startup_status("Loading settings...")
+            self.load_config()
+
+        self._run_startup_step("load_config", _step, self._startup_step_post_load)
 
     def _startup_step_post_load(self):
-        self._set_startup_status("Applying runtime defaults...")
-        self._setup_langchain_globals()
-        self._sync_model_options()
-        self.vector_db_type.trace_add("write", self._on_vector_db_type_change)
+        def _step():
+            self._set_startup_status("Applying runtime defaults...")
+            self._setup_langchain_globals()
+            self._sync_model_options()
+            self.vector_db_type.trace_add("write", self._on_vector_db_type_change)
+
+        self._run_startup_step("post_load", _step, self._startup_step_scan_indexes)
 
     def _startup_step_scan_indexes(self):
-        self._refresh_existing_indexes_async(reason="Loading indexes…")
+        def _step():
+            self._set_startup_status("Loading indexes…")
+            indexes = self._list_existing_indexes()
+            self._apply_existing_indexes(indexes)
+
+        self._run_startup_step(
+            "apply_existing_indexes",
+            _step,
+            self._startup_step_check_dependencies,
+        )
 
     def _startup_step_check_dependencies(self):
-        self._set_startup_status("Checking deps…")
-        self.check_dependencies()
-        self._startup_pipeline_finished = True
-        self._set_startup_status("Ready")
+        def _step():
+            self._set_startup_status("Checking deps…")
+            self.check_dependencies()
+            self._startup_pipeline_finished = True
+            self._set_startup_status("Ready")
+
+        self._run_startup_step("check_dependencies", _step)
+
+    def _ensure_tab_aliases(self):
+        if hasattr(self, "tab_settings"):
+            self.tab_config = self.tab_settings
+        if hasattr(self, "tab_library"):
+            self.tab_ingest = self.tab_library
 
     def _build_full_ui(self):
         style = ttk.Style()
@@ -1485,6 +1535,7 @@ class AgenticRAGApp:
         self.tab_settings = ttk.Frame(self.notebook, style="Card.TFrame")
         self.notebook.add(self.tab_settings, text="Settings")
         self.build_config_tab()
+        self._ensure_tab_aliases()
 
         self.status_var = tk.StringVar(value="Ready")
         status_bar = ttk.Label(self.root, textvariable=self.status_var, style="Status.TLabel", anchor="w")
@@ -1527,9 +1578,18 @@ class AgenticRAGApp:
 
     def _run_on_ui(self, func, *args, **kwargs):
         if threading.current_thread() == self.main_thread:
-            func(*args, **kwargs)
+            try:
+                func(*args, **kwargs)
+            except tk.TclError as exc:
+                print(f"UI callback failed: {exc}", file=sys.stderr)
         else:
-            self.root.after(0, lambda: func(*args, **kwargs))
+            def _wrapped():
+                try:
+                    func(*args, **kwargs)
+                except tk.TclError as exc:
+                    print(f"UI callback failed: {exc}", file=sys.stderr)
+
+            self.root.after(0, _wrapped)
 
     def _get_llm_model_options(self, provider):
         options = {
@@ -1676,9 +1736,9 @@ class AgenticRAGApp:
 
     def _refresh_profile_options(self):
         self.profile_options = list(self.builtin_profiles.keys()) + self._get_file_profile_options()
-        if hasattr(self, "cb_profile"):
+        if hasattr(self, "cb_profile") and self._safe_widget_exists(self.cb_profile):
             self.cb_profile["values"] = self.profile_options
-        if hasattr(self, "settings_profile_combo"):
+        if hasattr(self, "settings_profile_combo") and self._safe_widget_exists(self.settings_profile_combo):
             self.settings_profile_combo["values"] = self.profile_options
         if self.selected_profile.get() not in self.profile_options:
             self.selected_profile.set("Built-in: Default")
@@ -3910,6 +3970,11 @@ class AgenticRAGApp:
 
     def log(self, msg):
         def _append():
+            if not self._safe_widget_exists(getattr(self, "log_area", None)):
+                print(msg)
+                if hasattr(self, "status_var"):
+                    self.status_var.set(msg)
+                return
             self.log_area.config(state="normal")
             self.log_area.insert(
                 tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n"
@@ -5978,7 +6043,7 @@ class AgenticRAGApp:
             digest_label = self._format_index_label(path, DIGEST_COLLECTION_NAME)
             display_values.append(digest_label)
             self.existing_index_paths[digest_label] = (path, DIGEST_COLLECTION_NAME)
-        if hasattr(self, "cb_existing_index"):
+        if hasattr(self, "cb_existing_index") and self._safe_widget_exists(self.cb_existing_index):
             self.cb_existing_index["values"] = display_values
 
         desired = self.existing_index_var.get()
