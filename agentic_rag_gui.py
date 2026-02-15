@@ -20,31 +20,9 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-
-def _lazy_import_langchain():
-    import langchain
-
-    return langchain
-
-
-def _lazy_import_langchain_core():
-    from langchain_core.documents import Document
-    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
-    return Document, AIMessage, HumanMessage, SystemMessage
-
-
-def _lazy_import_chroma():
-    from langchain_chroma import Chroma
-
-    return Chroma
-
-
-def _lazy_import_weaviate_stack():
-    import weaviate
-    from langchain_weaviate import WeaviateVectorStore
-
-    return weaviate, WeaviateVectorStore
+APP_NAME = "Agentic RAG"
+APP_VERSION = "1.0"
+APP_SUBTITLE = "LangChain + Chroma/Weaviate + Cohere"
 
 try:
     import langextract
@@ -209,7 +187,10 @@ class CitationManager:
 class AgenticRAGApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Agentic RAG: LangChain + Chroma/Weaviate + Cohere")
+        self.root.title(
+            f"{APP_NAME} — {APP_SUBTITLE}" if APP_SUBTITLE else APP_NAME
+        )
+        self.load_icon()
         self.root.geometry("1200x900")
         self.main_thread = threading.current_thread()
         self.config_path = os.path.join(os.getcwd(), "agentic_rag_config.json")
@@ -497,12 +478,29 @@ class AgenticRAGApp:
         self.notebook.add(self.tab_chat, text="3. Agentic Chat")
         self.build_chat_tab()
 
-        log_frame = ttk.LabelFrame(self.root, text="System Logs")
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        self.log_area = scrolledtext.ScrolledText(
-            log_frame, height=8, state="disabled", font=("Consolas", 9)
-        )
-        self.log_area.pack(fill=tk.BOTH, expand=True)
+    def load_icon(self):
+        """Best-effort cross-platform icon loading without hard failure."""
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        assets_dir = os.path.join(script_dir, "assets")
+        ico_path = os.path.join(assets_dir, "app.ico")
+        png_path = os.path.join(assets_dir, "app.png")
+
+        # Keep a reference so Tk doesn't garbage-collect the icon image.
+        self._app_icon_photo = None
+
+        if sys.platform.startswith("win") and os.path.exists(ico_path):
+            try:
+                self.root.iconbitmap(ico_path)
+            except Exception as exc:
+                logger.debug("unable to set .ico window icon: %s", exc)
+
+        if os.path.exists(png_path):
+            try:
+                self._app_icon_photo = tk.PhotoImage(file=png_path)
+                self.root.iconphoto(True, self._app_icon_photo)
+            except Exception as exc:
+                logger.debug("unable to set .png window icon: %s", exc)
+
     def _get_required_packages(self):
         return [
             "langchain",
