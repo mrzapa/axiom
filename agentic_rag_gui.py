@@ -21,6 +21,14 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+MODE_ALIASES = {
+    "Standard RAG Q&A": "Q&A",
+    "Book Tutor": "Tutor",
+    "Blinkist-style Summary": "Summary",
+    "Research Analyst": "Research",
+    "Evidence Pack": "Evidence Pack",
+}
+
 APP_NAME = "Axiom"
 APP_VERSION = "1.0"
 APP_SUBTITLE = "Personal RAG Assistant"
@@ -174,6 +182,13 @@ class AgentProfile:
     retrieval_strategy: dict = field(default_factory=dict)
     iteration_strategy: dict = field(default_factory=dict)
     comprehension_pipeline_on_ingest: Optional[dict] = None
+    mode_default: str = "Q&A"
+    provider: str = ""
+    model: str = ""
+    retrieval_mode: str = ""
+    llm_max_tokens: Optional[int] = None
+    frontier_toggles: dict = field(default_factory=dict)
+    digest_usage: Optional[bool] = None
 
 
 @dataclass
@@ -380,13 +395,13 @@ class AgenticRAGApp:
         ]
         self.output_style = tk.StringVar(value="Default answer")
         self.mode_options = [
-            "Standard RAG Q&A",
-            "Book Tutor",
-            "Blinkist-style Summary",
-            "Research Analyst",
+            "Q&A",
+            "Summary",
+            "Tutor",
+            "Research",
             "Evidence Pack",
         ]
-        self.selected_mode = tk.StringVar(value="Standard RAG Q&A")
+        self.selected_mode = tk.StringVar(value="Q&A")
         self.profiles_dir = os.path.join(os.getcwd(), "profiles")
         self.builtin_profiles = self._get_builtin_profiles()
         self.selected_profile = tk.StringVar(value="Built-in: Default")
@@ -1603,32 +1618,45 @@ class AgenticRAGApp:
 
     def _get_builtin_profiles(self):
         return {
-            "Built-in: Default": AgentProfile(name="Default"),
+            "Built-in: Default": AgentProfile(name="Default", mode_default="Q&A"),
             "Built-in: Tutor": AgentProfile(
                 name="Tutor",
+                mode_default="Tutor",
                 style_template="Teach concept first, then short quiz and optional flashcards.",
                 citation_policy="Cite each factual teaching block using standard citation format.",
+                retrieval_strategy={"retrieve_k": 24, "final_k": 6, "mmr_lambda": 0.55},
                 iteration_strategy={"agentic_mode": True, "max_iterations": 2},
+                retrieval_mode="hierarchical",
+                digest_usage=True,
             ),
-            "Built-in: Blinkist": AgentProfile(
-                name="Blinkist",
-                style_template="Deliver a concise top-level summary with key insights.",
-                citation_policy="Use concise citations at end of each insight.",
+            "Built-in: Summary": AgentProfile(
+                name="Summary",
+                mode_default="Summary",
+                style_template="Deliver concise key ideas with timeline-aware synthesis.",
+                citation_policy="Each major section should include at least one supporting citation.",
                 retrieval_strategy={"retrieve_k": 20, "final_k": 4, "mmr_lambda": 0.6},
+                retrieval_mode="hierarchical",
+                digest_usage=True,
             ),
-            "Built-in: Research Analyst": AgentProfile(
-                name="Research Analyst",
+            "Built-in: Research": AgentProfile(
+                name="Research",
+                mode_default="Research",
                 style_template="Structure output as claims, arguments, and counterclaims.",
                 citation_policy="Every claim and counterclaim requires citation.",
                 retrieval_strategy={"retrieve_k": 30, "final_k": 7, "mmr_lambda": 0.4},
                 iteration_strategy={"agentic_mode": True, "max_iterations": 3},
+                retrieval_mode="hierarchical",
+                digest_usage=True,
             ),
             "Built-in: Evidence Pack": AgentProfile(
                 name="Evidence Pack",
+                mode_default="Evidence Pack",
                 style_template="Courtroom-ready packet with chronology and incidents.",
                 citation_policy="Use [S#] style citations for factual lines.",
                 retrieval_strategy={"retrieve_k": 35, "final_k": 10, "mmr_lambda": 0.5},
                 iteration_strategy={"agentic_mode": True, "max_iterations": 3},
+                retrieval_mode="hierarchical",
+                digest_usage=True,
             ),
         }
 
@@ -1647,6 +1675,8 @@ class AgenticRAGApp:
         self.profile_options = list(self.builtin_profiles.keys()) + self._get_file_profile_options()
         if hasattr(self, "cb_profile"):
             self.cb_profile["values"] = self.profile_options
+        if hasattr(self, "settings_profile_combo"):
+            self.settings_profile_combo["values"] = self.profile_options
         if self.selected_profile.get() not in self.profile_options:
             self.selected_profile.set("Built-in: Default")
 
@@ -1666,6 +1696,13 @@ class AgenticRAGApp:
             retrieval_strategy=data.get("retrieval_strategy", {}),
             iteration_strategy=data.get("iteration_strategy", {}),
             comprehension_pipeline_on_ingest=data.get("comprehension_pipeline_on_ingest"),
+            mode_default=MODE_ALIASES.get(data.get("mode_default", ""), data.get("mode_default", "Q&A")),
+            provider=data.get("provider", ""),
+            model=data.get("model", ""),
+            retrieval_mode=data.get("retrieval_mode", ""),
+            llm_max_tokens=data.get("llm_max_tokens"),
+            frontier_toggles=data.get("frontier_toggles", {}),
+            digest_usage=data.get("digest_usage"),
         )
 
     def _get_selected_profile_obj(self):
@@ -1699,6 +1736,32 @@ class AgenticRAGApp:
                 max(1, min(AGENTIC_MAX_ITERATIONS_HARD_CAP, int(iteration["max_iterations"])))
             )
 
+        if profile.mode_default:
+            self.selected_mode.set(self._normalize_mode_name(profile.mode_default))
+        if profile.provider:
+            self.llm_provider.set(str(profile.provider))
+        if profile.model:
+            self.llm_model.set(str(profile.model))
+        if profile.retrieval_mode in self.retrieval_mode_options:
+            self.retrieval_mode.set(profile.retrieval_mode)
+        if profile.llm_max_tokens is not None:
+            self.llm_max_tokens.set(max(64, int(profile.llm_max_tokens)))
+        if profile.digest_usage is not None:
+            self.build_digest_index.set(bool(profile.digest_usage))
+        toggles = profile.frontier_toggles or {}
+        if "enable_langextract" in toggles:
+            self.enable_langextract.set(bool(toggles["enable_langextract"]))
+        if "enable_structured_extraction" in toggles:
+            self.enable_structured_extraction.set(bool(toggles["enable_structured_extraction"]))
+        if "enable_structured_incidents" in toggles:
+            self.enable_structured_incidents.set(bool(toggles["enable_structured_incidents"]))
+        if "enable_recursive_memory" in toggles:
+            self.enable_recursive_memory.set(bool(toggles["enable_recursive_memory"]))
+        if "enable_recursive_retrieval" in toggles:
+            self.enable_recursive_retrieval.set(bool(toggles["enable_recursive_retrieval"]))
+        if "enable_citation_v2" in toggles:
+            self.enable_citation_v2.set(bool(toggles["enable_citation_v2"]))
+
         if profile.system_instructions:
             self.system_instructions.set(profile.system_instructions)
             self._refresh_instructions_box()
@@ -1706,6 +1769,7 @@ class AgenticRAGApp:
     def load_selected_profile(self):
         profile = self._get_selected_profile_obj()
         self._apply_profile_to_controls(profile)
+        self._sync_model_options()
         self.save_config()
         self.append_chat("system", f"Loaded profile: {profile.name}")
 
@@ -1729,11 +1793,26 @@ class AgenticRAGApp:
                 "final_k": int(self.final_k.get()),
                 "mmr_lambda": float(self.mmr_lambda.get()),
                 "search_type": self.search_type.get().strip(),
+                "retrieval_mode": self.retrieval_mode.get().strip(),
             },
             iteration_strategy={
                 "agentic_mode": bool(self.agentic_mode.get()),
                 "max_iterations": int(self.agentic_max_iterations.get()),
             },
+            mode_default=self._normalize_mode_name(self.selected_mode.get()),
+            provider=self.llm_provider.get().strip(),
+            model=self._resolve_llm_model(),
+            retrieval_mode=self.retrieval_mode.get().strip(),
+            llm_max_tokens=int(self.llm_max_tokens.get()),
+            frontier_toggles={
+                "enable_langextract": bool(self.enable_langextract.get()),
+                "enable_structured_extraction": bool(self.enable_structured_extraction.get()),
+                "enable_structured_incidents": bool(self.enable_structured_incidents.get()),
+                "enable_recursive_memory": bool(self.enable_recursive_memory.get()),
+                "enable_recursive_retrieval": bool(self.enable_recursive_retrieval.get()),
+                "enable_citation_v2": bool(self.enable_citation_v2.get()),
+            },
+            digest_usage=bool(self.build_digest_index.get()),
         )
         with open(path, "w", encoding="utf-8") as f:
             json.dump(asdict(profile), f, indent=2)
@@ -1957,9 +2036,7 @@ class AgenticRAGApp:
         if output_style not in self.output_style_options:
             output_style = "Default answer"
         self.output_style.set(output_style)
-        selected_mode = data.get("selected_mode", self.selected_mode.get())
-        if selected_mode not in self.mode_options:
-            selected_mode = "Standard RAG Q&A"
+        selected_mode = self._normalize_mode_name(data.get("selected_mode", self.selected_mode.get()))
         self.selected_mode.set(selected_mode)
         self.selected_profile.set(data.get("selected_profile", self.selected_profile.get()))
         self._refresh_profile_options()
@@ -2433,6 +2510,25 @@ class AgenticRAGApp:
         ttk.Checkbutton(frontier_section.content, text="Claim-level grounding (CiteFix-lite)", variable=self.enable_claim_level_grounding_citefix_lite).pack(anchor="w")
         ttk.Checkbutton(frontier_section.content, text="Agent Lightning traces", variable=self.agent_lightning_enabled).pack(anchor="w")
 
+        profile_section = CollapsibleFrame(frame, "Profiles", expanded=True)
+        profile_section.grid(row=8, column=0, columnspan=2, sticky="ew", padx=5, pady=(0, 8))
+        profile_row = ttk.Frame(profile_section.content)
+        profile_row.pack(fill="x")
+        ttk.Label(profile_row, text="Profile list:").pack(side="left")
+        self.settings_profile_combo = ttk.Combobox(
+            profile_row,
+            textvariable=self.selected_profile,
+            values=self.profile_options,
+            state="readonly",
+            width=32,
+        )
+        self.settings_profile_combo.pack(side="left", padx=(8, 8))
+        ttk.Button(profile_row, text="Refresh", command=self._refresh_profile_options).pack(side="left")
+        ttk.Button(profile_row, text="Load", command=self.load_selected_profile).pack(side="left", padx=(8, 0))
+        ttk.Button(profile_row, text="Save", command=self.save_profile).pack(side="left", padx=(8, 0))
+        ttk.Button(profile_row, text="Duplicate", command=self.duplicate_profile).pack(side="left", padx=(8, 0))
+
+        self._refresh_profile_options()
         self._apply_basic_advanced_visibility()
 
     def _apply_basic_advanced_visibility(self):
@@ -2538,7 +2634,7 @@ class AgenticRAGApp:
 
         top_bar = ttk.LabelFrame(frame, text="Conversation", padding=10)
         top_bar.pack(fill="x", pady=(0, 10))
-        for col in (1, 3, 5):
+        for col in (1, 3, 5, 7):
             top_bar.columnconfigure(col, weight=1)
 
         ttk.Label(top_bar, text="Profile:").grid(row=0, column=0, sticky="w")
@@ -2546,22 +2642,31 @@ class AgenticRAGApp:
         self.cb_profile.grid(row=0, column=1, sticky="ew", padx=(6, 12))
         self._refresh_profile_options()
 
-        ttk.Label(top_bar, text="Index:").grid(row=0, column=2, sticky="w")
+        ttk.Label(top_bar, text="Mode:").grid(row=0, column=2, sticky="w")
+        ttk.Combobox(
+            top_bar,
+            textvariable=self.selected_mode,
+            values=self.mode_options,
+            state="readonly",
+            width=18,
+        ).grid(row=0, column=3, sticky="ew", padx=(6, 12))
+
+        ttk.Label(top_bar, text="Index:").grid(row=0, column=4, sticky="w")
         self.cb_existing_index = ttk.Combobox(top_bar, textvariable=self.existing_index_var, state="readonly")
-        self.cb_existing_index.grid(row=0, column=3, sticky="ew", padx=(6, 12))
+        self.cb_existing_index.grid(row=0, column=5, sticky="ew", padx=(6, 12))
         self.cb_existing_index.bind("<<ComboboxSelected>>", self._on_existing_index_change)
 
-        ttk.Label(top_bar, text="Model:").grid(row=0, column=4, sticky="w")
+        ttk.Label(top_bar, text="Model:").grid(row=0, column=6, sticky="w")
         self.cb_chat_model = ttk.Combobox(top_bar, textvariable=self.llm_model, state="readonly", width=22)
-        self.cb_chat_model.grid(row=0, column=5, sticky="ew", padx=(6, 12))
+        self.cb_chat_model.grid(row=0, column=7, sticky="ew", padx=(6, 12))
         self.cb_chat_model.bind("<<ComboboxSelected>>", self._on_llm_model_change)
 
         ttk.Label(top_bar, text="retrieve_k:").grid(row=1, column=0, sticky="w", pady=(8, 0))
         ttk.Entry(top_bar, textvariable=self.retrieval_k, width=8).grid(row=1, column=1, sticky="w", padx=(6, 12), pady=(8, 0))
         ttk.Label(top_bar, text="final_k:").grid(row=1, column=2, sticky="w", pady=(8, 0))
         ttk.Entry(top_bar, textvariable=self.final_k, width=8).grid(row=1, column=3, sticky="w", padx=(6, 12), pady=(8, 0))
-        ttk.Button(top_bar, text="Refresh Indexes", command=self._refresh_existing_indexes_async).grid(row=1, column=4, sticky="w", pady=(8, 0))
-        ttk.Button(top_bar, text="Settings", command=lambda: self.notebook.select(self.tab_settings)).grid(row=1, column=5, sticky="e", pady=(8, 0))
+        ttk.Button(top_bar, text="Refresh Indexes", command=self._refresh_existing_indexes_async).grid(row=1, column=6, sticky="w", pady=(8, 0))
+        ttk.Button(top_bar, text="Settings", command=lambda: self.notebook.select(self.tab_settings)).grid(row=1, column=7, sticky="e", pady=(8, 0))
 
         content_split = ttk.Panedwindow(frame, orient=tk.HORIZONTAL)
         content_split.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
@@ -2652,18 +2757,10 @@ class AgenticRAGApp:
         settings_content = self.chat_settings_section.content
         profile_frame = ttk.LabelFrame(settings_content, text="Mode & Agent Profile", padding=8)
         profile_frame.pack(fill="x", pady=(0, 6))
-        ttk.Label(profile_frame, text="Mode:").grid(row=0, column=0, sticky="w")
-        ttk.Combobox(
-            profile_frame,
-            textvariable=self.selected_mode,
-            values=self.mode_options,
-            state="readonly",
-            width=24,
-        ).grid(row=0, column=1, sticky="w", padx=(6, 12))
-
-        ttk.Button(profile_frame, text="Save Profile", command=self.save_profile).grid(row=1, column=0, sticky="w", pady=(8, 0))
-        ttk.Button(profile_frame, text="Load Profile", command=self.load_selected_profile).grid(row=1, column=1, sticky="w", pady=(8, 0))
-        ttk.Button(profile_frame, text="Duplicate", command=self.duplicate_profile).grid(row=1, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
+        ttk.Label(profile_frame, text="Profile actions:").grid(row=0, column=0, sticky="w")
+        ttk.Button(profile_frame, text="Save Profile", command=self.save_profile).grid(row=0, column=1, sticky="w", pady=(2, 0))
+        ttk.Button(profile_frame, text="Load Profile", command=self.load_selected_profile).grid(row=0, column=2, sticky="w", padx=(6, 0), pady=(2, 0))
+        ttk.Button(profile_frame, text="Duplicate", command=self.duplicate_profile).grid(row=0, column=3, sticky="w", padx=(6, 0), pady=(2, 0))
 
         agentic_frame = ttk.LabelFrame(settings_content, text="Agentic Options", padding=8)
         agentic_frame.pack(fill="x", pady=(0, 6))
@@ -5395,9 +5492,9 @@ class AgenticRAGApp:
         return any(re.search(pattern, text.lower()) for pattern in factual_patterns)
 
     def _resolve_retrieval_mode(self, query, resolved_settings, has_digest_store):
-        configured_mode = str(self.retrieval_mode.get() or "flat").strip().lower()
+        configured_mode = str((resolved_settings or {}).get("retrieval_mode", self.retrieval_mode.get()) or "flat").strip().lower()
         mode_name = (resolved_settings or {}).get("mode", "")
-        should_default_hierarchical = mode_name in {"Book Tutor", "Blinkist-style Summary"}
+        should_default_hierarchical = mode_name in {"Tutor", "Summary", "Research", "Evidence Pack"}
         is_short_factual = self._is_short_factual_query(query)
         if configured_mode == "hierarchical":
             return "hierarchical" if has_digest_store else "flat"
@@ -6288,27 +6385,27 @@ class AgenticRAGApp:
         return min(requested, capped)
 
     def _get_mode_prompt_pack(self, mode_name):
-        mode = (mode_name or "").strip()
+        mode = self._normalize_mode_name(mode_name)
         packs = {
-            "Standard RAG Q&A": "",
-            "Book Tutor": (
-                "Mode: Book Tutor. Teach in plain English using the book's framing. "
-                "Prefer concept cards + chapter digests; retrieve raw chunks only when needed for missing support. "
-                "Include 2-3 analogies/examples, ask exactly 3 Socratic questions unless user asks one-shot output, "
-                "generate exactly 10 flashcards (Q/A), and generate a short 5-question quiz with answer key. "
-                "Use minimal claim-level [S#] citations."
+            "Q&A": (
+                "Mode: Q&A. Provide succinct, direct answers first, then supporting details. "
+                "Ground factual statements with citations and avoid unnecessary verbosity."
             ),
-            "Blinkist-style Summary": (
-                "Mode: Blinkist-style Summary. Produce a concise summary: big idea, key takeaways, "
-                "and practical actions. Keep it compact and structured."
+            "Summary": (
+                "Mode: Summary (Blinkist style). Focus on key ideas and practical takeaways, avoid over-detailing, "
+                "and include a concise timeline of important events where relevant."
             ),
-            "Research Analyst": (
-                "Mode: Research Analyst. Structure output as claims, supporting arguments, and "
-                "counterclaims with evidence quality notes."
+            "Tutor": (
+                "Mode: Tutor. Use an educational tone, ask clarifying Socratic questions when useful, and include "
+                "practice flashcards/quiz prompts grounded in retrieved evidence."
+            ),
+            "Research": (
+                "Mode: Research. Extract and structure claims and counterclaims with explicit argument mapping and "
+                "citation-backed evidence quality notes. Prefer hierarchical retrieval synthesis."
             ),
             "Evidence Pack": (
-                "Mode: Evidence Pack. Prepare evidence for formal review with chronology, incidents, "
-                "and strictly grounded citations."
+                "Mode: Evidence Pack. Build a structured timeline and narrative with exhaustive citations, ensuring "
+                "every factual statement is explicitly grounded."
             ),
         }
         return packs.get(mode, "")
@@ -6361,32 +6458,48 @@ class AgenticRAGApp:
                 rendered.append(line)
         return "\n".join(rendered)
 
+    def _normalize_mode_name(self, mode_name):
+        normalized = MODE_ALIASES.get(str(mode_name or "").strip(), str(mode_name or "").strip())
+        return normalized if normalized in self.mode_options else "Q&A"
+
+    def _mode_defaults(self, mode_name):
+        mode = self._normalize_mode_name(mode_name)
+        defaults = {
+            "Q&A": {"retrieve_k": 25, "final_k": 5, "mmr_lambda": 0.5, "retrieval_mode": "flat", "agentic_mode": False, "max_iterations": 2},
+            "Summary": {"retrieve_k": 20, "final_k": 4, "mmr_lambda": 0.6, "retrieval_mode": "hierarchical", "agentic_mode": False, "max_iterations": 2},
+            "Tutor": {"retrieve_k": 24, "final_k": 6, "mmr_lambda": 0.55, "retrieval_mode": "hierarchical", "agentic_mode": True, "max_iterations": 2},
+            "Research": {"retrieve_k": 30, "final_k": 7, "mmr_lambda": 0.4, "retrieval_mode": "hierarchical", "agentic_mode": True, "max_iterations": 3},
+            "Evidence Pack": {"retrieve_k": 35, "final_k": 10, "mmr_lambda": 0.5, "retrieval_mode": "hierarchical", "agentic_mode": True, "max_iterations": 3},
+        }
+        return defaults.get(mode, defaults["Q&A"])
+
     def _resolve_mode_profile_settings(self, query=None):
-        mode = self.selected_mode.get().strip() or "Standard RAG Q&A"
+        mode = self._normalize_mode_name(self.selected_mode.get())
         profile = self._get_selected_profile_obj()
         retrieval = profile.retrieval_strategy or {}
         iteration = profile.iteration_strategy or {}
+        mode_defaults = self._mode_defaults(mode)
         resolved = {
             "mode": mode,
             "profile": profile,
-            "retrieve_k": max(1, int(retrieval.get("retrieve_k", self.retrieval_k.get()))),
-            "final_k": max(1, int(retrieval.get("final_k", self.final_k.get()))),
-            "mmr_lambda": float(retrieval.get("mmr_lambda", self.mmr_lambda.get())),
+            "retrieve_k": max(1, int(retrieval.get("retrieve_k", mode_defaults["retrieve_k"]))),
+            "final_k": max(1, int(retrieval.get("final_k", mode_defaults["final_k"]))),
+            "mmr_lambda": float(retrieval.get("mmr_lambda", mode_defaults["mmr_lambda"])),
             "search_type": retrieval.get("search_type", self.search_type.get()),
-            "retrieval_mode": retrieval.get("retrieval_mode", self.retrieval_mode.get()),
-            "agentic_mode": bool(iteration.get("agentic_mode", self.agentic_mode.get())),
+            "retrieval_mode": retrieval.get("retrieval_mode", profile.retrieval_mode or mode_defaults["retrieval_mode"]),
+            "agentic_mode": bool(iteration.get("agentic_mode", mode_defaults["agentic_mode"])),
             "agentic_max_iterations": max(
                 1,
                 min(
                     AGENTIC_MAX_ITERATIONS_HARD_CAP,
-                    int(iteration.get("max_iterations", self.agentic_max_iterations.get())),
+                    int(iteration.get("max_iterations", mode_defaults["max_iterations"])),
                 ),
             ),
         }
         resolved["mode_prompt_pack"] = self._get_mode_prompt_pack(mode)
         inferred_evidence_pack = self.is_evidence_pack_query(query or "", self.output_style.get())
         resolved["evidence_pack_mode"] = mode == "Evidence Pack" or (
-            mode == "Standard RAG Q&A" and inferred_evidence_pack
+            mode == "Q&A" and inferred_evidence_pack
         )
         return resolved
 
@@ -6405,13 +6518,22 @@ class AgenticRAGApp:
             profile = self._get_selected_profile_obj()
             mode_prompt = self._get_mode_prompt_pack(self.selected_mode.get())
 
-        segments = [base_instructions]
+        active_mode = self._normalize_mode_name((resolved_settings or {}).get("mode", self.selected_mode.get()))
+        segments = [f"Active mode: {active_mode}", base_instructions]
         if profile.system_instructions:
             segments.append(f"Profile overlay:\n{profile.system_instructions}")
         if profile.style_template:
             segments.append(f"Profile style template:\n{profile.style_template}")
         if profile.citation_policy:
             segments.append(f"Profile citation policy:\n{profile.citation_policy}")
+        if resolved_settings:
+            segments.append(
+                "Retrieval strategy: "
+                f"mode={resolved_settings.get('retrieval_mode', self.retrieval_mode.get())}, "
+                f"retrieve_k={resolved_settings.get('retrieve_k', self.retrieval_k.get())}, "
+                f"final_k={resolved_settings.get('final_k', self.final_k.get())}, "
+                f"mmr_lambda={resolved_settings.get('mmr_lambda', self.mmr_lambda.get())}."
+            )
         if mode_prompt:
             segments.append(mode_prompt)
         instructions = "\n\n".join(part for part in segments if part)
@@ -7742,7 +7864,7 @@ class AgenticRAGApp:
     @staticmethod
     def _is_summary_or_pack_mode(mode, output_style):
         summary_styles = {"Brief / exec summary", "Blinkist-style summary"}
-        return mode in {"Evidence Pack", "Blinkist-style Summary"} or output_style in summary_styles
+        return mode in {"Evidence Pack", "Summary"} or output_style in summary_styles
 
     def _timeline_text(self, events):
         lines = []
@@ -8426,7 +8548,7 @@ class AgenticRAGApp:
                 break
         return unique
 
-    def _validate_answer(self, answer_text, context_text, output_style):
+    def _validate_answer(self, answer_text, context_text, output_style, mode_name="Q&A"):
         failures = []
         citation_re = self._citation_references_regex()
         heading_re = re.compile(r"^\s{0,3}#{1,6}\s+\S+")
@@ -8463,6 +8585,9 @@ class AgenticRAGApp:
             "appendix",
         }
         min_citation_chars = 40
+        mode = self._normalize_mode_name(mode_name)
+        strict_fact_citations = mode in {"Q&A", "Research", "Evidence Pack"}
+        summary_section_citations = mode == "Summary"
 
         def is_structural_paragraph(paragraph_text: str) -> bool:
             lines = [line.strip() for line in paragraph_text.splitlines() if line.strip()]
@@ -8491,10 +8616,20 @@ class AgenticRAGApp:
             return len(paragraph_text.strip()) >= min_citation_chars
 
         paragraphs = [p for p in re.split(r"\n\s*\n", answer_text) if p.strip()]
+        missing_paragraph_citations = 0
         for paragraph in paragraphs:
             if needs_citation(paragraph) and not citation_re.search(paragraph):
+                missing_paragraph_citations += 1
+
+        if strict_fact_citations and missing_paragraph_citations:
+            failures.append(
+                "Factual paragraph missing at least one citation ([Chunk N] or [S#])."
+            )
+        elif summary_section_citations and missing_paragraph_citations:
+            section_count = max(1, len(self._split_major_sections(answer_text)))
+            if self._count_citations(answer_text) < section_count:
                 failures.append(
-                    "Factual paragraph missing at least one citation ([Chunk N] or [S#])."
+                    "Summary mode requires at least one citation per major section."
                 )
 
         if output_style in {"Script / talk track", "Structured report"}:
@@ -8555,9 +8690,10 @@ class AgenticRAGApp:
         repaired = repair_llm.invoke(repair_messages)
         return repaired.content
 
-    def _validate_and_repair(self, answer_text, context_text, iteration_id=None, evidence_pack_mode=False, synthesis_cards=None):
+    def _validate_and_repair(self, answer_text, context_text, iteration_id=None, evidence_pack_mode=False, synthesis_cards=None, mode_name="Q&A"):
         answer_text = self._strip_unsupported_placeholders(answer_text)
         output_style = self.output_style.get().strip()
+        mode_name = self._normalize_mode_name(mode_name)
         agentic_mode = self.agentic_mode.get()
         if evidence_pack_mode:
             answer_text = self._verify_evidence_pack_claims(
@@ -8587,9 +8723,16 @@ class AgenticRAGApp:
             is_valid = len(claim_failures) == 0
         else:
             is_valid, fallback_failures = self._validate_answer(
-                answer_text, context_text, output_style
+                answer_text, context_text, output_style, mode_name=mode_name
             )
             failures.extend(fallback_failures)
+        if is_valid:
+            style_valid, style_failures = self._validate_answer(
+                answer_text, context_text, output_style, mode_name=mode_name
+            )
+            if not style_valid:
+                failures.extend(style_failures)
+                is_valid = False
         if is_valid:
             unique_failures = self._summarize_failures(failures)
             if iteration_id is not None:
@@ -9583,7 +9726,7 @@ class AgenticRAGApp:
                 keyword in normalized_query for keyword in long_form_keywords
             )
             is_evidence_pack = bool(resolved_settings.get("evidence_pack_mode"))
-            comprehension_first_intent = self._is_comprehension_first_query(query) or output_style == "Blinkist-style summary" or mode_name in {"Book Tutor", "Blinkist-style Summary"}
+            comprehension_first_intent = self._is_comprehension_first_query(query) or output_style == "Blinkist-style summary" or mode_name in {"Tutor", "Summary", "Research"}
             use_comprehension_first = bool(self.prefer_comprehension_index.get() and comprehension_first_intent)
             precomputed_comprehension_artifacts = []
             if use_comprehension_first:
@@ -10217,7 +10360,7 @@ class AgenticRAGApp:
                     else "- socratic_questions: exactly 3 questions.\n"
                 )
                 stage_a_prompt = (
-                    "You are Stage A planner for Book Tutor mode. "
+                    "You are Stage A planner for Tutor mode. "
                     "Build strict JSON for a lesson grounded in SOURCE_CARDS, CHAPTER_DIGESTS, CONCEPT_CARDS, and COMPREHENSION_ARTIFACTS. "
                     "Prefer structured comprehension artifacts and chapter digests first; only rely on raw chunk detail when required to fill unsupported gaps. "
                     "Use plain English and the book's framing. Keep citations minimal and claim-level with S# labels. "
@@ -10269,7 +10412,7 @@ class AgenticRAGApp:
                 lesson_sources = [str(s).strip() for s in (lesson.get("sources") or []) if str(s).strip()]
                 lesson_citation = f" [{' '.join(lesson_sources)}]" if lesson_sources else ""
 
-                rendered = [f"## Book Tutor — {lesson_title}"]
+                rendered = [f"## Tutor — {lesson_title}"]
                 if lesson_body:
                     rendered.append(f"{lesson_body}{lesson_citation}")
 
@@ -11341,7 +11484,7 @@ class AgenticRAGApp:
                 generation_started_at = time.perf_counter()
                 generation_ms = 0
                 is_blinkist_summary_style = self.output_style.get().strip() == "Blinkist-style summary"
-                is_book_tutor_mode = resolved_settings.get("mode") == "Book Tutor"
+                is_tutor_mode = resolved_settings.get("mode") == "Tutor"
                 if is_evidence_pack:
                     response_content = _run_evidence_pack_two_stage(
                         llm,
@@ -11356,7 +11499,7 @@ class AgenticRAGApp:
                         final_docs,
                         digest_docs=digest_docs,
                     )
-                elif is_book_tutor_mode:
+                elif is_tutor_mode:
                     response_content = _run_book_tutor_two_stage(
                         llm,
                         query,
@@ -11383,6 +11526,7 @@ class AgenticRAGApp:
                     iteration_id=1,
                     evidence_pack_mode=is_evidence_pack,
                     synthesis_cards=self._last_evidence_pack_synthesis_cards,
+                    mode_name=resolved_settings.get("mode", "Q&A"),
                 )
                 validation_ms = int((time.perf_counter() - validation_started_at) * 1000)
                 citation_pass_rate = min(1.0, self._count_citations(validated_answer) / max(1, self._count_claim_like_sentences(validated_answer)))
@@ -12042,7 +12186,7 @@ class AgenticRAGApp:
                 generation_started_at = time.perf_counter()
                 generation_ms = 0
                 is_blinkist_summary_style = self.output_style.get().strip() == "Blinkist-style summary"
-                is_book_tutor_mode = resolved_settings.get("mode") == "Book Tutor"
+                is_tutor_mode = resolved_settings.get("mode") == "Tutor"
                 if is_evidence_pack:
                     latest_answer = _run_evidence_pack_two_stage(
                         llm,
@@ -12060,7 +12204,7 @@ class AgenticRAGApp:
                         final_docs,
                         digest_docs=digest_docs,
                     )
-                elif is_book_tutor_mode:
+                elif is_tutor_mode:
                     latest_answer = _run_book_tutor_two_stage(
                         llm,
                         query,
@@ -12151,6 +12295,7 @@ class AgenticRAGApp:
                     iteration_id=last_iteration_id,
                     evidence_pack_mode=is_evidence_pack,
                     synthesis_cards=self._last_evidence_pack_synthesis_cards,
+                    mode_name=resolved_settings.get("mode", "Q&A"),
                 )
                 validation_ms = int((time.perf_counter() - validation_started_at) * 1000)
                 citation_pass_rate = min(1.0, self._count_citations(validated_answer) / max(1, self._count_claim_like_sentences(validated_answer)))
