@@ -863,6 +863,7 @@ class AgenticRAGApp:
         self.local_gguf_threads = tk.IntVar(value=0)
         self.chunk_size = tk.IntVar(value=1000)
         self.chunk_overlap = tk.IntVar(value=200)
+        self.structure_aware_ingestion = tk.BooleanVar(value=False)
         self.build_digest_index = tk.BooleanVar(value=True)
         self.build_comprehension_index = tk.BooleanVar(value=False)
         self.comprehension_extraction_depth = tk.StringVar(value="Standard")
@@ -3405,6 +3406,14 @@ class AgenticRAGApp:
                 )
             )
         )
+        self.structure_aware_ingestion.set(
+            bool(
+                data.get(
+                    "structure_aware_ingestion",
+                    self.structure_aware_ingestion.get(),
+                )
+            )
+        )
         self.prefer_comprehension_index.set(
             bool(
                 data.get(
@@ -3600,6 +3609,7 @@ class AgenticRAGApp:
             "chunk_overlap": self.chunk_overlap.get(),
             "build_digest_index": self.build_digest_index.get(),
             "build_comprehension_index": bool(self.build_comprehension_index.get()),
+            "structure_aware_ingestion": bool(self.structure_aware_ingestion.get()),
             "prefer_comprehension_index": bool(self.prefer_comprehension_index.get()),
             "comprehension_extraction_depth": str(
                 self.comprehension_extraction_depth.get()
@@ -4614,6 +4624,12 @@ class AgenticRAGApp:
             chunk_frame,
             text="Build digest index",
             variable=self.build_digest_index,
+        ).pack(side="left", padx=(20, 0))
+
+        ttk.Checkbutton(
+            chunk_frame,
+            text="Structure-aware",
+            variable=self.structure_aware_ingestion,
         ).pack(side="left", padx=(20, 0))
 
         comprehension_frame = ttk.LabelFrame(frame, text="3) Optional comprehension index", padding=UI_SPACING["m"])
@@ -11884,6 +11900,7 @@ class AgenticRAGApp:
             "build_comprehension_index": bool(self.build_comprehension_index.get()),
             "comprehension_extraction_depth": int(self.comprehension_extraction_depth.get()),
             "build_digest_index": bool(self.build_digest_index.get()),
+            "structure_aware": bool(self.structure_aware_ingestion.get()),
             "embedding_ctx": {
                 "provider": embedding_provider,
                 "api_key": self.api_keys[embedding_provider].get() if embedding_provider in self.api_keys else "",
