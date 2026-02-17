@@ -1781,11 +1781,9 @@ class AgenticRAGApp:
         self._history_summary_blob = ""
         self._selected_session_folder = ""
 
-        if session_id:
-            session, messages = self._fetch_session_and_messages(session_id)
-            if session:
-                title = (session["title"] or "Untitled").strip() or "Untitled"
-                summary = (session["summary"] or "").strip() or "(No summary saved.)"
+        session, messages = self._fetch_session_and_messages(session_id)
+        if not session:
+            return payload
 
                 extra = {}
                 try:
@@ -4279,7 +4277,15 @@ class AgenticRAGApp:
         details = self.create_frame(right, text="Session Details", padding=UI_SPACING["m"], kind="labelframe")
         details.pack(fill=tk.BOTH, expand=True)
 
-        summary_card = self.create_frame(details, text="Summary", padding=UI_SPACING["m"], kind="labelframe")
+        details_notebook = self.create_notebook(details, style="App.TNotebook")
+        details_notebook.pack(fill=tk.BOTH, expand=True)
+
+        overview_tab = self.create_frame(details_notebook, style="Card.TFrame", padding=UI_SPACING["xs"])
+        diagnostics_tab = self.create_frame(details_notebook, style="Card.TFrame", padding=UI_SPACING["xs"])
+        details_notebook.add(overview_tab, text="Overview")
+        details_notebook.add(diagnostics_tab, text="Diagnostics")
+
+        summary_card = self.create_frame(overview_tab, text="Summary", padding=UI_SPACING["m"], kind="labelframe")
         summary_card.pack(fill="x", pady=(0, UI_SPACING["m"]))
         summary_grid = self.create_frame(summary_card, style="Card.TFrame")
         summary_grid.pack(fill="x")
@@ -4318,8 +4324,8 @@ class AgenticRAGApp:
         self.history_synopsis_var = tk.StringVar(value="(No summary saved.)")
         self.create_label(synopsis_row, textvariable=self.history_synopsis_var, style="TLabel", wraplength=500, justify="left").grid(row=0, column=1, sticky="w", pady=UI_SPACING["xs"])
 
-        notebook = self.create_notebook(details, style="App.TNotebook")
-        notebook.pack(fill=tk.BOTH, expand=True)
+        diagnostics_notebook = self.create_notebook(diagnostics_tab, style="App.TNotebook")
+        diagnostics_notebook.pack(fill=tk.BOTH, expand=True)
 
         config_tab = self.create_frame(notebook, style="Card.TFrame", padding=UI_SPACING["m"])
         telemetry_tab = self.create_frame(notebook, style="Card.TFrame", padding=UI_SPACING["m"])
@@ -4391,6 +4397,15 @@ class AgenticRAGApp:
         self.history_telemetry_text.pack(side="top", fill=tk.BOTH, expand=True)
         telem_y.pack(side="right", fill="y")
         telem_x.pack(side="bottom", fill="x")
+
+        self.create_label(raw_json_tab, text="Parsed session payload", style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
+        self.history_raw_json_text = self.create_rich_text_surface(raw_json_tab, surface_id="history_raw_json", wrap=tk.NONE, state="disabled", height=12, relief="flat", borderwidth=1)
+        raw_y = ttk.Scrollbar(raw_json_tab, orient="vertical", command=self.history_raw_json_text.yview)
+        raw_x = ttk.Scrollbar(raw_json_tab, orient="horizontal", command=self.history_raw_json_text.xview)
+        self.history_raw_json_text.configure(yscrollcommand=raw_y.set, xscrollcommand=raw_x.set)
+        self.history_raw_json_text.pack(side="top", fill=tk.BOTH, expand=True)
+        raw_y.pack(side="right", fill="y")
+        raw_x.pack(side="bottom", fill="x")
 
         self._history_summary_blob = ""
         self._selected_session_folder = ""
