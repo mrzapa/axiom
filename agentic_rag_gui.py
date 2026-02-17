@@ -480,6 +480,7 @@ class EvidenceRef:
     span_start: Optional[int] = None
     span_end: Optional[int] = None
     chunk_id: str = ""
+    breadcrumb: str = ""
 
 
 @dataclass
@@ -1584,6 +1585,20 @@ class AgenticRAGApp:
             return {}
         item = dict(source)
         item["header_path"] = str(item.get("header_path") or "").strip()
+        breadcrumb_tokens = AgenticRAGApp._normalize_header_path_tokens(
+            item.get("breadcrumb_tokens")
+            or item.get("breadcrumb")
+            or item.get("header_path_tokens")
+            or item.get("header_path")
+            or item.get("source_section")
+            or [
+                item.get("section_title"),
+                item.get("chapter_title"),
+                item.get("source_title") or item.get("title") or item.get("source"),
+            ]
+        )
+        item["breadcrumb_tokens"] = breadcrumb_tokens
+        item["breadcrumb"] = " > ".join(breadcrumb_tokens)
         return item
 
     def _append_sources_markdown(self, lines, sources):
@@ -1744,22 +1759,14 @@ class AgenticRAGApp:
         if not hasattr(self, "history_summary_fields"):
             return
         session_id = self._selected_history_session_id()
-        payload = self._build_history_details_payload(session_id)
+        config_text = ""
+        telemetry_text = ""
+        telemetry = None
+        run_id = ""
+        config_rows = []
+        telemetry_rows = []
 
-        for key, value in payload["summary_values"].items():
-            self.history_summary_fields[key].set(value)
-
-        self._history_summary_blob = payload["summary_blob"]
-        self._selected_session_folder = payload["selected_session_folder"]
-        self._set_readonly_text(self.history_summary_text, payload["summary_text"])
-        self._set_readonly_text(self.history_config_text, payload["config_text"])
-        self._set_readonly_text(self.history_telemetry_text, payload["telemetry_text"])
-        if hasattr(self, "history_raw_json_text"):
-            self._set_readonly_text(self.history_raw_json_text, payload["raw_json_text"])
-        self._populate_telemetry_fields(payload["telemetry"], payload["run_id"])
-
-    def _build_history_details_payload(self, session_id):
-        summary_values = {
+        summary_defaults = {
             "Title": "-",
             "Session ID": "-",
             "Updated": "-",
@@ -1768,92 +1775,83 @@ class AgenticRAGApp:
             "Mode": "-",
             "Index": "-",
         }
-        payload = {
-            "summary_values": summary_values,
-            "summary_blob": "",
-            "selected_session_folder": "",
-            "summary_text": "",
-            "config_text": "",
-            "telemetry_text": "",
-            "raw_json_text": "",
-            "telemetry": None,
-            "run_id": "",
-        }
-        if not session_id:
-            return payload
+        for key, default_value in summary_defaults.items():
+            self.history_summary_fields[key].set(default_value)
+        self.history_synopsis_var.set("(No summary saved.)")
+        self._history_summary_blob = ""
+        self._selected_session_folder = ""
 
         session, messages = self._fetch_session_and_messages(session_id)
         if not session:
             return payload
 
-        title = (session["title"] or "Untitled").strip() or "Untitled"
-        summary = (session["summary"] or "").strip() or "(No summary saved.)"
-        extra = {}
-        try:
-            extra = json.loads(session["extra_json"] or "{}")
-        except json.JSONDecodeError:
-            extra = {}
+                extra = {}
+                try:
+                    extra = json.loads(session["extra_json"] or "{}")
+                except json.JSONDecodeError:
+                    extra = {}
 
-        index_path = (extra.get("selected_index_path") or "").strip()
-        index_label = (session["index_id"] or "-").strip() or "-"
-        if index_path:
-            index_label = f"{index_label} ({index_path})" if index_label != "-" else index_path
+                index_path = (extra.get("selected_index_path") or "").strip()
+                index_label = (session["index_id"] or "-").strip() or "-"
+                if index_path:
+                    index_label = f"{index_label} ({index_path})" if index_label != "-" else index_path
+                self._selected_session_folder = index_path if os.path.isdir(index_path) else ""
 
-        summary_values.update(
-            {
-                "Title": title,
-                "Session ID": session_id,
-                "Updated": session["updated_at"] or "-",
-                "Message Count": str(len(messages)),
-                "Profile": session["active_profile"] or "-",
-                "Mode": session["mode"] or "-",
-                "Index": index_label,
-            }
-        )
-        payload["summary_text"] = summary
-        payload["summary_blob"] = "\n".join([f"{key}: {value}" for key, value in summary_values.items()] + ["", f"Summary:\n{summary}"])
-        payload["selected_session_folder"] = index_path if os.path.isdir(index_path) else ""
+                summary_values = {
+                    "Title": title,
+                    "Session ID": session_id,
+                    "Updated": session["updated_at"] or "-",
+                    "Message Count": str(len(messages)),
+                    "Profile": session["active_profile"] or "-",
+                    "Mode": session["mode"] or "-",
+                    "Index": index_label,
+                }
+                for key, value in summary_values.items():
+                    self.history_summary_fields[key].set(value)
+                self.history_synopsis_var.set(summary)
+                self._history_summary_blob = "\n".join(
+                    [f"{key}: {value}" for key, value in summary_values.items()] + ["", f"Summary:\n{summary}"]
+                )
 
-        snapshot = {
-            "profile": session["active_profile"],
-            "mode": session["mode"],
-            "index": session["index_id"],
-            "llm_provider": session["llm_provider"],
-            "llm_model": session["llm_model"],
-            "embed_model": session["embed_model"],
-            "retrieve_k": session["retrieve_k"],
-            "final_k": session["final_k"],
-            "mmr_lambda": session["mmr_lambda"],
-            "agentic_iterations": session["agentic_iterations"],
-            "extra": extra,
-        }
-        payload["config_text"] = json.dumps(snapshot, ensure_ascii=False, indent=2)
+                snapshot = {
+                    "profile": session["active_profile"],
+                    "mode": session["mode"],
+                    "index": session["index_id"],
+                    "llm_provider": session["llm_provider"],
+                    "llm_model": session["llm_model"],
+                    "embed_model": session["embed_model"],
+                    "retrieve_k": session["retrieve_k"],
+                    "final_k": session["final_k"],
+                    "mmr_lambda": session["mmr_lambda"],
+                    "agentic_iterations": session["agentic_iterations"],
+                    "extra": extra,
+                }
+                config_text = json.dumps(snapshot, ensure_ascii=False, indent=2)
+                config_rows = self._build_history_key_value_rows(snapshot)
 
-        for msg in reversed(messages):
-            if msg["run_id"]:
-                payload["run_id"] = msg["run_id"]
-                break
-        payload["telemetry"] = self._load_last_run_telemetry(payload["run_id"])
-        if payload["telemetry"]:
-            payload["telemetry_text"] = json.dumps(payload["telemetry"], ensure_ascii=False, indent=2)
-        elif payload["run_id"]:
-            payload["telemetry_text"] = f"No telemetry event found for run_id={payload['run_id']}."
-        else:
-            payload["telemetry_text"] = "No run telemetry available for this session."
+                for msg in reversed(messages):
+                    if msg["run_id"]:
+                        run_id = msg["run_id"]
+                        break
+                telemetry = self._load_last_run_telemetry(run_id)
+                if telemetry:
+                    telemetry_text = json.dumps(telemetry, ensure_ascii=False, indent=2)
+                elif run_id:
+                    telemetry_text = f"No telemetry event found for run_id={run_id}."
+                else:
+                    telemetry_text = "No run telemetry available for this session."
+                telemetry_rows = self._build_history_key_value_rows(telemetry if isinstance(telemetry, dict) else {"status": telemetry_text})
 
-        payload["raw_json_text"] = json.dumps(
-            {
-                "session_id": session_id,
-                "summary": summary_values,
-                "synopsis": summary,
-                "config_snapshot": snapshot,
-                "run_id": payload["run_id"] or None,
-                "telemetry": payload["telemetry"],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        return payload
+        if not config_rows:
+            config_rows = [("status", "No config snapshot available.")]
+        if not telemetry_rows:
+            telemetry_rows = [("status", "No run telemetry available for this session.")]
+
+        self._set_readonly_text(self.history_config_text, config_text)
+        self._set_readonly_text(self.history_telemetry_text, telemetry_text)
+        self._render_history_card_rows(self.history_config_rows_wrap, config_rows)
+        self._render_history_card_rows(self.history_telemetry_rows_wrap, telemetry_rows)
+        self._populate_telemetry_fields(telemetry, run_id)
 
     def _populate_telemetry_fields(self, telemetry, run_id=""):
         defaults = {
@@ -1892,6 +1890,46 @@ class AgenticRAGApp:
         }
         for key, value in values.items():
             self.history_telemetry_fields[key].set(str(value))
+
+    def _build_history_key_value_rows(self, payload, prefix=""):
+        if not isinstance(payload, dict):
+            return []
+
+        rows = []
+        for key in sorted(payload.keys(), key=lambda item: str(item)):
+            value = payload.get(key)
+            label = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(value, dict):
+                rows.extend(self._build_history_key_value_rows(value, label))
+                continue
+            if isinstance(value, list):
+                display_value = ", ".join(str(item) for item in value) if value else "[]"
+            elif value in (None, ""):
+                display_value = "-"
+            else:
+                display_value = str(value)
+            rows.append((label, display_value))
+        return rows
+
+    def _render_history_card_rows(self, container, rows):
+        for child in container.winfo_children():
+            child.destroy()
+
+        for key, value in rows:
+            row = self.create_frame(container, style="Card.TFrame")
+            row.pack(fill="x", pady=(0, UI_SPACING["xs"]))
+            row.grid_columnconfigure(1, weight=1)
+            self.create_label(row, text=str(key), style="Caption.TLabel").grid(row=0, column=0, sticky="nw", padx=(0, UI_SPACING["s"]), pady=UI_SPACING["xs"])
+            self.create_label(row, text=str(value), style="TLabel", wraplength=520, justify="left").grid(row=0, column=1, sticky="w", pady=UI_SPACING["xs"])
+
+    def _toggle_history_raw_panel(self, panel, toggle_var, button):
+        is_open = bool(toggle_var.get())
+        if is_open:
+            panel.pack(fill=tk.BOTH, expand=True, pady=(UI_SPACING["s"], 0))
+            button.configure(text="Hide Raw JSON")
+        else:
+            panel.pack_forget()
+            button.configure(text="Show Raw JSON")
 
     def _copy_history_session_id(self):
         session_id = self.history_summary_fields.get("Session ID").get() if hasattr(self, "history_summary_fields") else ""
@@ -1970,12 +2008,27 @@ class AgenticRAGApp:
                 or metadata.get("source_section")
                 or ""
             ).strip()
+            breadcrumb_tokens = self._normalize_header_path_tokens(
+                metadata.get("breadcrumb_tokens")
+                or metadata.get("breadcrumb")
+                or metadata.get("header_path_tokens")
+                or metadata.get("header_path")
+                or metadata.get("source_section")
+                or [
+                    metadata.get("section_title"),
+                    metadata.get("chapter_title"),
+                    metadata.get("source_title") or metadata.get("title") or metadata.get("source"),
+                ]
+            )
+            breadcrumb = " > ".join(breadcrumb_tokens)
             records.append(
                 {
                     "chunk_id": metadata.get("chunk_id"),
                     "node_id": metadata.get("node_id"),
                     "content_type": metadata.get("content_type"),
                     "header_path": header_path,
+                    "breadcrumb": breadcrumb,
+                    "breadcrumb_tokens": breadcrumb_tokens,
                     "source": metadata.get("source")
                     or metadata.get("file_path")
                     or metadata.get("filename"),
@@ -4247,59 +4300,99 @@ class AgenticRAGApp:
         summary_grid.grid_columnconfigure(1, weight=1)
 
         actions_row = self.create_frame(summary_card, style="Card.TFrame")
-        actions_row.pack(fill="x", pady=(8, 0))
-        copy_id_btn = self.create_button(actions_row, text="Copy Session ID", command=self._copy_history_session_id, takefocus=True)
+        actions_row.pack(fill="x", pady=(UI_SPACING["s"], 0))
+        copy_id_btn = self.create_button(actions_row, text="Copy Session ID", command=self._copy_history_session_id, takefocus=True, style="Secondary.TButton")
         copy_id_btn.pack(side="left")
-        copy_summary_btn = self.create_button(actions_row, text="Copy Summary", command=self._copy_history_summary, takefocus=True)
-        copy_summary_btn.pack(side="left", padx=(8, 0))
-        open_folder_btn = self.create_button(actions_row, text="Open Session Folder", command=self._open_selected_session_folder, takefocus=True)
-        open_folder_btn.pack(side="left", padx=(8, 0))
-        export_json_btn = self.create_button(actions_row, text="Export JSON", command=self._export_selected_session_json, takefocus=True)
-        export_json_btn.pack(side="left", padx=(8, 0))
+        copy_summary_btn = self.create_button(actions_row, text="Copy Summary", command=self._copy_history_summary, takefocus=True, style="Secondary.TButton")
+        copy_summary_btn.pack(side="left", padx=(UI_SPACING["s"], 0))
+        open_folder_btn = self.create_button(actions_row, text="Open Session Folder", command=self._open_selected_session_folder, takefocus=True, style="Secondary.TButton")
+        open_folder_btn.pack(side="left", padx=(UI_SPACING["s"], 0))
+        export_json_btn = self.create_button(actions_row, text="Export JSON", command=self._export_selected_session_json, takefocus=True, style="Secondary.TButton")
+        export_json_btn.pack(side="left", padx=(UI_SPACING["s"], 0))
 
         self._tip(copy_id_btn, "Copy the selected session UUID to your clipboard.")
         self._tip(copy_summary_btn, "Copy summary metadata and synopsis as plain text.")
         self._tip(open_folder_btn, "Open the selected index/session folder when available.")
         self._tip(export_json_btn, "Export this session as a standalone JSON file.")
 
-        summary_text_card = self.create_frame(overview_tab, style="Card.TFrame")
-        summary_text_card.pack(fill="x", pady=(0, 10))
-        self.create_label(summary_text_card, text="Synopsis", style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
-        self.history_summary_text = self.create_rich_text_surface(summary_text_card, surface_id="history_summary", height=5, wrap=tk.WORD, state="disabled", relief="flat", borderwidth=1)
-        self.history_summary_text.pack(fill="x")
+        synopsis_card = self.create_frame(details, style="Card.TFrame")
+        synopsis_card.pack(fill="x", pady=(0, UI_SPACING["m"]))
+        synopsis_row = self.create_frame(synopsis_card, style="Card.TFrame")
+        synopsis_row.pack(fill="x")
+        synopsis_row.grid_columnconfigure(1, weight=1)
+        self.create_label(synopsis_row, text="Synopsis", style="Caption.TLabel").grid(row=0, column=0, sticky="nw", padx=(0, UI_SPACING["s"]), pady=UI_SPACING["xs"])
+        self.history_synopsis_var = tk.StringVar(value="(No summary saved.)")
+        self.create_label(synopsis_row, textvariable=self.history_synopsis_var, style="TLabel", wraplength=500, justify="left").grid(row=0, column=1, sticky="w", pady=UI_SPACING["xs"])
 
         diagnostics_notebook = self.create_notebook(diagnostics_tab, style="App.TNotebook")
         diagnostics_notebook.pack(fill=tk.BOTH, expand=True)
 
-        config_tab = self.create_frame(diagnostics_notebook, style="Card.TFrame", padding=8)
-        telemetry_tab = self.create_frame(diagnostics_notebook, style="Card.TFrame", padding=8)
-        raw_json_tab = self.create_frame(diagnostics_notebook, style="Card.TFrame", padding=8)
-        diagnostics_notebook.add(config_tab, text="Config Snapshot")
-        diagnostics_notebook.add(telemetry_tab, text="Telemetry")
-        diagnostics_notebook.add(raw_json_tab, text="Raw JSON")
+        config_tab = self.create_frame(notebook, style="Card.TFrame", padding=UI_SPACING["m"])
+        telemetry_tab = self.create_frame(notebook, style="Card.TFrame", padding=UI_SPACING["m"])
+        notebook.add(config_tab, text="Config")
+        notebook.add(telemetry_tab, text="Telemetry")
 
-        self.history_config_text = self.create_rich_text_surface(config_tab, surface_id="history_config", wrap=tk.NONE, state="disabled", height=12, relief="flat", borderwidth=1)
-        cfg_y = ttk.Scrollbar(config_tab, orient="vertical", command=self.history_config_text.yview)
-        cfg_x = ttk.Scrollbar(config_tab, orient="horizontal", command=self.history_config_text.xview)
+        self.history_config_rows_wrap = self.create_frame(config_tab, style="Card.TFrame")
+        self.history_config_rows_wrap.pack(fill="x")
+        self._render_history_card_rows(self.history_config_rows_wrap, [("status", "No config snapshot available.")])
+
+        config_raw_toggle = self.create_frame(config_tab, style="Card.TFrame")
+        config_raw_toggle.pack(fill="x", pady=(UI_SPACING["s"], 0))
+        self.history_config_raw_visible = tk.BooleanVar(value=False)
+        self.history_config_raw_btn = self.create_button(
+            config_raw_toggle,
+            text="Show Raw JSON",
+            style="Secondary.TButton",
+            command=lambda: (
+                self.history_config_raw_visible.set(not self.history_config_raw_visible.get()),
+                self._toggle_history_raw_panel(self.history_config_raw_panel, self.history_config_raw_visible, self.history_config_raw_btn),
+            ),
+            takefocus=True,
+        )
+        self.history_config_raw_btn.pack(side="left")
+
+        self.history_config_raw_panel = self.create_frame(config_tab, style="Card.TFrame")
+        self.history_config_text = self.create_rich_text_surface(self.history_config_raw_panel, surface_id="history_config", wrap=tk.NONE, state="disabled", height=12, relief="flat", borderwidth=1)
+        cfg_y = ttk.Scrollbar(self.history_config_raw_panel, orient="vertical", command=self.history_config_text.yview)
+        cfg_x = ttk.Scrollbar(self.history_config_raw_panel, orient="horizontal", command=self.history_config_text.xview)
         self.history_config_text.configure(yscrollcommand=cfg_y.set, xscrollcommand=cfg_x.set)
         self.history_config_text.pack(side="top", fill=tk.BOTH, expand=True)
         cfg_y.pack(side="right", fill="y")
         cfg_x.pack(side="bottom", fill="x")
 
         telemetry_fields_wrap = self.create_frame(telemetry_tab, style="Card.TFrame")
-        telemetry_fields_wrap.pack(fill="x", pady=(0, 8))
+        telemetry_fields_wrap.pack(fill="x", pady=(0, UI_SPACING["s"]))
         self.history_telemetry_fields = {}
         telemetry_keys = ["Run ID", "Event", "Stage", "Status", "Duration (ms)", "Prompt Tokens", "Completion Tokens", "Total Tokens", "Cost"]
         for row_index, key in enumerate(telemetry_keys):
             var = tk.StringVar(value="-")
             self.history_telemetry_fields[key] = var
-            self.create_label(telemetry_fields_wrap, text=f"{key}:", style="Muted.TLabel").grid(row=row_index, column=0, sticky="w", padx=(0, 10), pady=2)
-            self.create_label(telemetry_fields_wrap, textvariable=var, style="TLabel").grid(row=row_index, column=1, sticky="w", pady=2)
+            self.create_label(telemetry_fields_wrap, text=f"{key}:", style="Muted.TLabel").grid(row=row_index, column=0, sticky="w", padx=(0, UI_SPACING["s"]), pady=UI_SPACING["xs"])
+            self.create_label(telemetry_fields_wrap, textvariable=var, style="TLabel").grid(row=row_index, column=1, sticky="w", pady=UI_SPACING["xs"])
 
-        self.create_label(telemetry_tab, text="Raw telemetry", style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
-        self.history_telemetry_text = self.create_rich_text_surface(telemetry_tab, surface_id="history_telemetry", wrap=tk.NONE, state="disabled", height=8, relief="flat", borderwidth=1)
-        telem_y = ttk.Scrollbar(telemetry_tab, orient="vertical", command=self.history_telemetry_text.yview)
-        telem_x = ttk.Scrollbar(telemetry_tab, orient="horizontal", command=self.history_telemetry_text.xview)
+        self.history_telemetry_rows_wrap = self.create_frame(telemetry_tab, style="Card.TFrame")
+        self.history_telemetry_rows_wrap.pack(fill="x", pady=(0, UI_SPACING["s"]))
+        self._render_history_card_rows(self.history_telemetry_rows_wrap, [("status", "No run telemetry available for this session.")])
+
+        telemetry_raw_toggle = self.create_frame(telemetry_tab, style="Card.TFrame")
+        telemetry_raw_toggle.pack(fill="x")
+        self.history_telemetry_raw_visible = tk.BooleanVar(value=False)
+        self.history_telemetry_raw_btn = self.create_button(
+            telemetry_raw_toggle,
+            text="Show Raw JSON",
+            style="Secondary.TButton",
+            command=lambda: (
+                self.history_telemetry_raw_visible.set(not self.history_telemetry_raw_visible.get()),
+                self._toggle_history_raw_panel(self.history_telemetry_raw_panel, self.history_telemetry_raw_visible, self.history_telemetry_raw_btn),
+            ),
+            takefocus=True,
+        )
+        self.history_telemetry_raw_btn.pack(side="left")
+
+        self.history_telemetry_raw_panel = self.create_frame(telemetry_tab, style="Card.TFrame")
+        self.history_telemetry_text = self.create_rich_text_surface(self.history_telemetry_raw_panel, surface_id="history_telemetry", wrap=tk.NONE, state="disabled", height=8, relief="flat", borderwidth=1)
+        telem_y = ttk.Scrollbar(self.history_telemetry_raw_panel, orient="vertical", command=self.history_telemetry_text.yview)
+        telem_x = ttk.Scrollbar(self.history_telemetry_raw_panel, orient="horizontal", command=self.history_telemetry_text.xview)
         self.history_telemetry_text.configure(yscrollcommand=telem_y.set, xscrollcommand=telem_x.set)
         self.history_telemetry_text.pack(side="top", fill=tk.BOTH, expand=True)
         telem_y.pack(side="right", fill="y")
@@ -5564,10 +5657,16 @@ class AgenticRAGApp:
         source_actions = self.create_frame(self.sources_tab)
         source_actions.pack(fill="x", pady=(6, 4))
         self.create_button(source_actions, text="Open selected source", command=self._open_selected_source, style="Secondary.TButton").pack(side="left")
+        self.create_button(source_actions, text="Copy breadcrumb", command=self._copy_selected_source_breadcrumb, style="Secondary.TButton").pack(side="left", padx=(6, 0))
+        self.create_button(source_actions, text="Open section", command=self._open_selected_source_section, style="Secondary.TButton").pack(side="left", padx=(6, 0))
 
         self.source_detail_text = self.create_rich_text_surface(
             self.sources_tab, surface_id="source_detail", height=8, wrap=tk.WORD, state="disabled", font=("Consolas", 9)
         )
+        self.source_detail_text.tag_config("open_section_link", foreground="#2563eb", underline=1)
+        self.source_detail_text.tag_bind("open_section_link", "<Button-1>", self._open_selected_source_section)
+        self.source_detail_text.tag_bind("open_section_link", "<Enter>", lambda _e: self.source_detail_text.config(cursor="hand2"))
+        self.source_detail_text.tag_bind("open_section_link", "<Leave>", lambda _e: self.source_detail_text.config(cursor=""))
         self.source_detail_text.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
 
         self.incidents_json_tab = self.create_frame(self.evidence_notebook)
@@ -6271,21 +6370,18 @@ class AgenticRAGApp:
         )
 
     def _on_source_selected(self, event=None):
-        selection = self.sources_tree.selection()
-        if not selection:
-            return
-        item_id = selection[0]
-        source_id = self._source_id_by_tree_iid.get(item_id)
-        entry = (self._latest_source_map or {}).get(source_id or "", {})
+        source_id, entry = self._selected_source_entry()
         if not entry:
             return
         metadata_blob = json.dumps(entry.get("metadata") or {}, ensure_ascii=False, indent=2, sort_keys=True)
         excerpt = str(entry.get("excerpt") or "").strip() or "(no excerpt captured)"
+        breadcrumb = str(entry.get("breadcrumb") or "").strip() or "-"
         detail_lines = [
             f"Citation: {entry.get('sid', '')}",
             f"Source Card: {entry.get('label', 'unknown')}",
             f"Doc: {entry.get('title', 'unknown')}",
             f"Section hint: {entry.get('section_hint') or entry.get('section') or entry.get('chapter') or '-'}",
+            f"Breadcrumb: {breadcrumb}",
             f"Position hint: {entry.get('position_hint') or entry.get('locator', 'unknown')}",
             f"Date/Month: {entry.get('date', entry.get('month_bucket', 'undated'))}",
             f"Timestamp: {entry.get('timestamp') or '-'}",
@@ -6303,6 +6399,10 @@ class AgenticRAGApp:
         self.source_detail_text.config(state="normal")
         self.source_detail_text.delete("1.0", tk.END)
         self.source_detail_text.insert(tk.END, "\n".join(detail_lines))
+        open_section_line = "\n\nOpen section in outline"
+        link_start = self.source_detail_text.index(tk.END)
+        self.source_detail_text.insert(tk.END, open_section_line)
+        self.source_detail_text.tag_add("open_section_link", link_start, f"{link_start}+{len(open_section_line)}c")
         self.source_detail_text.config(state="disabled")
 
 
@@ -6340,13 +6440,10 @@ class AgenticRAGApp:
             )
 
     def _open_selected_source(self):
-        selection = self.sources_tree.selection()
-        if not selection:
+        source_id, entry = self._selected_source_entry()
+        if not source_id:
             messagebox.showinfo("Open source", "Select a source row first.")
             return
-        item_id = selection[0]
-        source_id = self._source_id_by_tree_iid.get(item_id)
-        entry = (self._latest_source_map or {}).get(source_id or "", {})
         file_path = str(entry.get("file_path") or ((entry.get("metadata") or {}).get("source_path")) or "").strip()
         if file_path and os.path.isfile(file_path):
             webbrowser.open_new_tab(f"file://{os.path.abspath(file_path)}")
@@ -6367,6 +6464,87 @@ class AgenticRAGApp:
             f"{excerpt}",
         )
         viewer.config(state="disabled")
+
+    def _selected_source_entry(self):
+        selection = self.sources_tree.selection() if hasattr(self, "sources_tree") else ()
+        if not selection:
+            return "", {}
+        item_id = selection[0]
+        source_id = (self._source_id_by_tree_iid or {}).get(item_id)
+        entry = (self._latest_source_map or {}).get(source_id or "", {})
+        return source_id or "", entry or {}
+
+    def _copy_selected_source_breadcrumb(self):
+        source_id, entry = self._selected_source_entry()
+        if not source_id:
+            messagebox.showinfo("Copy breadcrumb", "Select a source row first.")
+            return
+        breadcrumb = str(entry.get("breadcrumb") or "").strip()
+        if not breadcrumb:
+            messagebox.showinfo("Copy breadcrumb", "No breadcrumb is available for the selected source.")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(breadcrumb)
+        self.root.update_idletasks()
+        self.log(f"Copied breadcrumb for {entry.get('sid', source_id)}")
+
+    def _open_selected_source_section(self, event=None):
+        source_id, entry = self._selected_source_entry()
+        if not source_id:
+            messagebox.showinfo("Open section", "Select a source row first.")
+            return
+        node_id = str(entry.get("node_id") or "").strip()
+        breadcrumb = str(entry.get("breadcrumb") or "").strip()
+        if self._open_outline_node(node_id=node_id, breadcrumb=breadcrumb):
+            return
+        messagebox.showinfo(
+            "Open section",
+            "Could not locate a matching outline node from node_id or breadcrumb.",
+        )
+
+    def _open_outline_node(self, node_id="", breadcrumb=""):
+        if not hasattr(self, "document_outline_tree"):
+            return False
+        tree = self.document_outline_tree
+        if node_id and tree.exists(node_id):
+            self._focus_outline_iid(node_id)
+            return True
+        tokens = self._normalize_header_path_tokens(breadcrumb)
+        if not tokens:
+            return False
+        token_label = " > ".join(tokens).lower()
+        candidate_iids = []
+        for iid in tree.get_children(""):
+            candidate_iids.extend(self._flatten_tree_iids(tree, iid))
+        for iid in candidate_iids:
+            if str(tree.item(iid, "text") or "").strip().lower() == token_label:
+                self._focus_outline_iid(iid)
+                return True
+        for iid in candidate_iids:
+            path_text = str(tree.item(iid, "text") or "").strip().lower()
+            if token_label and token_label in path_text:
+                self._focus_outline_iid(iid)
+                return True
+        return False
+
+    def _focus_outline_iid(self, iid):
+        tree = self.document_outline_tree
+        parent = tree.parent(iid)
+        while parent:
+            tree.item(parent, open=True)
+            parent = tree.parent(parent)
+        tree.selection_set((iid,))
+        tree.focus(iid)
+        tree.see(iid)
+        self.log(f"Opened outline node: {iid}")
+
+    @staticmethod
+    def _flatten_tree_iids(tree, parent_iid=""):
+        out = []
+        for child in tree.get_children(parent_iid):
+            out.append(child)
+            out.extend(AgenticRAGApp._flatten_tree_iids(tree, child))
+        return out
 
     def _refresh_evidence_pane(self, source_map, incidents, grounding_html_path=""):
         self._source_id_by_tree_iid = {}
@@ -6395,6 +6573,9 @@ class AgenticRAGApp:
         parent_iid_by_group = {}
         for source_id in ordered_source_ids:
             entry = (source_map or {}).get(source_id, {})
+            breadcrumb = str(entry.get("deepread_header_path") or entry.get("header_path") or "").strip()
+            if breadcrumb:
+                entry["breadcrumb"] = breadcrumb
             header_group = self._header_path_label(entry.get("header_path")) if has_header_groups else ""
             parent_iid = ""
             if has_header_groups:
@@ -6412,7 +6593,6 @@ class AgenticRAGApp:
                     )
             sid = label_by_source[source_id]
             section_label = entry.get("section_hint") or entry.get("section") or entry.get("chapter") or "-"
-            breadcrumb = str(entry.get("deepread_header_path") or entry.get("header_path") or "").strip()
             if breadcrumb:
                 section_label = breadcrumb
             if section_label != "-" and entry.get("section_idx"):
@@ -11278,6 +11458,18 @@ class AgenticRAGApp:
                     "position_hint": str(enriched.get("position_hint") or "").strip(),
                     "header_path": str(enriched.get("header_path") or "").strip(),
                     "header_path_tokens": list(enriched.get("header_path_tokens") or []),
+                    "breadcrumb_tokens": self._normalize_header_path_tokens(
+                        enriched.get("breadcrumb_tokens")
+                        or enriched.get("breadcrumb")
+                        or enriched.get("header_path_tokens")
+                        or enriched.get("header_path")
+                        or enriched.get("source_section")
+                        or [
+                            enriched.get("section_title"),
+                            enriched.get("chapter_title"),
+                            enriched.get("source_title") or enriched.get("title") or enriched.get("source"),
+                        ]
+                    ),
                     "node_id": str(enriched.get("node_id") or "").strip(),
                     "speaker": str(enriched.get("speaker") or enriched.get("source_actor") or "").strip() or "unknown",
                     "month_bucket": str(enriched.get("month_key") or "undated"),
@@ -11296,6 +11488,7 @@ class AgenticRAGApp:
                     "deepread_header_path": str(enriched.get("deepread_header_path") or "").strip(),
                 },
             )
+            entry["breadcrumb"] = " > ".join(entry.get("breadcrumb_tokens") or [])
             chunk_id = str((metadata or {}).get("chunk_id", "")).strip()
             if chunk_id and chunk_id not in entry["chunk_ids"]:
                 entry["chunk_ids"].append(chunk_id)
@@ -11303,6 +11496,21 @@ class AgenticRAGApp:
                 entry["header_path"] = str(enriched.get("header_path") or "").strip()
             if not entry.get("header_path_tokens"):
                 entry["header_path_tokens"] = list(enriched.get("header_path_tokens") or [])
+            if not entry.get("breadcrumb_tokens"):
+                entry["breadcrumb_tokens"] = self._normalize_header_path_tokens(
+                    enriched.get("breadcrumb_tokens")
+                    or enriched.get("breadcrumb")
+                    or enriched.get("header_path_tokens")
+                    or enriched.get("header_path")
+                    or enriched.get("source_section")
+                    or [
+                        enriched.get("section_title"),
+                        enriched.get("chapter_title"),
+                        enriched.get("source_title") or enriched.get("title") or enriched.get("source"),
+                    ]
+                )
+            if not entry.get("breadcrumb"):
+                entry["breadcrumb"] = " > ".join(entry.get("breadcrumb_tokens") or [])
             if not entry.get("node_id"):
                 entry["node_id"] = str(enriched.get("node_id") or "").strip()
             if not entry.get("excerpt") and content:
@@ -11466,6 +11674,7 @@ class AgenticRAGApp:
             span_start=item.get("span_start") if isinstance(item.get("span_start"), int) else None,
             span_end=item.get("span_end") if isinstance(item.get("span_end"), int) else None,
             chunk_id=str(item.get("chunk_id", "")).strip(),
+            breadcrumb=str(item.get("breadcrumb") or "").strip(),
         )
 
     def _build_incident_id(self, incident):
@@ -11509,6 +11718,7 @@ class AgenticRAGApp:
                     "span_end": ref.span_end,
                     "quote_anchor": ref.quote,
                     "chunk_id": ref.chunk_id,
+                    "breadcrumb": ref.breadcrumb,
                 }
             )
         operational_impact = str(incident.operational_impact or "").strip()
@@ -12158,6 +12368,10 @@ class AgenticRAGApp:
             return []
         ordered_source_ids = sorted(source_map.keys())
         source_label_by_id = {source_id: f"S{idx}" for idx, source_id in enumerate(ordered_source_ids, start=1)}
+        breadcrumb_by_source_id = {
+            source_id: str((source_map.get(source_id) or {}).get("breadcrumb") or "").strip()
+            for source_id in ordered_source_ids
+        }
         docs_payload = []
         chunk_lookup = {}
         for doc in final_docs:
@@ -12186,6 +12400,7 @@ class AgenticRAGApp:
                         "source_label": source_label_by_id.get(source_id, ""),
                         "chunk_id": chunk_id,
                         "date": date,
+                        "breadcrumb": breadcrumb_by_source_id.get(source_id, ""),
                     },
                 }
             )
@@ -12212,7 +12427,10 @@ class AgenticRAGApp:
                     for ref in item.get("evidence_refs", []):
                         if not isinstance(ref, dict):
                             continue
-                        refs.append(self._evidence_ref_from_dict(ref))
+                        evidence_ref = self._evidence_ref_from_dict(ref)
+                        if not evidence_ref.breadcrumb:
+                            evidence_ref.breadcrumb = breadcrumb_by_source_id.get(evidence_ref.source_id, "")
+                        refs.append(evidence_ref)
                     incident = Incident(
                         incident_id="",
                         date_start=self._extract_iso_date(item.get("date_start")) or None,
@@ -12256,7 +12474,14 @@ class AgenticRAGApp:
         for item in payload.get("incidents", []):
             if not isinstance(item, dict):
                 continue
-            refs = [self._evidence_ref_from_dict(ref) for ref in item.get("evidence_refs", []) if isinstance(ref, dict)]
+            refs = []
+            for ref in item.get("evidence_refs", []):
+                if not isinstance(ref, dict):
+                    continue
+                evidence_ref = self._evidence_ref_from_dict(ref)
+                if not evidence_ref.breadcrumb:
+                    evidence_ref.breadcrumb = breadcrumb_by_source_id.get(evidence_ref.source_id, "")
+                refs.append(evidence_ref)
             incident = Incident(
                 incident_id="",
                 date_start=self._extract_iso_date(item.get("date_start")) or None,
