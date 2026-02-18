@@ -452,16 +452,16 @@ STYLE_CONFIG = {
     "radius": 12,
     "radius_sm": 6,
     "radius_lg": 16,
-    "padding": {"sm": 6, "md": 10, "lg": 16},
+    "padding": {"sm": 10, "md": 14, "lg": 22},
     "type_scale": {
-        "h1": {"size": 18, "weight": "bold"},
-        "h2": {"size": 14, "weight": "bold"},
-        "h3": {"size": 12, "weight": "bold"},
-        "body": {"size": 10, "weight": "normal"},
-        "body_bold": {"size": 10, "weight": "bold"},
-        "caption": {"size": 9, "weight": "normal"},
-        "code": {"size": 9, "weight": "normal"},
-        "overline": {"size": 8, "weight": "bold"},
+        "h1": {"size": 22, "weight": "bold"},
+        "h2": {"size": 18, "weight": "bold"},
+        "h3": {"size": 16, "weight": "bold"},
+        "body": {"size": 13, "weight": "normal"},
+        "body_bold": {"size": 13, "weight": "bold"},
+        "caption": {"size": 11, "weight": "normal"},
+        "code": {"size": 11, "weight": "normal"},
+        "overline": {"size": 10, "weight": "bold"},
     },
     "animation": {
         "collapse_duration_ms": 200,
@@ -476,6 +476,8 @@ STYLE_CONFIG = {
             "surface": "#161B22",
             "surface_elevated": "#1F2630",
             "surface_alt": "#212C3D",
+            "sidebar_bg": "#131923",
+            "content_bg": "#1A2230",
             "text": "#E8EEF8",
             "muted_text": "#96A6BE",
             "primary": "#58A6FF",
@@ -511,6 +513,8 @@ STYLE_CONFIG = {
             "surface": "#FFFFFF",
             "surface_elevated": "#F2F4F8",
             "surface_alt": "#EEF1F6",
+            "sidebar_bg": "#EAEFF5",
+            "content_bg": "#FFFFFF",
             "text": "#101114",
             "muted_text": "#3E4655",
             "primary": "#0969DA",
@@ -546,6 +550,8 @@ STYLE_CONFIG = {
             "surface": "#161B22",
             "surface_elevated": "#232A35",
             "surface_alt": "#2A303B",
+            "sidebar_bg": "#1C2430",
+            "content_bg": "#222A35",
             "text": "#F7F8FA",
             "muted_text": "#B6C0CE",
             "primary": "#58A6FF",
@@ -590,7 +596,7 @@ def _pal(palette, key, fallback_key=None, default=None):
     return default
 
 
-UI_SPACING = {"xs": 4, "s": 8, "m": 12, "l": 18, "xl": 24, "xxl": 32}
+UI_SPACING = {"xs": 6, "s": 10, "m": 15, "l": 22, "xl": 30, "xxl": 40}
 FORM_WIDTHS = {"label": 22, "input": 28}
 
 try:
@@ -2909,16 +2915,19 @@ class AgenticRAGApp:
         self._apply_theme()
 
         outer_pad = STYLE_CONFIG["padding"]["md"]
+        sidebar_bg = self.theme_palette.get("sidebar_bg", self.theme_palette.get("surface_alt", self.theme_palette.get("surface", "#161B22")))
+        content_bg = self.theme_palette.get("content_bg", self.theme_palette.get("surface", "#161B22"))
         self.root.grid_columnconfigure(0, minsize=200, weight=0)
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
 
-        sidebar_style = "Card.TFrame" if self.ui_backend != "ctk" else None
-        self.sidebar_frame = self.create_frame(self.root, **({"style": sidebar_style} if sidebar_style else {}))
+        sidebar_style = "Sidebar.TFrame" if self.ui_backend != "ctk" else None
+        self.sidebar_frame = self.create_frame(self.root, **({"style": sidebar_style} if sidebar_style else {"fg_color": sidebar_bg}))
         self.sidebar_frame.grid(row=0, column=0, sticky="ns", padx=(outer_pad, UI_SPACING["s"]), pady=(outer_pad, UI_SPACING["s"]))
         self.sidebar_frame.grid_columnconfigure(0, weight=1)
 
-        self.main_content_frame = self.create_frame(self.root)
+        main_style = "MainContent.TFrame" if self.ui_backend != "ctk" else None
+        self.main_content_frame = self.create_frame(self.root, **({"style": main_style} if main_style else {"fg_color": content_bg}))
         self.main_content_frame.grid(row=0, column=1, sticky="nsew", padx=(0, outer_pad), pady=(outer_pad, UI_SPACING["s"]))
         self.main_content_frame.grid_rowconfigure(0, weight=1)
         self.main_content_frame.grid_columnconfigure(0, weight=1)
@@ -2940,6 +2949,7 @@ class AgenticRAGApp:
                     text=label,
                     command=lambda key=view_key: self._switch_main_view(key),
                     fg_color="transparent",
+                    height=38,
                     anchor="w",
                     hover_color=self.theme_palette.get("surface_alt", self.theme_palette.get("surface", "#161B22")),
                     text_color=self.theme_palette.get("text", "#E8EEF8"),
@@ -3136,15 +3146,17 @@ class AgenticRAGApp:
         style.configure(".", background=palette["bg"], foreground=palette["text"], fieldbackground=palette["surface_alt"])
         style.configure("TFrame", background=palette["bg"], borderwidth=0, relief="flat")
         style.configure("Card.TFrame", background=palette["surface"], borderwidth=0, relief="flat")
+        style.configure("Sidebar.TFrame", background=get("sidebar_bg", fallback="surface_alt", default=palette["surface_alt"]), borderwidth=0, relief="flat")
+        style.configure("MainContent.TFrame", background=get("content_bg", fallback="surface", default=palette["surface"]), borderwidth=0, relief="flat")
         style.configure("Card.Elevated.TFrame", background=palette["surface"], borderwidth=1, bordercolor=palette["outline"], relief="flat")
         style.configure("Card.Flat.TFrame", background=palette["surface_alt"], borderwidth=0, relief="flat")
         style.configure("StatusBar.TFrame", background=palette["surface"], borderwidth=0, relief="flat")
         style.configure("CollapsibleHeader.TFrame", background=palette["surface"], borderwidth=0, relief="flat")
         style.configure("TLabelframe", background=palette["surface"], bordercolor=palette["outline"], borderwidth=0, relief="flat")
         style.configure("TLabelframe.Label", background=palette["surface"], foreground=palette["text"], font=self._fonts["body_bold"])
-        style.configure("TLabel", background=palette["surface"], foreground=palette["text"], font=self._fonts["body"])
+        style.configure("TLabel", background=get("content_bg", fallback="surface", default=palette["surface"]), foreground=palette["text"], font=self._fonts["body"])
         style.configure("Bold.TLabel", background=palette["surface"], foreground=palette["text"], font=self._fonts["body_bold"])
-        style.configure("Header.TLabel", background=palette["surface"], foreground=palette["text"], font=self._fonts["h2"])
+        style.configure("Header.TLabel", background=get("sidebar_bg", fallback="surface_alt", default=palette["surface_alt"]), foreground=palette["text"], font=self._fonts["h2"])
         style.configure("Title.TLabel", background=palette["surface"], foreground=palette["text"], font=self._fonts["h1"])
         style.configure("Muted.TLabel", background=palette["surface"], foreground=palette["muted_text"], font=self._fonts["body"])
         style.configure("Caption.TLabel", background=palette["surface"], foreground=palette["muted_text"], font=self._fonts["caption"])
@@ -3231,7 +3243,12 @@ class AgenticRAGApp:
                     "corner_radius": STYLE_CONFIG.get("radius", 12),
                 }
                 if class_name == "CTkFrame":
-                    base_kwargs["fg_color"] = pal("surface", default="#161B22")
+                    if widget is getattr(self, "sidebar_frame", None):
+                        base_kwargs["fg_color"] = pal("sidebar_bg", fallback_key="surface_alt", default="#212C3D")
+                    elif widget is getattr(self, "main_content_frame", None):
+                        base_kwargs["fg_color"] = pal("content_bg", fallback_key="surface", default="#161B22")
+                    else:
+                        base_kwargs["fg_color"] = pal("surface", default="#161B22")
                 elif class_name == "CTkLabel":
                     base_kwargs["fg_color"] = "transparent"
                     base_kwargs["text_color"] = pal("text", default="#E8EEF8")
@@ -3243,6 +3260,7 @@ class AgenticRAGApp:
                             "hover_color": pal("primary_hover", fallback_key="secondary", default="#79B8FF"),
                             "border_color": pal("primary_pressed", fallback_key="primary", default="#3D8BDE"),
                             "border_width": 0,
+                            "height": 38,
                         }
                     )
                 elif class_name == "CTkEntry":
@@ -4849,6 +4867,7 @@ class AgenticRAGApp:
         normalized.setdefault("hover_color", hover_color)
         normalized.setdefault("text_color", text_color)
         normalized.setdefault("corner_radius", STYLE_CONFIG.get("radius", 12))
+        normalized.setdefault("height", 38)
         return normalized
 
     def create_frame(self, parent, *, kind="frame", **kwargs):
