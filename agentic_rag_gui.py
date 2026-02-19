@@ -1535,6 +1535,7 @@ class AgenticRAGApp:
             "openai": tk.StringVar(),
             "anthropic": tk.StringVar(),
             "google": tk.StringVar(),
+            "xai": tk.StringVar(),
             "cohere": tk.StringVar(),
             "weaviate_url": tk.StringVar(value="http://localhost:8080"),
             "weaviate_key": tk.StringVar(),
@@ -4321,14 +4322,44 @@ class AgenticRAGApp:
 
     def _get_llm_model_options(self, provider):
         options = {
-            "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "custom"],
+            "openai": [
+                "gpt-4.1",
+                "gpt-4.1-mini",
+                "gpt-4.1-nano",
+                "gpt-4o",
+                "gpt-4o-mini",
+                "o3",
+                "o3-pro",
+                "o4-mini",
+                "custom",
+            ],
             "anthropic": [
                 "claude-opus-4-6",
+                "claude-sonnet-4-6",
+                "claude-haiku-4-6",
+                "claude-3-7-sonnet-20250219",
                 "claude-3-5-sonnet-20240620",
                 "claude-3-5-haiku-20241022",
                 "custom",
             ],
-            "google": ["gemini-1.5-flash", "gemini-1.5-pro", "custom"],
+            "google": [
+                "gemini-3-pro-preview",
+                "gemini-3-flash",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-2.0-flash",
+                "gemini-2.0-flash-lite",
+                "gemini-1.5-pro",
+                "gemini-1.5-flash",
+                "custom",
+            ],
+            "xai": [
+                "grok-4",
+                "grok-4-heavy",
+                "grok-3",
+                "grok-3-mini",
+                "custom",
+            ],
             "local_lm_studio": ["custom"],
             "local_gguf": ["custom"],
             "mock": ["mock-test-v1"],
@@ -4338,7 +4369,7 @@ class AgenticRAGApp:
     def _get_embedding_model_options(self, provider):
         options = {
             "openai": ["text-embedding-3-small", "text-embedding-3-large", "custom"],
-            "google": ["models/embedding-001", "custom"],
+            "google": ["models/text-embedding-004", "models/text-multilingual-embedding-002", "models/embedding-001", "custom"],
             "local_huggingface": ["all-MiniLM-L6-v2", "custom"],
             "local_sentence_transformers": ["sentence-transformers/all-MiniLM-L6-v2", "custom"],
             "voyage": [
@@ -4426,10 +4457,28 @@ class AgenticRAGApp:
         self._update_current_state_strip()
 
     def _on_llm_model_change(self, event=None):
+        if self.llm_model.get() == "custom":
+            entered = simpledialog.askstring(
+                "Custom Generation Model",
+                "Enter the model name/ID to use:",
+                initialvalue=self.llm_model_custom.get(),
+                parent=self,
+            )
+            if entered and entered.strip():
+                self.llm_model_custom.set(entered.strip())
         self._toggle_custom_entries()
         self._update_current_state_strip()
 
     def _on_embedding_model_change(self, event=None):
+        if self.embedding_model.get() == "custom":
+            entered = simpledialog.askstring(
+                "Custom Embedding Model",
+                "Enter the embedding model name/ID to use:",
+                initialvalue=self.embedding_model_custom.get(),
+                parent=self,
+            )
+            if entered and entered.strip():
+                self.embedding_model_custom.set(entered.strip())
         self._toggle_custom_entries()
         self._refresh_compatibility_warning()
         self._update_current_state_strip()
@@ -5829,7 +5878,7 @@ class AgenticRAGApp:
         cb_llm = self.create_combobox(
             llm_frame,
             textvariable=self.llm_provider,
-            values=["openai", "anthropic", "google", "local_lm_studio", "local_gguf", "mock"],
+            values=["openai", "anthropic", "google", "xai", "local_lm_studio", "local_gguf", "mock"],
             state="readonly",
         )
         cb_llm.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
@@ -6120,6 +6169,7 @@ class AgenticRAGApp:
             ("OpenAI API Key:", "openai"),
             ("Anthropic API Key:", "anthropic"),
             ("Google Gemini Key:", "google"),
+            ("xAI (Grok) API Key:", "xai"),
             ("Cohere API Key (For Reranking):", "cohere"),
             ("Weaviate API Key (Optional):", "weaviate_key"),
             ("Voyage API Key:", "voyage"),
@@ -7723,7 +7773,7 @@ class AgenticRAGApp:
 
     def _render_wizard_step_three(self):
         self._wizard_step_label.config(text="Step 3 of 6: Choose LLM and embedding providers/models")
-        llm_values = ["openai", "anthropic", "google", "local_lm_studio", "local_gguf"]
+        llm_values = ["openai", "anthropic", "google", "xai", "local_lm_studio", "local_gguf"]
         emb_values = ["voyage", "openai", "google", "local_huggingface", "local_sentence_transformers"]
         self._wizard_llm_provider = tk.StringVar(value=self._wizard_state.get("llm_provider", self.llm_provider.get()))
         self._wizard_embedding_provider = tk.StringVar(value=self._wizard_state.get("embedding_provider", self.embedding_provider.get()))
@@ -7742,8 +7792,13 @@ class AgenticRAGApp:
         self._wizard_emb_model_combo = ttk.Combobox(emb_frame, textvariable=self._wizard_embedding_model, values=self._get_embedding_model_options(self._wizard_embedding_provider.get()), state="readonly")
         self._wizard_emb_model_combo.pack(fill="x", pady=(6, 0))
 
+        self._wizard_llm_model_custom = tk.StringVar()
+        self._wizard_emb_model_custom = tk.StringVar()
+
         self._wizard_llm_provider.trace_add("write", lambda *_: self._wizard_refresh_model_options())
         self._wizard_embedding_provider.trace_add("write", lambda *_: self._wizard_refresh_model_options())
+        self._wizard_llm_model.trace_add("write", lambda *_: self._wizard_prompt_custom_llm_model())
+        self._wizard_embedding_model.trace_add("write", lambda *_: self._wizard_prompt_custom_emb_model())
 
     def _wizard_refresh_model_options(self):
         llm_options = self._get_llm_model_options(self._wizard_llm_provider.get())
@@ -7755,9 +7810,35 @@ class AgenticRAGApp:
         if self._wizard_embedding_model.get() not in emb_options:
             self._wizard_embedding_model.set(emb_options[0])
 
+    def _wizard_prompt_custom_llm_model(self):
+        if not hasattr(self, "_wizard_llm_model") or self._wizard_llm_model.get() != "custom":
+            return
+        entered = simpledialog.askstring(
+            "Custom Generation Model",
+            "Enter the model name/ID to use:",
+            initialvalue=getattr(self, "_wizard_llm_model_custom", tk.StringVar()).get(),
+            parent=self,
+        )
+        if entered and entered.strip():
+            if hasattr(self, "_wizard_llm_model_custom"):
+                self._wizard_llm_model_custom.set(entered.strip())
+
+    def _wizard_prompt_custom_emb_model(self):
+        if not hasattr(self, "_wizard_embedding_model") or self._wizard_embedding_model.get() != "custom":
+            return
+        entered = simpledialog.askstring(
+            "Custom Embedding Model",
+            "Enter the embedding model name/ID to use:",
+            initialvalue=getattr(self, "_wizard_emb_model_custom", tk.StringVar()).get(),
+            parent=self,
+        )
+        if entered and entered.strip():
+            if hasattr(self, "_wizard_emb_model_custom"):
+                self._wizard_emb_model_custom.set(entered.strip())
+
     def _render_wizard_step_four(self):
         self._wizard_step_label.config(text="Step 4 of 6: Provide required API keys")
-        key_map = {"openai": "openai", "anthropic": "anthropic", "google": "google", "voyage": "voyage", "cohere": "cohere"}
+        key_map = {"openai": "openai", "anthropic": "anthropic", "google": "google", "xai": "xai", "voyage": "voyage", "cohere": "cohere"}
         required = []
         for provider in (self._wizard_state.get("llm_provider"), self._wizard_state.get("embedding_provider")):
             key_name = key_map.get(provider)
@@ -7870,15 +7951,36 @@ class AgenticRAGApp:
 
         # LLM pricing: (input USD/M, output USD/M)
         LLM_PRICE = {
-            ("openai", "gpt-4o"): (5.0, 15.0),
-            ("openai", "gpt-4o-mini"): (0.15, 0.60),
+            # OpenAI
             ("openai", "gpt-4.1"): (2.0, 8.0),
             ("openai", "gpt-4.1-mini"): (0.40, 1.60),
+            ("openai", "gpt-4.1-nano"): (0.10, 0.40),
+            ("openai", "gpt-4o"): (2.50, 10.0),
+            ("openai", "gpt-4o-mini"): (0.15, 0.60),
+            ("openai", "o3"): (10.0, 40.0),
+            ("openai", "o3-pro"): (20.0, 80.0),
+            ("openai", "o4-mini"): (1.10, 4.40),
+            # Anthropic
             ("anthropic", "claude-opus-4-6"): (15.0, 75.0),
+            ("anthropic", "claude-sonnet-4-6"): (3.0, 15.0),
+            ("anthropic", "claude-haiku-4-6"): (0.80, 4.0),
+            ("anthropic", "claude-3-7-sonnet-20250219"): (3.0, 15.0),
             ("anthropic", "claude-3-5-sonnet-20240620"): (3.0, 15.0),
             ("anthropic", "claude-3-5-haiku-20241022"): (0.80, 4.0),
+            # Google
+            ("google", "gemini-3-pro-preview"): (3.50, 10.50),
+            ("google", "gemini-3-flash"): (0.30, 0.90),
+            ("google", "gemini-2.5-pro"): (1.25, 10.0),
+            ("google", "gemini-2.5-flash"): (0.15, 0.60),
+            ("google", "gemini-2.0-flash"): (0.10, 0.40),
+            ("google", "gemini-2.0-flash-lite"): (0.075, 0.30),
             ("google", "gemini-1.5-flash"): (0.075, 0.30),
             ("google", "gemini-1.5-pro"): (1.25, 5.0),
+            # xAI
+            ("xai", "grok-4"): (3.0, 15.0),
+            ("xai", "grok-4-heavy"): (8.0, 40.0),
+            ("xai", "grok-3"): (3.0, 15.0),
+            ("xai", "grok-3-mini"): (0.30, 0.50),
         }
         llm_in_price, llm_out_price = LLM_PRICE.get((llm_provider, llm_model), (0.0, 0.0))
 
@@ -7965,9 +8067,23 @@ class AgenticRAGApp:
             return True
         if step == 3:
             self._wizard_state["llm_provider"] = self._wizard_llm_provider.get()
-            self._wizard_state["llm_model"] = self._wizard_llm_model.get()
+            llm_model_val = self._wizard_llm_model.get()
+            if llm_model_val == "custom":
+                custom_val = getattr(self, "_wizard_llm_model_custom", tk.StringVar()).get().strip()
+                if not custom_val:
+                    messagebox.showerror("Setup Wizard", "Please enter a custom model name.")
+                    return False
+                llm_model_val = custom_val
+            self._wizard_state["llm_model"] = llm_model_val
             self._wizard_state["embedding_provider"] = self._wizard_embedding_provider.get()
-            self._wizard_state["embedding_model"] = self._wizard_embedding_model.get()
+            emb_model_val = self._wizard_embedding_model.get()
+            if emb_model_val == "custom":
+                custom_emb = getattr(self, "_wizard_emb_model_custom", tk.StringVar()).get().strip()
+                if not custom_emb:
+                    messagebox.showerror("Setup Wizard", "Please enter a custom embedding model name.")
+                    return False
+                emb_model_val = custom_emb
+            self._wizard_state["embedding_model"] = emb_model_val
             return True
         if step == 4:
             return self._wizard_apply_api_keys_from_form()
@@ -11752,6 +11868,7 @@ class AgenticRAGApp:
                 "ChatGoogleGenerativeAI",
                 ["langchain-google-genai"],
             ),
+            "xai": ("langchain_openai", "ChatOpenAI", ["langchain-openai"]),
             "local_lm_studio": ("langchain_openai", "ChatOpenAI", ["langchain-openai"]),
             "local_gguf": ("llama_cpp", "Llama", ["llama-cpp-python"]),
         }
@@ -12199,9 +12316,10 @@ class AgenticRAGApp:
             "openai": {"max_context_tokens": 128000, "max_output_tokens": 4096},
             "anthropic": {
                 "max_context_tokens": 200000,
-                "max_output_tokens": 4096,
+                "max_output_tokens": 8192,
             },
-            "google": {"max_context_tokens": 32000, "max_output_tokens": 4096},
+            "google": {"max_context_tokens": 1000000, "max_output_tokens": 8192},
+            "xai": {"max_context_tokens": 131072, "max_output_tokens": 8192},
             "local_lm_studio": {
                 "max_context_tokens": 8192,
                 "max_output_tokens": 2048,
@@ -12213,8 +12331,9 @@ class AgenticRAGApp:
 
         model_overrides = {
             "openai": [
+                (r"gpt-4\.1$|gpt-4\.1-mini|gpt-4\.1-nano", 1000000, 32768),
                 (r"gpt-4o|o4-mini", 128000, 16384),
-                (r"gpt-4\.1", 1000000, 16384),
+                (r"o3-pro|o3$", 200000, 100000),
                 (r"gpt-4-turbo", 128000, 4096),
                 (r"gpt-4", 8192, 2048),
                 (r"gpt-3\.5-turbo", 16384, 4096),
@@ -12224,6 +12343,19 @@ class AgenticRAGApp:
                 (r"claude-3\.7-sonnet", 200000, 8192),
                 (r"claude-3\.5-(sonnet|haiku)", 200000, 8192),
                 (r"claude-3-(opus|sonnet|haiku)", 200000, 4096),
+            ],
+            "google": [
+                (r"gemini-3", 1000000, 8192),
+                (r"gemini-2\.5-pro", 1000000, 8192),
+                (r"gemini-2\.5-flash", 1000000, 8192),
+                (r"gemini-2\.0-flash", 1000000, 8192),
+                (r"gemini-1\.5-pro", 2000000, 8192),
+                (r"gemini-1\.5-flash", 1000000, 8192),
+            ],
+            "xai": [
+                (r"grok-4-heavy", 131072, 8192),
+                (r"grok-4$", 131072, 8192),
+                (r"grok-3", 131072, 8192),
             ],
         }
         for pattern, max_context_tokens, max_output_tokens in model_overrides.get(
@@ -15400,6 +15532,7 @@ class AgenticRAGApp:
                 "openai": self.api_keys["openai"].get(),
                 "anthropic": self.api_keys["anthropic"].get(),
                 "google": self.api_keys["google"].get(),
+                "xai": self.api_keys["xai"].get(),
             }
             local_url = self.local_llm_url.get()
             local_gguf_model_path = self.local_gguf_model_path.get()
@@ -15469,6 +15602,24 @@ class AgenticRAGApp:
                 model=model_name,
                 temperature=temperature,
                 max_output_tokens=output_max_tokens,
+            )
+
+        if provider == "xai":
+            try:
+                from langchain_openai import ChatOpenAI
+            except ImportError as err:
+                self._prompt_dependency_install(["langchain-openai"], "xAI (Grok) LLM", err)
+                raise
+
+            key = key_values.get("xai", "")
+            if not key:
+                raise ValueError("xAI API Key missing")
+            return ChatOpenAI(
+                base_url="https://api.x.ai/v1",
+                api_key=key,
+                model=model_name,
+                temperature=temperature,
+                max_tokens=output_max_tokens,
             )
 
         if provider == "local_lm_studio":
@@ -16449,6 +16600,7 @@ class AgenticRAGApp:
                     "openai": self.api_keys["openai"].get(),
                     "anthropic": self.api_keys["anthropic"].get(),
                     "google": self.api_keys["google"].get(),
+                    "xai": self.api_keys["xai"].get(),
                 },
                 "local_url": self.local_llm_url.get(),
                 "local_gguf_model_path": self.local_gguf_model_path.get(),
