@@ -14263,6 +14263,141 @@ class AgenticRAGApp:
 
         return "\n".join(cleaned_lines).strip()
 
+    def _is_invalid_evidence_pack_answer(self, answer_text):
+        text = str(answer_text or "")
+        if not text.strip():
+            return True, ["empty answer"]
+
+        lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+        non_source_lines = [
+            line
+            for line in lines
+            if line.strip() != "Sources:" and not re.match(r"^-\s*S\d+\s*->", line.strip())
+        ]
+        if not non_source_lines:
+            return True, ["source-only output"]
+        if not re.search(r"[A-Za-z0-9]", " ".join(non_source_lines)):
+            return True, ["no readable content"]
+
+        lowered = text.lower()
+        has_overview = "one-page overview" in lowered
+        has_timeline = "timeline" in lowered and "| date |" in lowered
+        has_key = "key incidents" in lowered
+        has_supporting = "supporting incidents" in lowered
+        missing = []
+        if not has_overview:
+            missing.append("missing one-page overview section")
+        if not has_timeline:
+            missing.append("missing timeline table section")
+        if not has_key:
+            missing.append("missing key incidents section")
+        if not has_supporting:
+            missing.append("missing supporting incidents section")
+        if missing:
+            return True, missing
+        return False, []
+
+    def _synthesize_evidence_pack_fallback(self, context_text, synthesis_cards=None):
+        incidents = list(self._latest_incidents or [])
+        if not incidents:
+            for card in synthesis_cards or []:
+                refs = []
+                for ref in card.get("evidence_refs") or card.get("evidence") or []:
+                    label = str(ref).strip()
+                    if re.match(r"^S\d+$", label) and label not in refs:
+                        refs.append(label)
+                incidents.append(
+                    {
+                        "date": card.get("when") or "unknown",
+                        "actors": card.get("actors") or [],
+                        "channel": card.get("channel") or "unknown",
+                        "what_happened": card.get("what_happened") or "No supported details extracted.",
+                        "impact": card.get("impact") or {},
+                        "supporting_chunks": refs,
+                        "people": card.get("people") or [],
+                    }
+                )
+
+        ordered = sorted(incidents, key=self._incident_sort_key_for_pack)
+        key_incidents = ordered[:8]
+        supporting_incidents = ordered[8:12]
+
+        all_refs = []
+        for item in ordered:
+            for ref in item.get("supporting_chunks") or []:
+                label = str(ref).strip()
+                if re.match(r"^S\d+$", label) and label not in all_refs:
+                    all_refs.append(label)
+        if not all_refs:
+            all_refs = sorted([label for label in self._extract_sources(context_text).keys() if re.match(r"^S\d+$", label)])[:6]
+        overview_ref = f" [{all_refs[0]}]" if all_refs else ""
+        channels = sorted({str(item.get("channel") or "unknown").strip().lower() for item in ordered if str(item.get("channel") or "").strip()})
+
+        lines = [
+            "## One-page overview",
+            f"- Allegations are summarized from {len(ordered)} supported incidents.{overview_ref}",
+            f"- Themes emphasize chronology, channel patterns ({', '.join(channels[:4]) or 'unknown'}), and documented impact.{overview_ref}",
+            f"- Remedies sought are limited to requests explicitly present in available evidence.{overview_ref}",
+            "",
+            "## Timeline table",
+            self._build_timeline_table(ordered),
+            "",
+            "## Key incidents",
+        ]
+        if key_incidents:
+            for item in key_incidents:
+                refs = [str(ref).strip() for ref in (item.get("supporting_chunks") or []) if re.match(r"^S\d+$", str(ref).strip())]
+                cites = f" [{', '.join(dict.fromkeys(refs))}]" if refs else ""
+                actors = ", ".join([str(x).strip() for x in (item.get("actors") or []) if str(x).strip()]) or "unknown"
+                lines.append(
+                    "- Date: {date}; Actors: {actors}; Channel: {channel}; What happened: {what}; Impact: {impact}.{cites}".format(
+                        date=str(item.get("date") or item.get("month_key") or "unknown").strip(),
+                        actors=actors,
+                        channel=str(item.get("channel") or "unknown").strip(),
+                        what=re.sub(r"\s+", " ", str(item.get("what_happened") or "No supported details extracted.").strip())[:220],
+                        impact=re.sub(r"\s+", " ", str(item.get("impact") or "n/a").strip())[:160],
+                        cites=cites,
+                    )
+                )
+        else:
+            lines.append(f"- No fully parsed incident objects were retained; preserving available source references only.{overview_ref}")
+
+        lines.append("\n## Supporting incidents")
+        if supporting_incidents:
+            for item in supporting_incidents[:4]:
+                refs = [str(ref).strip() for ref in (item.get("supporting_chunks") or []) if re.match(r"^S\d+$", str(ref).strip())]
+                cites = f" [{', '.join(dict.fromkeys(refs))}]" if refs else ""
+                lines.append(
+                    "- {date} | {channel} | {what}.{cites}".format(
+                        date=str(item.get("date") or item.get("month_key") or "unknown").strip(),
+                        channel=str(item.get("channel") or "unknown").strip(),
+                        what=re.sub(r"\s+", " ", str(item.get("what_happened") or "No supported details extracted.").strip())[:220],
+                        cites=cites,
+                    )
+                )
+        else:
+            lines.append(f"- Additional supporting incidents were not extracted beyond the key set.{overview_ref}")
+
+        if self._has_witness_data(ordered):
+            lines.append("\n## Witness list")
+            seen_witness = set()
+            for item in ordered:
+                refs = [str(ref).strip() for ref in (item.get("supporting_chunks") or []) if re.match(r"^S\d+$", str(ref).strip())]
+                cites = f" [{', '.join(dict.fromkeys(refs))}]" if refs else ""
+                for person in item.get("people") or []:
+                    name = str(person).strip()
+                    if name and name.lower() not in seen_witness:
+                        seen_witness.add(name.lower())
+                        lines.append(f"- {name}{cites}")
+
+        lines.append("\n## Appendix: Source Cards list")
+        if all_refs:
+            for label in all_refs[:16]:
+                lines.append(f"- {label}")
+        else:
+            lines.append("- No S# source labels available in current context.")
+        return "\n".join(lines)
+
     @staticmethod
     def _infer_theme_from_incident(incident):
         text = " ".join(
@@ -15413,14 +15548,47 @@ class AgenticRAGApp:
         mode_name = self._normalize_mode_name(mode_name)
         agentic_mode = self.agentic_mode.get()
         if evidence_pack_mode:
+            trigger_parts = []
             answer_text = self._verify_evidence_pack_claims(
                 answer_text, synthesis_cards or self._last_evidence_pack_synthesis_cards
             )
+            invalid, invalid_reasons = self._is_invalid_evidence_pack_answer(answer_text)
+            if invalid:
+                trigger_parts.append("repair")
+                self.log(
+                    "Evidence Pack verification produced invalid structure; running targeted repair. Reasons: "
+                    + "; ".join(invalid_reasons)
+                )
+                failures = [
+                    "Evidence Pack constraints required: include One-page overview, Timeline table, Key incidents, Supporting incidents.",
+                ] + list(invalid_reasons)
+                answer_text = self._repair_answer(answer_text, context_text, failures, "Evidence Pack")
+                answer_text = self._verify_evidence_pack_claims(
+                    answer_text, synthesis_cards or self._last_evidence_pack_synthesis_cards
+                )
+
+            invalid_after_repair, post_reasons = self._is_invalid_evidence_pack_answer(answer_text)
+            if invalid_after_repair:
+                trigger_parts.append("fallback")
+                self.log(
+                    "Evidence Pack targeted repair remained invalid; synthesizing deterministic fallback. Reasons: "
+                    + "; ".join(post_reasons)
+                )
+                answer_text = self._synthesize_evidence_pack_fallback(
+                    context_text, synthesis_cards or self._last_evidence_pack_synthesis_cards
+                )
+                answer_text = self._verify_evidence_pack_claims(
+                    answer_text, synthesis_cards or self._last_evidence_pack_synthesis_cards
+                )
+
+            answer_text = self._ensure_evidence_pack_template(answer_text, list(self._latest_incidents or []))
             if iteration_id is not None:
                 self.log(
                     "Iter "
                     f"{iteration_id} repair | style={output_style}, "
-                    f"agentic={int(agentic_mode)}, triggered=0, failures=none"
+                    f"agentic={int(agentic_mode)}, triggered={1 if trigger_parts else 0}, "
+                    f"path={'+'.join(trigger_parts) if trigger_parts else 'none'}, "
+                    f"failures={'; '.join(invalid_reasons) if invalid_reasons else 'none'}"
                 )
             return answer_text
 
