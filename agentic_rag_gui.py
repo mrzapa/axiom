@@ -100,26 +100,8 @@ transparent sourcing and predictable outputs.
 """
 
 
-class MockEmbeddings:
-    """Small deterministic embeddings backend for local/test use."""
-
-    def __init__(self, dimensions: int = 32):
-        self.dimensions = max(8, int(dimensions))
-
-    def _embed(self, text: str):
-        payload = (text or "").encode("utf-8", errors="ignore")
-        digest = hashlib.sha256(payload).digest()
-        values = []
-        for idx in range(self.dimensions):
-            byte = digest[idx % len(digest)]
-            values.append((byte / 255.0) * 2.0 - 1.0)
-        return values
-
-    def embed_documents(self, texts):
-        return [self._embed(text) for text in texts]
-
-    def embed_query(self, text):
-        return self._embed(text)
+# MockEmbeddings has been moved to axiom_app.utils.mock_embeddings
+from axiom_app.utils.mock_embeddings import MockEmbeddings  # noqa: E402
 
 
 # SHTNode and build_sht_tree have been moved to axiom_app.models.sht
