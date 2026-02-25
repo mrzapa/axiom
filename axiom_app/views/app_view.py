@@ -85,6 +85,17 @@ class AppView:
         """Update the status-bar text."""
         self._status_var.set(message)
 
+    def set_progress(self, current: int, total: int) -> None:
+        """Reflect task progress in the UI.
+
+        Placeholder — a ``ttk.Progressbar`` will be wired here when the
+        ingestion panel is migrated.  For now, we fall back to a status-bar
+        percentage so the controller can call this unconditionally.
+        """
+        if total > 0:
+            pct = int(current / total * 100)
+            self._status_var.set(f"{current}/{total}  ({pct} %)")
+
     def show(self) -> None:
         """Make the window visible (call after controller.wire_events())."""
         self.root.deiconify()
