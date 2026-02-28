@@ -31,15 +31,13 @@ jobs:
       - name: Build Axiom MVC executable
         shell: bash
         run: |
-          # NOTE: no --icon is passed by default because repo currently has
-          # logo.png (not .ico); Windows PyInstaller requires .ico/.exe unless
-          # Pillow is installed for conversion.
           pyinstaller \
             --noconfirm \
             --clean \
             --name Axiom \
             --windowed \
             --onefile \
+            --icon logo.png \
             --add-data "axiom_app/default_settings.json;axiom_app" \
             --hidden-import tkinter \
             --collect-submodules axiom_app \
