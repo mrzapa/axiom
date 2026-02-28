@@ -407,6 +407,7 @@ class AppController:
         ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         hits   = ranked[:top_k]
 
+        selected_mode = self.model.settings.get("selected_mode", "Q&A")
         sep = "─" * 52
         lines: list[str] = [f"You: {prompt}\n", sep + "\n"]
 
