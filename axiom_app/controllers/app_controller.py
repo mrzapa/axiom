@@ -2,13 +2,12 @@
 
 AppController mediates between AppModel (state) and AppView (UI).
 
-Implemented vertical slice
---------------------------
+Implemented actions
+-------------------
 * on_open_files()     — file dialog → model.documents → view listbox
-* on_build_index()    — background chunking + MockEmbeddings → model.chunks/embeddings
-* on_send_prompt()    — cosine similarity search → templated response in Chat tab
-
-All other action stubs remain as TODO/pass.
+* on_build_index()    — background chunking + embedding (any provider) → model
+* on_send_prompt()    — retrieve → LLM synthesis → chat (any provider)
+* on_save_settings()  — coerce, validate, persist settings
 
 Background task contract
 ------------------------
@@ -28,19 +27,22 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from axiom_app.utils.background import BackgroundRunner, CancelToken
 from axiom_app.utils.document_loader import KREUZBERG_EXTENSIONS, is_kreuzberg_available, load_document
-from axiom_app.utils.llm_backends import LocalGGUFBackend, LocalGGUFConfig
-from axiom_app.utils.mock_embeddings import MockEmbeddings
+from axiom_app.utils.embedding_providers import create_embeddings
 from axiom_app.utils.knowledge_graph import build_knowledge_graph, collect_graph_chunk_candidates
+from axiom_app.utils.llm_providers import create_llm
+from axiom_app.utils.mock_embeddings import MockEmbeddings
 
 if TYPE_CHECKING:
     from axiom_app.models.app_model import AppModel
     from axiom_app.views.app_view import AppView
 
-# Embedding dimension used consistently for both indexing and querying.
+# Fallback embedding dimension when using MockEmbeddings directly.
 _EMB_DIM = 32
 
-# Task-name constant used to route "done" payloads in _handle_message.
+# Task-name constants used to route "done" payloads in _handle_message.
 _TASK_BUILD_INDEX = "Build index"
+_TASK_RAG_QUERY = "RAG query"
+_TASK_DIRECT_QUERY = "Direct query"
 
 
 # ---------------------------------------------------------------------------
