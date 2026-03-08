@@ -10,6 +10,7 @@ The entire pipeline runs as subprocess calls so that:
 
 from __future__ import annotations
 
+import collections
 import logging
 import os
 import pathlib
@@ -18,7 +19,12 @@ import subprocess
 import sys
 from typing import Any, Callable
 
+from axiom_app.utils.background import CancelToken
+
 _log = logging.getLogger(__name__)
+
+# Maximum recent output lines kept for error diagnostics.
+_ERROR_TAIL_LINES = 5
 
 # ---------------------------------------------------------------------------
 # Availability checks
@@ -64,6 +70,59 @@ def find_convert_script() -> str | None:
             return str(candidate)
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Subprocess helper
+# ---------------------------------------------------------------------------
+
+def _run_streaming(
+    cmd: list[str],
+    *,
+    label: str,
+    status_cb: Callable[[str], None],
+    cancel_token: CancelToken | None = None,
+) -> None:
+    """Run *cmd* streaming stdout line-by-line through *status_cb*.
+
+    Raises ``RuntimeError`` on non-zero exit or cancellation.  The error
+    message includes the last few output lines for diagnostics.
+    """
+    _log.info("Running: %s", " ".join(cmd))
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    tail: collections.deque[str] = collections.deque(maxlen=_ERROR_TAIL_LINES)
+    try:
+        for line in proc.stdout:
+            if cancel_token is not None and cancel_token.cancelled:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                raise RuntimeError(f"{label} cancelled by user")
+            line = line.rstrip()
+            if line:
+                tail.append(line)
+                status_cb(line)
+        proc.wait()
+    except Exception:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        raise
+
+    if proc.returncode != 0:
+        detail = "\n".join(tail)
+        raise RuntimeError(
+            f"{label} exited with code {proc.returncode}\n{detail}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +172,7 @@ class HereticService:
         hf_model_id: str,
         *,
         post_message: Callable[[dict[str, Any]], None] | None = None,
+        cancel_token: CancelToken | None = None,
         extra_args: list[str] | None = None,
     ) -> pathlib.Path:
         """Run ``heretic <hf_model_id>`` and return the output directory.
@@ -123,6 +183,8 @@ class HereticService:
             HuggingFace model identifier, e.g. ``meta-llama/Llama-3.1-8B-Instruct``.
         post_message:
             Optional callback for progress updates (``{"type": "status", "text": ...}``).
+        cancel_token:
+            If provided, the subprocess is terminated when cancellation is requested.
         extra_args:
             Additional CLI flags passed to heretic (e.g. ``["--bnb-4bit"]``).
 
@@ -145,25 +207,12 @@ class HereticService:
             cmd.extend(extra_args)
 
         _status(f"Starting abliteration of {hf_model_id}")
-        _log.info("Running: %s", " ".join(cmd))
-
-        proc = subprocess.Popen(
+        _run_streaming(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            label="heretic",
+            status_cb=_status,
+            cancel_token=cancel_token,
         )
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line:
-                _status(line)
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"heretic exited with code {proc.returncode}"
-            )
 
         _status("Abliteration complete")
         return output_dir
@@ -176,6 +225,7 @@ class HereticService:
         *,
         output_path: str | pathlib.Path | None = None,
         post_message: Callable[[dict[str, Any]], None] | None = None,
+        cancel_token: CancelToken | None = None,
     ) -> pathlib.Path:
         """Convert an abliterated HF model directory to GGUF format.
 
@@ -207,25 +257,12 @@ class HereticService:
             "--outtype", "f16",
         ]
         _status(f"Converting to GGUF: {output_path.name}")
-        _log.info("Running: %s", " ".join(cmd))
-
-        proc = subprocess.Popen(
+        _run_streaming(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            label="convert_hf_to_gguf.py",
+            status_cb=_status,
+            cancel_token=cancel_token,
         )
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line:
-                _status(line)
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"convert_hf_to_gguf.py exited with code {proc.returncode}"
-            )
 
         if not output_path.is_file():
             raise FileNotFoundError(f"Expected GGUF output not found: {output_path}")
@@ -240,6 +277,7 @@ class HereticService:
         hf_model_id: str,
         *,
         post_message: Callable[[dict[str, Any]], None] | None = None,
+        cancel_token: CancelToken | None = None,
         gguf_output_dir: str | pathlib.Path | None = None,
         extra_heretic_args: list[str] | None = None,
     ) -> pathlib.Path:
@@ -250,6 +288,7 @@ class HereticService:
         abliterated_dir = self.abliterate(
             hf_model_id,
             post_message=post_message,
+            cancel_token=cancel_token,
             extra_args=extra_heretic_args,
         )
 
@@ -262,6 +301,7 @@ class HereticService:
             abliterated_dir,
             output_path=gguf_path,
             post_message=post_message,
+            cancel_token=cancel_token,
         )
         return gguf_path
 

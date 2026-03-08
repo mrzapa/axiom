@@ -1366,6 +1366,11 @@ class AppController:
                         dict(getattr(self, "_pending_task_meta", {})),
                         reason=str(text or ""),
                     )
+            elif task_name == _TASK_HERETIC_ABLITERATE:
+                if "cancelled" in str(text).lower():
+                    self._safe_view_call("set_status", "Heretic abliteration cancelled.")
+                else:
+                    self._safe_view_call("append_log", f"[heretic] Failed: {text}")
             elif task_name == _TASK_BUILD_INDEX:
                 self._start_queued_local_gguf_import_if_any()
 
@@ -1548,8 +1553,11 @@ class AppController:
                 if gguf_path.is_file():
                     self._commit_heretic_abliteration(gguf_path, hf_model_id=hf_id)
                     self._safe_view_call("set_status", f"Abliterated model ready: {gguf_path.name}")
+                    self._safe_view_call("append_log", f"[heretic] Done — {gguf_path.name}")
                 else:
-                    self._safe_view_call("set_status", "Abliteration completed but GGUF file not found.")
+                    msg = f"Abliteration completed but GGUF not found at {gguf_path}"
+                    self._safe_view_call("set_status", msg)
+                    self._safe_view_call("append_log", f"[heretic] {msg}")
 
             else:
                 label = f"{task} complete." if task else "Done."
@@ -2575,6 +2583,9 @@ class AppController:
         gguf_output_dir = str(
             self.model.settings.get("local_gguf_models_dir") or ""
         ) or None
+        heretic_output_dir = str(
+            self.model.settings.get("heretic_output_dir") or ""
+        ) or None
 
         self._safe_view_call("set_status", f"Starting abliteration of {hf_model_id}…")
         self._safe_view_call("append_log", f"[heretic] Abliterating {hf_model_id}")
@@ -2584,6 +2595,7 @@ class AppController:
             hf_model_id,
             use_bnb_4bit,
             gguf_output_dir,
+            heretic_output_dir,
         )
 
     def _heretic_abliterate_worker(
@@ -2593,16 +2605,18 @@ class AppController:
         hf_model_id: str,
         use_bnb_4bit: bool,
         gguf_output_dir: str | None,
+        heretic_output_dir: str | None,
     ) -> dict[str, Any]:
         """Background worker: run heretic then convert to GGUF."""
         extra_args: list[str] = []
         if use_bnb_4bit:
             extra_args.append("--bnb-4bit")
 
-        heretic_svc = HereticService()
+        heretic_svc = HereticService(output_root=heretic_output_dir)
         gguf_path = heretic_svc.run_pipeline(
             hf_model_id,
             post_message=post_message,
+            cancel_token=cancel_token,
             gguf_output_dir=gguf_output_dir,
             extra_heretic_args=extra_args or None,
         )
