@@ -62,6 +62,7 @@ from axiom_app.utils.background import BackgroundRunner, CancelToken
 from axiom_app.utils.dependency_bootstrap import install_packages
 from axiom_app.utils.document_loader import KREUZBERG_EXTENSIONS, is_kreuzberg_available
 from axiom_app.utils.llm_providers import create_llm
+from axiom_app.utils.model_presets import list_llm_providers, provider_requires_custom_model
 
 if TYPE_CHECKING:
     from axiom_app.models.app_model import AppModel
@@ -167,12 +168,55 @@ class AppController:
             or "Built-in: Default"
         )
         self.refresh_history_rows(update_detail=False)
+        self._clear_completed_response_state()
 
     def _safe_view_call(self, method_name: str, *args: Any) -> Any:
         method = getattr(self.view, method_name, None)
         if callable(method):
             return method(*args)
         return None
+
+    def _set_chat_response_ui(self, has_completed_response: bool, feedback_pending: bool) -> None:
+        self._safe_view_call(
+            "set_chat_response_ui",
+            bool(has_completed_response),
+            bool(feedback_pending) and bool(has_completed_response),
+        )
+
+    def _clear_completed_response_state(self) -> None:
+        self.model.last_run_id = ""
+        self.model.last_sources = []
+        self._set_chat_response_ui(False, False)
+
+    @staticmethod
+    def _run_has_feedback(detail: Any | None, run_id: str) -> bool:
+        target = str(run_id or "").strip()
+        if not target or detail is None:
+            return False
+        for item in list(getattr(detail, "feedback", []) or []):
+            if str(getattr(item, "run_id", "") or "") == target:
+                return True
+        return False
+
+    @classmethod
+    def _latest_completed_assistant_run(
+        cls,
+        detail: Any | None,
+    ) -> tuple[str, list[EvidenceSource], bool]:
+        if detail is None:
+            return "", [], False
+        for message in reversed(list(getattr(detail, "messages", []) or [])):
+            if str(getattr(message, "role", "") or "").strip().lower() != "assistant":
+                continue
+            run_id = str(getattr(message, "run_id", "") or "").strip()
+            if not run_id:
+                continue
+            sources = [
+                item if isinstance(item, EvidenceSource) else EvidenceSource.from_dict(item)
+                for item in (getattr(message, "sources", []) or [])
+            ]
+            return run_id, sources, not cls._run_has_feedback(detail, run_id)
+        return "", [], False
 
     @staticmethod
     def _connect_signal(signal: Any, callback: Callable[..., Any]) -> bool:
@@ -390,6 +434,12 @@ class AppController:
             self.view.set_cancel_rag_enabled(enabled)
             return
         self._set_widget_enabled(getattr(self.view, "btn_cancel_rag", None), enabled)
+
+    def _set_model_switch_enabled(self, enabled: bool) -> None:
+        if callable(getattr(self.view, "set_model_switch_enabled", None)):
+            self.view.set_model_switch_enabled(enabled)
+            return
+        self._set_widget_enabled(getattr(self.view, "_llm_status_badge", None), enabled)
 
     def _sync_profile_options(self) -> None:
         labels = self.profile_repository.list_labels()
@@ -1014,10 +1064,7 @@ class AppController:
             getattr(self.view, "editHardwareAssumptionsRequested", None),
             self.on_edit_hardware_assumptions,
         )
-        self._connect_signal(
-            getattr(self.view, "hereticAbliterateRequested", None),
-            self.on_heretic_abliterate,
-        )
+        self._connect_signal(getattr(self.view, "quickModelChangeRequested", None), self.on_quick_model_change)
 
         self._configure_command(getattr(self.view, "btn_open_files", None), self.on_open_files)
         self._configure_command(getattr(self.view, "btn_build_index", None), self.on_build_index)
@@ -1159,19 +1206,24 @@ class AppController:
         self._test_mode_sample_file = ""
         self.model.settings["startup_mode_setting"] = "advanced"
         self.model.settings["last_used_mode"] = "advanced"
+        self.model.current_session_id = ""
+        self.model.loaded_session = None
         self.model.documents = []
         self.model.index_state = {"built": False, "doc_count": 0, "chunk_count": 0}
+        self.model.chat_history = []
         self.model.chunks = []
         self.model.embeddings = []
         self.model.index_bundle = None
         self.model.active_index_id = ""
         self.model.active_index_path = ""
         self.model.rag_blocked_reason = ""
+        self._clear_completed_response_state()
         self.model.save_settings(self.model.settings)
         if temp_dir and os.path.isdir(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         self._safe_view_call("set_file_list", [])
         self._safe_view_call("set_active_index_summary", "No persisted index selected.", "")
+        self._safe_view_call("set_chat_transcript", [])
         self._safe_view_call("render_evidence_sources", [])
         self._safe_view_call("render_events", [])
         self._safe_view_call("render_semantic_regions", [])
@@ -1306,6 +1358,7 @@ class AppController:
         )
         self._log.info("Task started: %s", task_name)
         self._set_cancel_rag_enabled(True)
+        self._set_model_switch_enabled(False)
 
     def cancel_current_task(self) -> None:
         """Signal the active background task to stop (cooperative)."""
@@ -1335,6 +1388,7 @@ class AppController:
             self._safe_view_call("reset_progress")
             self._set_build_index_enabled(True)
             self._set_cancel_rag_enabled(False)
+            self._set_model_switch_enabled(True)
 
     def _handle_message(self, msg: dict[str, Any]) -> None:
         mtype = msg.get("type")
@@ -1501,6 +1555,7 @@ class AppController:
                     bundle,
                     {run_id: self.trace_store.read_run(run_id)},
                 )
+                self._set_chat_response_ui(True, True)
                 self._log.info("RAG query answered — top score=%.3f", top_score)
                 self._safe_view_call("set_status", "Done.")
 
@@ -1538,6 +1593,7 @@ class AppController:
                     self._current_index_bundle(),
                     {run_id: self.trace_store.read_run(run_id)},
                 )
+                self._set_chat_response_ui(True, True)
                 self._log.info("Direct query answered — provider=%s", provider)
                 self._safe_view_call("set_status", "Done.")
 
@@ -1699,6 +1755,8 @@ class AppController:
         """
         if not prompt.strip():
             return
+
+        self._clear_completed_response_state()
 
         get_chat_mode = getattr(self.view, "get_chat_mode", None)
         chat_mode = get_chat_mode() if callable(get_chat_mode) else "rag"
@@ -2069,7 +2127,7 @@ class AppController:
         self.model.current_session_id = session.session_id
         self.model.loaded_session = None
         self.model.chat_history = []
-        self.model.last_sources = []
+        self._clear_completed_response_state()
         self._safe_view_call("set_chat_transcript", [])
         self._safe_view_call("render_evidence_sources", [])
         self._safe_view_call("set_status", "New chat started.")
@@ -2128,15 +2186,12 @@ class AppController:
         self._restore_session_settings(detail)
         self._restore_index_from_session(detail)
         self._safe_view_call("set_chat_transcript", detail.messages)
-
-        last_sources: list[EvidenceSource] = []
-        for message in reversed(detail.messages):
-            if message.sources:
-                last_sources = list(message.sources)
-                break
+        last_run_id, last_sources, feedback_pending = self._latest_completed_assistant_run(detail)
+        self.model.last_run_id = last_run_id
         self.model.last_sources = last_sources
         self._safe_view_call("render_evidence_sources", last_sources)
         self._render_bundle_metadata(getattr(self.model, "index_bundle", None), detail.traces)
+        self._set_chat_response_ui(bool(last_run_id), feedback_pending)
         self._safe_view_call("set_history_detail", detail)
         self._safe_view_call("set_status", f"Loaded session: {detail.summary.title}")
         self._safe_view_call("switch_view", "chat")
@@ -2151,7 +2206,7 @@ class AppController:
             self.model.current_session_id = ""
             self.model.loaded_session = None
             self.model.chat_history = []
-            self.model.last_sources = []
+            self._clear_completed_response_state()
             self._safe_view_call("set_chat_transcript", [])
             self._safe_view_call("render_evidence_sources", [])
         self.refresh_history_rows(update_detail=False)
@@ -2280,7 +2335,12 @@ class AppController:
         detail = self.session_repository.get_session(session_id)
         if detail is not None:
             detail.traces = self._session_trace_payload(detail)
+            self.model.loaded_session = detail
             self._safe_view_call("set_history_detail", detail)
+            latest_run_id, latest_sources, feedback_pending = self._latest_completed_assistant_run(detail)
+            self.model.last_run_id = latest_run_id
+            self.model.last_sources = latest_sources
+            self._set_chat_response_ui(bool(latest_run_id), feedback_pending)
         self._safe_view_call("set_status", "Feedback saved.")
 
     def on_load_selected_index(self) -> None:
@@ -3067,6 +3127,26 @@ class AppController:
         }
         return json.dumps(payload, ensure_ascii=False)
 
+    def _sync_current_session_metadata(self) -> None:
+        session_id = str(getattr(self.model, "current_session_id", "") or "").strip()
+        if not session_id:
+            return
+        self.session_repository.upsert_session(
+            session_id,
+            active_profile=self._current_profile_label(),
+            mode=str(self.model.settings.get("selected_mode", "Q&A") or "Q&A"),
+            index_id=str(getattr(self.model, "active_index_id", "") or ""),
+            vector_backend=self._current_vector_backend(),
+            llm_provider=str(self.model.settings.get("llm_provider", "") or ""),
+            llm_model=self._effective_llm_model(),
+            embed_model=self._effective_embedding_model(),
+            retrieve_k=int(self.model.settings.get("retrieval_k", 0) or 0),
+            final_k=int(self.model.settings.get("top_k", 0) or 0),
+            mmr_lambda=float(self.model.settings.get("mmr_lambda", 0.0) or 0.0),
+            agentic_iterations=int(self.model.settings.get("agentic_max_iterations", 0) or 0),
+            extra_json=self._session_extra_json(),
+        )
+
     @staticmethod
     def _title_from_prompt(prompt: str) -> str:
         text = " ".join(str(prompt or "").split()).strip()
@@ -3080,6 +3160,51 @@ class AppController:
         if not text:
             return ""
         return text[:180] + ("…" if len(text) > 180 else "")
+
+    def on_quick_model_change(self, payload: dict[str, Any] | None = None) -> None:
+        request = dict(payload or {})
+        provider = str(request.get("llm_provider", "") or "").strip()
+        requested_model = str(request.get("llm_model", "") or "").strip()
+        requested_custom = str(request.get("llm_model_custom", "") or "").strip()
+
+        if provider not in set(list_llm_providers()):
+            self._safe_view_call("set_status", "Model switch ignored: unknown provider.")
+            return
+
+        is_custom_value = provider_requires_custom_model(provider) or bool(requested_custom)
+        resolved_model = requested_custom if requested_custom else requested_model
+        resolved_model = str(resolved_model or "").strip()
+        if not resolved_model:
+            self._show_error_dialog("Model Required", "Choose or enter a model before applying the switch.")
+            self._safe_view_call("set_status", "Model switch ignored: no model was provided.")
+            return
+
+        next_settings = dict(self.model.settings)
+        next_settings["llm_provider"] = provider
+        next_settings["llm_model"] = resolved_model
+        next_settings["llm_model_custom"] = resolved_model if is_custom_value else ""
+
+        if provider == "local_gguf" and not self._has_valid_local_gguf_path(next_settings):
+            self._show_error_dialog(
+                "Invalid Local GGUF Model",
+                "Quick switch blocked because no valid GGUF model file is configured in Settings.",
+            )
+            self._safe_view_call("set_status", "Model switch blocked: configure a valid GGUF file first.")
+            return
+
+        try:
+            self.model.save_settings(next_settings)
+        except OSError as exc:
+            self._show_error_dialog("Save Failed", f"Could not write settings.json:\n{exc}")
+            self._log.error("quick model switch save failed: %s", exc)
+            return
+
+        self._safe_view_call("populate_settings", self.model.settings)
+        self._safe_view_call("refresh_llm_status_badge")
+        self._sync_current_session_metadata()
+        self.refresh_history_rows(select_session_id=str(getattr(self.model, "current_session_id", "") or ""), update_detail=False)
+        self._safe_view_call("set_status", f"Model switched to {provider} / {resolved_model}.")
+        self._log.info("Quick model switch applied: provider=%s model=%s", provider, resolved_model)
 
     def on_save_settings(self) -> None:
         """Collect settings from the view, coerce types, and persist via the model.
@@ -3244,18 +3369,4 @@ class AppController:
             self.view.apply_theme(new_theme)
 
         if getattr(self.model, "current_session_id", ""):
-            self.session_repository.upsert_session(
-                self.model.current_session_id,
-                active_profile=self._current_profile_label(),
-                mode=str(self.model.settings.get("selected_mode", "Q&A") or "Q&A"),
-                index_id=str(getattr(self.model, "active_index_id", "") or ""),
-                vector_backend=self._current_vector_backend(),
-                llm_provider=str(self.model.settings.get("llm_provider", "") or ""),
-                llm_model=self._effective_llm_model(),
-                embed_model=self._effective_embedding_model(),
-                retrieve_k=int(self.model.settings.get("retrieval_k", 0) or 0),
-                final_k=int(self.model.settings.get("top_k", 0) or 0),
-                mmr_lambda=float(self.model.settings.get("mmr_lambda", 0.0) or 0.0),
-                agentic_iterations=int(self.model.settings.get("agentic_max_iterations", 0) or 0),
-                extra_json=self._session_extra_json(),
-            )
+            self._sync_current_session_metadata()
