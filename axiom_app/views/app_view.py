@@ -529,6 +529,9 @@ class AppView(QMainWindow):
         self._quick_model_popup_syncing = False
         self._empty_state_relayout_pending = False
         self._empty_state_relayout_rounds_remaining = 0
+        self._empty_state_relayout_timer = QTimer(self)
+        self._empty_state_relayout_timer.setSingleShot(True)
+        self._empty_state_relayout_timer.timeout.connect(self._run_empty_state_relayout)
 
         self._load_icon()
         self._build()
@@ -542,6 +545,16 @@ class AppView(QMainWindow):
                     return False
                 self.sendRequested.emit()
                 return True
+        if watched in {
+            getattr(self, "_chat_empty_scroll", None),
+            getattr(getattr(self, "_chat_empty_scroll", None), "viewport", lambda: None)(),
+        } and event is not None and event.type() in {
+            QEvent.FontChange,
+            QEvent.Resize,
+            QEvent.Show,
+            QEvent.StyleChange,
+        }:
+            self._schedule_empty_state_relayout()
         return super().eventFilter(watched, event)
 
     def closeEvent(self, event: Any) -> None:
@@ -762,7 +775,7 @@ class AppView(QMainWindow):
 
         self._chat_empty_state = QWidget(self._chat_state_stack)
         empty_layout = QVBoxLayout(self._chat_empty_state)
-        empty_layout.setContentsMargins(UI_SPACING["xl"], UI_SPACING["xs"], UI_SPACING["xl"], UI_SPACING["xs"])
+        empty_layout.setContentsMargins(UI_SPACING["xl"], 0, UI_SPACING["xl"], 0)
         self._chat_empty_scroll = QScrollArea(self._chat_empty_state)
         self._chat_empty_scroll.setObjectName("chatEmptyScroll")
         self._chat_empty_scroll.setWidgetResizable(True)
@@ -770,6 +783,8 @@ class AppView(QMainWindow):
         self._chat_empty_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._chat_empty_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._chat_empty_scroll.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        self._chat_empty_scroll.installEventFilter(self)
+        self._chat_empty_scroll.viewport().installEventFilter(self)
         empty_layout.addWidget(self._chat_empty_scroll, 1)
         chat_empty_scroll_contents = QWidget(self._chat_empty_scroll)
         chat_empty_scroll_layout = QVBoxLayout(chat_empty_scroll_contents)
@@ -1751,12 +1766,12 @@ class AppView(QMainWindow):
             return
         self._empty_state_relayout_rounds_remaining = max(
             self._empty_state_relayout_rounds_remaining,
-            2,
+            4,
         )
         if self._empty_state_relayout_pending:
             return
         self._empty_state_relayout_pending = True
-        QTimer.singleShot(0, self._run_empty_state_relayout)
+        self._empty_state_relayout_timer.start(0)
 
     def _run_empty_state_relayout(self) -> None:
         if (
@@ -1764,6 +1779,7 @@ class AppView(QMainWindow):
             or not hasattr(self, "_chat_empty_scroll")
             or self._chat_state_stack.currentWidget() is not self._chat_empty_state
         ):
+            self._empty_state_relayout_timer.stop()
             self._empty_state_relayout_pending = False
             self._empty_state_relayout_rounds_remaining = 0
             return
@@ -1773,8 +1789,9 @@ class AppView(QMainWindow):
             self._empty_state_relayout_rounds_remaining - 1,
         )
         if self._empty_state_relayout_rounds_remaining > 0:
-            QTimer.singleShot(0, self._run_empty_state_relayout)
+            self._empty_state_relayout_timer.start(0)
             return
+        self._empty_state_relayout_timer.stop()
         self._empty_state_relayout_pending = False
 
     def _relayout_empty_state(self) -> None:
@@ -1876,7 +1893,14 @@ class AppView(QMainWindow):
         total_height = sum(row_heights.values())
         if total_rows > 1:
             total_height += max(grid.verticalSpacing(), 0) * (total_rows - 1)
-        host.setFixedHeight(max(total_height, 0))
+        grid.invalidate()
+        grid.activate()
+        bottom_edge = max(
+            (button.geometry().bottom() + 1 for button in self._chat_preset_buttons),
+            default=0,
+        )
+        host_height = max(total_height, bottom_edge, host.minimumSizeHint().height())
+        host.setFixedHeight(host_height + max(UI_SPACING["xs"] // 2, 4))
         host.updateGeometry()
         self._chat_preset_grid_columns = columns
 
