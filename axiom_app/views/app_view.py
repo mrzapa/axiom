@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from importlib import resources
 from typing import Any, TypedDict
 
-from PySide6.QtCore import QEvent, QObject, QRectF, QSignalBlocker, QSize, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, QRectF, QSignalBlocker, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QKeyEvent, QPainter, QPainterPath, QPen, QPixmap, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -387,9 +387,10 @@ class _TimelineMessageCard(QFrame):
         self._item = item
         self.setObjectName("chatMessageCard")
         self.setProperty("messageRole", item.role)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 16, 18, 16)
+        root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(UI_SPACING["xs"])
 
         header = QHBoxLayout()
@@ -458,7 +459,7 @@ class _TimelineMessageCard(QFrame):
 
         source_count = len(item.sources)
         self._sources_button.setVisible(source_count > 0)
-        self._sources_button.setText(f"{source_count} source{'s' if source_count != 1 else ''}")
+        self._sources_button.setText(f"Sources ({source_count})")
         self._feedback_row.setVisible(bool(item.feedback_visible) and item.role == "assistant")
 
     @property
@@ -1940,32 +1941,6 @@ class AppView(QMainWindow):
         transcript_layout.addWidget(self._chat_transcript, 1)
         self._chat_state_stack.addWidget(self._chat_transcript_state)
 
-        self._feedback_footer = QWidget(self._conversation_shell)
-        self._feedback_footer.setObjectName("chatFeedbackBar")
-        feedback_layout = QHBoxLayout(self._feedback_footer)
-        feedback_layout.setContentsMargins(0, 0, 0, 0)
-        feedback_layout.setSpacing(UI_SPACING["xs"])
-        feedback_layout.addStretch(1)
-        self.btn_feedback_up = QPushButton(self._feedback_footer)
-        self.btn_feedback_up.setObjectName("chatFeedbackButton")
-        self.btn_feedback_up.setCursor(Qt.PointingHandCursor)
-        self.btn_feedback_up.setToolTip("Thumbs up")
-        self.btn_feedback_up.setIcon(self._create_feedback_icon("#2ECC71", down=False))
-        self.btn_feedback_up.setIconSize(QSize(20, 20))
-        self.btn_feedback_up.setFixedSize(40, 40)
-        self.btn_feedback_up.clicked.connect(lambda: self.feedbackRequested.emit(1))
-        feedback_layout.addWidget(self.btn_feedback_up)
-        self.btn_feedback_down = QPushButton(self._feedback_footer)
-        self.btn_feedback_down.setObjectName("chatFeedbackButton")
-        self.btn_feedback_down.setCursor(Qt.PointingHandCursor)
-        self.btn_feedback_down.setToolTip("Thumbs down")
-        self.btn_feedback_down.setIcon(self._create_feedback_icon("#E74C3C", down=True))
-        self.btn_feedback_down.setIconSize(QSize(20, 20))
-        self.btn_feedback_down.setFixedSize(40, 40)
-        self.btn_feedback_down.clicked.connect(lambda: self.feedbackRequested.emit(-1))
-        feedback_layout.addWidget(self.btn_feedback_down)
-        conversation_layout.addWidget(self._feedback_footer, 0)
-
         chat_panel_layout.addWidget(self._conversation_shell, 1)
 
         self._composer_divider = QFrame(self._chat_main_panel)
@@ -2568,18 +2543,25 @@ class AppView(QMainWindow):
                 border-radius: 16px;
                 padding: 10px;
             }}
+            QWidget#chatMessageRow {{
+                background: transparent;
+            }}
             QFrame#chatMessageCard {{
                 border: 1px solid {border};
-                border-radius: 20px;
+                border-radius: 18px;
+                background-color: {surface_alt};
             }}
             QFrame#chatMessageCard[messageRole="assistant"] {{
                 background-color: {surface_alt};
+                border-color: {border};
             }}
             QFrame#chatMessageCard[messageRole="user"] {{
                 background-color: {self._palette.get("chat_user_bg", nav_active)};
+                border-color: {self._palette.get("primary", primary)};
             }}
             QFrame#chatMessageCard[messageRole="system"] {{
                 background-color: {self._palette.get("chat_system_bg", surface_alt)};
+                border-color: {self._palette.get("warning", border)};
             }}
             QLabel#chatMessageRole {{
                 color: {muted};
@@ -3311,7 +3293,26 @@ class AppView(QMainWindow):
         card = _TimelineMessageCard(item, self._chat_timeline_host)
         card.feedbackRequested.connect(self.feedbackRequested.emit)
         card.inspectRequested.connect(lambda: self._set_inspector_visible(True, tab_index=0))
-        self._chat_timeline_layout.insertWidget(max(0, self._chat_timeline_layout.count() - 1), card)
+
+        row = QWidget(self._chat_timeline_host)
+        row.setObjectName("chatMessageRow")
+        row.setProperty("messageRole", item.role)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(4, 2, 4, 2)
+        row_layout.setSpacing(UI_SPACING["s"])
+        if item.role == "user":
+            row_layout.addStretch(1)
+            row_layout.addWidget(card, 0)
+        elif item.role == "system":
+            row_layout.addStretch(1)
+            row_layout.addWidget(card, 0)
+            row_layout.addStretch(1)
+        else:
+            row_layout.addWidget(card, 0)
+            row_layout.addStretch(1)
+        card.setMaximumWidth(920)
+
+        self._chat_timeline_layout.insertWidget(max(0, self._chat_timeline_layout.count() - 1), row)
         self._chat_cards.append(card)
 
     def _scroll_timeline_to_end(self) -> None:
