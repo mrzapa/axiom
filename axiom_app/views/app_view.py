@@ -1735,6 +1735,18 @@ class AppView(QMainWindow):
         self._inspector_visible = bool(visible)
         self._update_workspace_drawers()
 
+    def _open_inspector_evidence(self) -> None:
+        self._set_inspector_visible(True, tab_index=0)
+
+        evidence_tree = getattr(self, "_evidence_sources_tree", None)
+        if evidence_tree is not None:
+            evidence_tree.scrollToTop()
+            evidence_tree.clearSelection()
+
+        grounding_browser = getattr(self, "_grounding_browser", None)
+        if grounding_browser is not None:
+            grounding_browser.verticalScrollBar().setValue(0)
+
     def _toggle_inspector(self) -> None:
         if not self._chat_has_completed_response:
             return
@@ -3348,7 +3360,7 @@ class AppView(QMainWindow):
     def _append_timeline_item(self, item: ChatTimelineItem) -> None:
         card = _TimelineMessageCard(item, self._chat_timeline_host)
         card.feedbackRequested.connect(self.feedbackRequested.emit)
-        card.inspectRequested.connect(lambda: self._set_inspector_visible(True, tab_index=0))
+        card.inspectRequested.connect(self._open_inspector_evidence)
         self._chat_timeline_layout.insertWidget(max(0, self._chat_timeline_layout.count() - 1), card)
         self._chat_cards.append(card)
 
