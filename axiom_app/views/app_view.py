@@ -541,6 +541,7 @@ class AppView(QMainWindow):
         self._empty_state_relayout_rounds_remaining = 0
         self._library_visible = False
         self._inspector_visible = False
+        self._user_closed_since_last_completion = False
         self._activity_visible = False
         self._session_drawer_visible = False
         self._empty_state_relayout_timer = QTimer(self)
@@ -747,9 +748,6 @@ class AppView(QMainWindow):
         self._page_title = QLabel("Ask Axiom", self._command_bar)
         self._page_title.setObjectName("pageTitle")
         copy_layout.addWidget(self._page_title)
-        self._chat_context_summary = QLabel(self._command_bar)
-        self._chat_context_summary.setObjectName("chatContextSummary")
-        copy_layout.addWidget(self._chat_context_summary)
         self._chat_context_hint = QLabel(
             "Clean by default. Open only the panels you need.",
             self._command_bar,
@@ -757,6 +755,15 @@ class AppView(QMainWindow):
         self._chat_context_hint.setObjectName("chatContextHint")
         copy_layout.addWidget(self._chat_context_hint)
         layout.addLayout(copy_layout, 1)
+
+        session_cluster = QWidget(self._command_bar)
+        session_cluster_layout = QVBoxLayout(session_cluster)
+        session_cluster_layout.setContentsMargins(0, 0, 0, 0)
+        session_cluster_layout.setSpacing(4)
+
+        session_row = QHBoxLayout()
+        session_row.setContentsMargins(0, 0, 0, 0)
+        session_row.setSpacing(UI_SPACING["xs"])
 
         self._session_chip_buttons: dict[str, _SessionChip] = {}
         chip_row = QHBoxLayout()
@@ -767,7 +774,7 @@ class AppView(QMainWindow):
             chip.clicked.connect(lambda _checked=False, section=key: self._open_session_drawer(section))
             self._session_chip_buttons[key] = chip
             chip_row.addWidget(chip)
-        layout.addLayout(chip_row, 0)
+        session_row.addLayout(chip_row, 0)
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
@@ -779,7 +786,16 @@ class AppView(QMainWindow):
         self.btn_new_chat = QPushButton("New Chat", self._command_bar)
         self.btn_new_chat.clicked.connect(self.newChatRequested.emit)
         actions.addWidget(self.btn_new_chat)
-        layout.addLayout(actions, 0)
+        session_row.addLayout(actions, 0)
+        session_cluster_layout.addLayout(session_row)
+
+        self._chat_context_summary = QLabel(session_cluster)
+        self._chat_context_summary.setObjectName("chatContextSummary")
+        self._chat_context_summary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._chat_context_summary.setWordWrap(True)
+        session_cluster_layout.addWidget(self._chat_context_summary, 0, Qt.AlignRight)
+
+        layout.addWidget(session_cluster, 0, Qt.AlignRight | Qt.AlignTop)
         self._llm_status_badge = self._session_chip_buttons["model"]
 
     def _build_library_drawer(self) -> None:
@@ -1210,7 +1226,7 @@ class AppView(QMainWindow):
         self._inspector_pin_button.clicked.connect(self._update_workspace_drawers)
         header.addWidget(self._inspector_pin_button)
         close = QPushButton("Close", self._inspector_drawer)
-        close.clicked.connect(lambda: self._set_inspector_visible(False))
+        close.clicked.connect(lambda: self._set_inspector_visible(False, user_initiated=True))
         header.addWidget(close)
         root.addLayout(header)
 
@@ -1226,10 +1242,6 @@ class AppView(QMainWindow):
         evidence_layout.addWidget(QLabel("Sources", evidence_page))
         self._evidence_sources_tree = self._make_tree(["Source", "Score", "Snippet"], evidence_page)
         evidence_layout.addWidget(self._evidence_sources_tree, 1)
-        evidence_layout.addWidget(QLabel("Grounding", evidence_page))
-        self._grounding_browser = QTextBrowser(evidence_page)
-        self._grounding_browser.anchorClicked.connect(lambda url: QDesktopServices.openUrl(url))
-        evidence_layout.addWidget(self._grounding_browser, 1)
 
         process_page = QWidget(self._evidence_tabs)
         process_layout = QVBoxLayout(process_page)
@@ -1246,12 +1258,13 @@ class AppView(QMainWindow):
         structure_layout = QVBoxLayout(structure_page)
         structure_layout.setContentsMargins(0, 0, 0, 0)
         structure_layout.setSpacing(UI_SPACING["s"])
-        structure_layout.addWidget(QLabel("Semantic Regions", structure_page))
-        self._regions_tree = self._make_tree(["Document", "Region", "Summary"], structure_page)
-        structure_layout.addWidget(self._regions_tree, 1)
         structure_layout.addWidget(QLabel("Outline", structure_page))
         self._outline_tree = self._make_tree(["Heading", "Meta"], structure_page)
         structure_layout.addWidget(self._outline_tree, 1)
+        structure_layout.addWidget(QLabel("Grounding", structure_page))
+        self._grounding_browser = QTextBrowser(structure_page)
+        self._grounding_browser.anchorClicked.connect(lambda url: QDesktopServices.openUrl(url))
+        structure_layout.addWidget(self._grounding_browser, 1)
 
         self._evidence_tabs.addTab(evidence_page, "Evidence")
         self._evidence_tabs.addTab(process_page, "Process")
@@ -1683,16 +1696,28 @@ class AppView(QMainWindow):
         self._library_visible = bool(visible)
         self._update_workspace_drawers()
 
-    def _set_inspector_visible(self, visible: bool, *, tab_index: int | None = None) -> None:
+    def _reset_inspector_auto_open_state(self) -> None:
+        self._user_closed_since_last_completion = False
+
+    def _set_inspector_visible(
+        self,
+        visible: bool,
+        *,
+        tab_index: int | None = None,
+        user_initiated: bool = False,
+    ) -> None:
         if tab_index is not None and hasattr(self, "_evidence_tabs"):
             self._evidence_tabs.setCurrentIndex(tab_index)
-        self._inspector_visible = bool(visible)
+        visible = bool(visible)
+        if not visible and user_initiated and self._chat_has_completed_response:
+            self._user_closed_since_last_completion = True
+        self._inspector_visible = visible
         self._update_workspace_drawers()
 
     def _toggle_inspector(self) -> None:
         if not self._chat_has_completed_response:
             return
-        self._set_inspector_visible(not self._inspector_visible)
+        self._set_inspector_visible(not self._inspector_visible, user_initiated=True)
 
     def _set_activity_visible(self, visible: bool) -> None:
         self._activity_visible = bool(visible)
@@ -2520,9 +2545,9 @@ class AppView(QMainWindow):
                 font-size: 14px;
             }}
             QLabel#chatContextSummary {{
-                font-size: 14px;
-                font-weight: 600;
-                color: {text};
+                font-size: 12px;
+                font-weight: 500;
+                color: {muted};
             }}
             QLabel#chatContextHint, QLabel#drawerHint {{
                 color: {muted};
@@ -2881,6 +2906,7 @@ class AppView(QMainWindow):
         target_slot = self._chat_empty_composer_slot if empty_state else self._chat_footer_composer_slot
         self._move_widget_to_slot(self._composer_shell, target_slot)
         self._chat_footer_composer_slot.setVisible(not empty_state)
+        self._chat_context_summary.setVisible(not empty_state)
         self._chat_context_hint.setVisible(not empty_state)
         self._composer_title.setVisible(not empty_state)
         self._composer_meta.setVisible(not empty_state)
@@ -3315,10 +3341,13 @@ class AppView(QMainWindow):
                 feedback_visible=self._chat_feedback_pending,
             )
             latest.update_item(updated)
-        if self._chat_has_completed_response:
+        if not self._chat_has_completed_response:
+            self._reset_inspector_auto_open_state()
+            self._set_inspector_visible(False)
+        elif not self._inspector_visible and not self._user_closed_since_last_completion:
             self._set_inspector_visible(True)
         else:
-            self._set_inspector_visible(False)
+            self._update_workspace_drawers()
 
     def switch_view(self, key: str) -> None:
         target = key if key in {"chat", "brain", "settings", "logs"} else "chat"
@@ -3398,7 +3427,7 @@ class AppView(QMainWindow):
     def _append_timeline_item(self, item: ChatTimelineItem) -> None:
         card = _TimelineMessageCard(item, self._chat_timeline_host)
         card.feedbackRequested.connect(self.feedbackRequested.emit)
-        card.inspectRequested.connect(lambda: self._set_inspector_visible(True, tab_index=0))
+        card.inspectRequested.connect(lambda: self._set_inspector_visible(True, tab_index=0, user_initiated=True))
         self._chat_timeline_layout.insertWidget(max(0, self._chat_timeline_layout.count() - 1), card)
         self._chat_cards.append(card)
 
@@ -3447,6 +3476,8 @@ class AppView(QMainWindow):
 
     def set_chat_transcript(self, messages: list[Any]) -> None:
         self._chat_items = []
+        self._reset_inspector_auto_open_state()
+        self._set_inspector_visible(False)
         self._clear_timeline()
         for message in messages or []:
             role = str(
@@ -4122,6 +4153,8 @@ class AppView(QMainWindow):
         self._populate_tree_from_rows(self._events_tree, normalized, ["timestamp", "stage", "event_type", "summary"])
 
     def render_semantic_regions(self, rows: list[dict[str, Any]]) -> None:
+        if not hasattr(self, "_regions_tree"):
+            return
         normalized = [{"document": row.get("document") or row.get("source") or "", "region": row.get("region") or row.get("header_path") or row.get("label") or "", "summary": row.get("summary") or row.get("snippet") or json.dumps(row, ensure_ascii=False)[:240]} for row in rows or []]
         self._populate_tree_from_rows(self._regions_tree, normalized, ["document", "region", "summary"])
 
