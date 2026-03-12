@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from importlib import resources
 from typing import Any, TypedDict
 
-from PySide6.QtCore import QEvent, QObject, QRectF, QSignalBlocker, QSize, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, QRectF, QSignalBlocker, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QKeyEvent, QPainter, QPainterPath, QPen, QPixmap, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -1145,13 +1145,6 @@ class AppView(QMainWindow):
         footer_composer_layout.addWidget(self._composer_shell)
         chat_panel_layout.addWidget(self._chat_footer_composer_slot, 0)
 
-        self._feedback_footer = QWidget(self._chat_main_panel)
-        self._feedback_footer.hide()
-        self.btn_feedback_up = QPushButton("Useful", self._chat_main_panel)
-        self.btn_feedback_up.hide()
-        self.btn_feedback_down = QPushButton("Needs work", self._chat_main_panel)
-        self.btn_feedback_down.hide()
-
         self._build_activity_tray(layout)
         self._build_session_drawer()
         self._refresh_chat_state()
@@ -1939,32 +1932,6 @@ class AppView(QMainWindow):
         self._chat_transcript_scrollbar = self._chat_transcript.verticalScrollBar()
         transcript_layout.addWidget(self._chat_transcript, 1)
         self._chat_state_stack.addWidget(self._chat_transcript_state)
-
-        self._feedback_footer = QWidget(self._conversation_shell)
-        self._feedback_footer.setObjectName("chatFeedbackBar")
-        feedback_layout = QHBoxLayout(self._feedback_footer)
-        feedback_layout.setContentsMargins(0, 0, 0, 0)
-        feedback_layout.setSpacing(UI_SPACING["xs"])
-        feedback_layout.addStretch(1)
-        self.btn_feedback_up = QPushButton(self._feedback_footer)
-        self.btn_feedback_up.setObjectName("chatFeedbackButton")
-        self.btn_feedback_up.setCursor(Qt.PointingHandCursor)
-        self.btn_feedback_up.setToolTip("Thumbs up")
-        self.btn_feedback_up.setIcon(self._create_feedback_icon("#2ECC71", down=False))
-        self.btn_feedback_up.setIconSize(QSize(20, 20))
-        self.btn_feedback_up.setFixedSize(40, 40)
-        self.btn_feedback_up.clicked.connect(lambda: self.feedbackRequested.emit(1))
-        feedback_layout.addWidget(self.btn_feedback_up)
-        self.btn_feedback_down = QPushButton(self._feedback_footer)
-        self.btn_feedback_down.setObjectName("chatFeedbackButton")
-        self.btn_feedback_down.setCursor(Qt.PointingHandCursor)
-        self.btn_feedback_down.setToolTip("Thumbs down")
-        self.btn_feedback_down.setIcon(self._create_feedback_icon("#E74C3C", down=True))
-        self.btn_feedback_down.setIconSize(QSize(20, 20))
-        self.btn_feedback_down.setFixedSize(40, 40)
-        self.btn_feedback_down.clicked.connect(lambda: self.feedbackRequested.emit(-1))
-        feedback_layout.addWidget(self.btn_feedback_down)
-        conversation_layout.addWidget(self._feedback_footer, 0)
 
         chat_panel_layout.addWidget(self._conversation_shell, 1)
 
@@ -3168,44 +3135,17 @@ class AppView(QMainWindow):
         if len(sizes) >= 2 and sizes[1] > 0:
             self._chat_splitter_sizes = sizes[:2]
 
-    @staticmethod
-    def _create_feedback_icon(color: str, *, down: bool) -> QIcon:
-        pixmap = QPixmap(24, 24)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        if down:
-            painter.translate(pixmap.width() / 2, pixmap.height() / 2)
-            painter.rotate(180)
-            painter.translate(-pixmap.width() / 2, -pixmap.height() / 2)
-        fill = QColor(color)
-        arm = QPainterPath()
-        arm.addRoundedRect(QRectF(4.0, 9.5, 4.2, 8.2), 1.4, 1.4)
-        hand = QPainterPath()
-        hand.moveTo(8.2, 10.0)
-        hand.lineTo(10.0, 8.6)
-        hand.lineTo(10.8, 5.0)
-        hand.cubicTo(11.0, 4.0, 11.6, 3.4, 12.6, 3.4)
-        hand.lineTo(14.0, 3.4)
-        hand.cubicTo(14.8, 3.4, 15.4, 4.1, 15.4, 5.0)
-        hand.lineTo(15.4, 8.2)
-        hand.lineTo(18.4, 8.2)
-        hand.cubicTo(19.8, 8.2, 20.6, 9.1, 20.6, 10.5)
-        hand.lineTo(20.6, 15.8)
-        hand.cubicTo(20.6, 17.2, 19.8, 18.2, 18.4, 18.2)
-        hand.lineTo(10.6, 18.2)
-        hand.cubicTo(9.8, 18.2, 9.0, 17.9, 8.5, 17.3)
-        hand.lineTo(8.2, 16.9)
-        hand.closeSubpath()
-        painter.setPen(Qt.NoPen)
-        painter.fillPath(hand, fill)
-        painter.fillPath(arm, fill)
-        painter.end()
-        return QIcon(pixmap)
-
     def set_chat_response_ui(self, has_completed_response: bool, feedback_pending: bool) -> None:
         self._chat_has_completed_response = bool(has_completed_response)
         self._chat_feedback_pending = bool(feedback_pending) and self._chat_has_completed_response
+        self._sync_feedback_visibility_on_timeline()
+        if self._chat_has_completed_response:
+            self._set_inspector_visible(True)
+        else:
+            self._set_inspector_visible(False)
+
+    def _sync_feedback_visibility_on_timeline(self) -> None:
+        latest = self._latest_assistant_card()
         for card in self._chat_cards:
             updated = ChatTimelineItem(
                 role=card.item.role,
@@ -3213,24 +3153,9 @@ class AppView(QMainWindow):
                 status=card.item.status,
                 run_id=card.item.run_id,
                 sources=list(card.item.sources),
-                feedback_visible=False,
+                feedback_visible=bool(self._chat_feedback_pending) and card is latest and card.item.role == "assistant",
             )
             card.update_item(updated)
-        latest = self._latest_assistant_card()
-        if latest is not None:
-            updated = ChatTimelineItem(
-                role=latest.item.role,
-                content=latest.item.content,
-                status=latest.item.status,
-                run_id=latest.item.run_id,
-                sources=list(latest.item.sources),
-                feedback_visible=self._chat_feedback_pending,
-            )
-            latest.update_item(updated)
-        if self._chat_has_completed_response:
-            self._set_inspector_visible(True)
-        else:
-            self._set_inspector_visible(False)
 
     def switch_view(self, key: str) -> None:
         target = key if key in {"chat", "brain", "settings", "logs"} else "chat"
@@ -3313,6 +3238,7 @@ class AppView(QMainWindow):
         card.inspectRequested.connect(lambda: self._set_inspector_visible(True, tab_index=0))
         self._chat_timeline_layout.insertWidget(max(0, self._chat_timeline_layout.count() - 1), card)
         self._chat_cards.append(card)
+        self._sync_feedback_visibility_on_timeline()
 
     def _scroll_timeline_to_end(self) -> None:
         scrollbar = self._chat_timeline_scroll.verticalScrollBar()
@@ -3392,6 +3318,7 @@ class AppView(QMainWindow):
             self._chat_items.append(item)
             self._append_timeline_item(item)
         self._chat_has_messages = bool(self._chat_items)
+        self._sync_feedback_visibility_on_timeline()
         self._refresh_chat_state()
         self._scroll_timeline_to_end()
         if not self._chat_items:
