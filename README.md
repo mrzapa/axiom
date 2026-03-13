@@ -133,6 +133,18 @@ All three interfaces share the same retrieval engine. Same index, same results.
 
 ---
 
+## 🧭 Roadmap: Next big leap (planned / experimental)
+
+One possible next step is to make Axiom's shared retrieval core available to more interfaces without replacing the current app.
+
+- Add a local API server layer that reuses `axiom_app/services/*` so the GUI, CLI, and future clients can share the same indexing, query, and session logic.
+- Add a web UI in a React meta-framework that talks to that local API instead of reimplementing retrieval behavior in JavaScript.
+- Add a desktop packaging path that bundles the web UI and local API into a desktop container while keeping the product local-first.
+
+Today, the shipped interfaces remain the PySide6 GUI and shared CLI, and the current packaging baselines are the installer scripts plus the Windows PyInstaller release flow in `.github/workflows/release-exe.yml` and `.github/workflows/release-installer.yml`.
+
+---
+
 ## 🚀 Usage
 
 ### Desktop app
