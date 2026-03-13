@@ -5,7 +5,9 @@ Classes
 AnimationEngine      — QVariantAnimation-based smooth value interpolation with easing
 IOSSegmentedToggle   — QPainter-rendered iOS-style two-option pill toggle
 CollapsibleFrame     — animated accordion section with height transitions
+MetricAwareWrapLabel — QLabel with better wrapped size hints
 RoundedCard          — QFrame with border-radius + QGraphicsDropShadowEffect
+ActionCard          — Clickable card button with hover and pressed states
 TooltipManager       — hover tooltips with fade-in animation
 """
 
@@ -16,9 +18,13 @@ from typing import Any, Callable
 
 from PySide6.QtCore import (
     QEasingCurve,
+    QEvent,
     QObject,
+    QPointF,
+    QRect,
     QPropertyAnimation,
     QRectF,
+    QSize,
     Qt,
     QTimer,
     QVariantAnimation,
@@ -30,6 +36,7 @@ from PySide6.QtGui import (
     QFont,
     QMouseEvent,
     QPainter,
+    QPainterPath,
     QPen,
 )
 from PySide6.QtWidgets import (
@@ -37,6 +44,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -45,6 +53,7 @@ from PySide6.QtWidgets import (
 from axiom_app.views.styles import STYLE_CONFIG, UI_SPACING, _pal
 
 logger = logging.getLogger(__name__)
+_ACTION_CARD_METRICS = STYLE_CONFIG.get("action_card", {})
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +351,48 @@ class CollapsibleFrame(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# MetricAwareWrapLabel
+# ---------------------------------------------------------------------------
+
+
+class MetricAwareWrapLabel(QLabel):
+    """QLabel that reports wrapped size hints using the best available width."""
+
+    _MAX_WIDGET_DIMENSION = 16_777_215
+
+    def event(self, event: QEvent | None) -> bool:
+        if event is not None and event.type() in (
+            QEvent.FontChange,
+            QEvent.Polish,
+            QEvent.PolishRequest,
+            QEvent.StyleChange,
+        ):
+            self.updateGeometry()
+        return super().event(event)
+
+    def minimumSizeHint(self) -> QSize:
+        return self._resolve_wrapped_hint(super().minimumSizeHint())
+
+    def sizeHint(self) -> QSize:
+        return self._resolve_wrapped_hint(super().sizeHint())
+
+    def _resolve_wrapped_hint(self, hint: QSize) -> QSize:
+        if not self.wordWrap():
+            return hint
+        width = self.width()
+        maximum_width = self.maximumWidth()
+        if width <= 0 and 0 < maximum_width < self._MAX_WIDGET_DIMENSION:
+            width = maximum_width
+        if width <= 0:
+            width = max(hint.width(), 1)
+        height = self.heightForWidth(width)
+        if height > 0:
+            hint.setWidth(width)
+            hint.setHeight(max(hint.height(), height))
+        return hint
+
+
+# ---------------------------------------------------------------------------
 # RoundedCard
 # ---------------------------------------------------------------------------
 
@@ -412,6 +463,607 @@ class RoundedCard(QFrame):
         if border_color is not None:
             self._border_color = border_color
         self._apply_card_style()
+
+
+# ---------------------------------------------------------------------------
+# ActionCard
+# ---------------------------------------------------------------------------
+
+
+class _ActionCardIcon(QWidget):
+    """Small painted icon badge used inside ``ActionCard``."""
+
+    _BADGE_RADIUS = 12
+
+    def __init__(
+        self,
+        icon_key: str,
+        parent: QWidget | None = None,
+        *,
+        container_size: int,
+        icon_size: int,
+    ) -> None:
+        super().__init__(parent)
+        self._icon_key = icon_key
+        self._icon_size = max(8, int(icon_size))
+        self._badge_background_color = "#000000"
+        self._badge_border_color = "#000000"
+        self._icon_color = "#000000"
+        self.setFixedSize(max(16, int(container_size)), max(16, int(container_size)))
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    def update_colors(
+        self,
+        *,
+        background_color: str,
+        border_color: str,
+        icon_color: str,
+    ) -> None:
+        self._badge_background_color = background_color
+        self._badge_border_color = border_color
+        self._icon_color = icon_color
+        self.update()
+
+    def paintEvent(self, _event: Any) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        badge_rect = QRectF(0.5, 0.5, self.width() - 1.0, self.height() - 1.0)
+        radius = min(
+            self._BADGE_RADIUS,
+            badge_rect.width() / 2.0,
+            badge_rect.height() / 2.0,
+        )
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(self._badge_background_color))
+        painter.drawRoundedRect(badge_rect, radius, radius)
+
+        border_pen = QPen(QColor(self._badge_border_color), 1.1)
+        border_pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(border_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(badge_rect, radius, radius)
+
+        glyph_margin = max(
+            4.0,
+            (min(self.width(), self.height()) - self._icon_size) / 2.0,
+        )
+        glyph_rect = badge_rect.adjusted(
+            glyph_margin,
+            glyph_margin,
+            -glyph_margin,
+            -glyph_margin,
+        )
+        glyph_pen = QPen(QColor(self._icon_color), max(1.5, glyph_rect.width() * 0.11))
+        glyph_pen.setCapStyle(Qt.RoundCap)
+        glyph_pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(glyph_pen)
+        self._draw_icon(painter, glyph_rect)
+
+    def _draw_icon(self, painter: QPainter, rect: QRectF) -> None:
+        icon_key = self._icon_key.lower()
+        if icon_key == "document":
+            self._draw_document_icon(painter, rect)
+            return
+        if icon_key == "chat":
+            self._draw_chat_icon(painter, rect)
+            return
+        if icon_key == "summary":
+            self._draw_summary_icon(painter, rect)
+            return
+        if icon_key == "learn":
+            self._draw_learn_icon(painter, rect)
+            return
+        if icon_key == "research":
+            self._draw_research_icon(painter, rect)
+            return
+        if icon_key == "evidence":
+            self._draw_evidence_icon(painter, rect)
+            return
+        self._draw_summary_icon(painter, rect)
+
+    @staticmethod
+    def _draw_line(
+        painter: QPainter,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+    ) -> None:
+        painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+    @staticmethod
+    def _draw_document_icon(painter: QPainter, rect: QRectF) -> None:
+        fold = rect.width() * 0.28
+        page = QRectF(
+            rect.left() + rect.width() * 0.08,
+            rect.top() + rect.height() * 0.05,
+            rect.width() * 0.72,
+            rect.height() * 0.84,
+        )
+        path = QPainterPath()
+        path.moveTo(page.left(), page.top())
+        path.lineTo(page.right() - fold, page.top())
+        path.lineTo(page.right(), page.top() + fold)
+        path.lineTo(page.right(), page.bottom())
+        path.lineTo(page.left(), page.bottom())
+        path.closeSubpath()
+        painter.drawPath(path)
+        _ActionCardIcon._draw_line(
+            painter,
+            page.right() - fold,
+            page.top(),
+            page.right() - fold,
+            page.top() + fold,
+        )
+        _ActionCardIcon._draw_line(
+            painter,
+            page.right() - fold,
+            page.top() + fold,
+            page.right(),
+            page.top() + fold,
+        )
+
+        line_left = page.left() + page.width() * 0.18
+        line_right = page.right() - page.width() * 0.14
+        for ratio in (0.42, 0.58, 0.74):
+            y = page.top() + page.height() * ratio
+            _ActionCardIcon._draw_line(painter, line_left, y, line_right, y)
+
+    @staticmethod
+    def _draw_chat_icon(painter: QPainter, rect: QRectF) -> None:
+        bubble = QRectF(
+            rect.left() + rect.width() * 0.08,
+            rect.top() + rect.height() * 0.12,
+            rect.width() * 0.78,
+            rect.height() * 0.58,
+        )
+        painter.drawRoundedRect(bubble, rect.width() * 0.18, rect.height() * 0.18)
+        tail = QPainterPath()
+        tail.moveTo(bubble.left() + bubble.width() * 0.18, bubble.bottom())
+        tail.lineTo(
+            bubble.left() + bubble.width() * 0.12,
+            rect.bottom() - rect.height() * 0.08,
+        )
+        tail.lineTo(
+            bubble.left() + bubble.width() * 0.34,
+            bubble.bottom() - rect.height() * 0.10,
+        )
+        painter.drawPath(tail)
+        for ratio in (0.30, 0.50, 0.70):
+            y = bubble.top() + bubble.height() * ratio
+            _ActionCardIcon._draw_line(
+                painter,
+                bubble.left() + bubble.width() * 0.16,
+                y,
+                bubble.right() - bubble.width() * 0.16,
+                y,
+            )
+
+    @staticmethod
+    def _draw_summary_icon(painter: QPainter, rect: QRectF) -> None:
+        x1 = rect.left() + rect.width() * 0.12
+        y_positions = (
+            rect.top() + rect.height() * 0.22,
+            rect.top() + rect.height() * 0.44,
+            rect.top() + rect.height() * 0.66,
+            rect.top() + rect.height() * 0.84,
+        )
+        lengths = (0.68, 0.82, 0.58, 0.74)
+        for y, ratio in zip(y_positions, lengths, strict=False):
+            _ActionCardIcon._draw_line(
+                painter,
+                x1,
+                y,
+                x1 + rect.width() * ratio,
+                y,
+            )
+
+    @staticmethod
+    def _draw_learn_icon(painter: QPainter, rect: QRectF) -> None:
+        bulb = QRectF(
+            rect.left() + rect.width() * 0.18,
+            rect.top() + rect.height() * 0.10,
+            rect.width() * 0.48,
+            rect.height() * 0.46,
+        )
+        painter.drawEllipse(bulb)
+        base_left = bulb.center().x() - bulb.width() * 0.18
+        base_right = bulb.center().x() + bulb.width() * 0.18
+        base_top = bulb.bottom() + rect.height() * 0.06
+        base_bottom = rect.bottom() - rect.height() * 0.12
+        _ActionCardIcon._draw_line(painter, base_left, base_top, base_right, base_top)
+        _ActionCardIcon._draw_line(
+            painter,
+            base_left,
+            base_bottom,
+            base_right,
+            base_bottom,
+        )
+        _ActionCardIcon._draw_line(painter, base_left, base_top, base_left, base_bottom)
+        _ActionCardIcon._draw_line(
+            painter,
+            base_right,
+            base_top,
+            base_right,
+            base_bottom,
+        )
+        _ActionCardIcon._draw_line(
+            painter,
+            bulb.center().x(),
+            rect.top(),
+            bulb.center().x(),
+            bulb.top() - rect.height() * 0.06,
+        )
+        _ActionCardIcon._draw_line(
+            painter,
+            bulb.left() - rect.width() * 0.08,
+            bulb.top() + rect.height() * 0.08,
+            bulb.left(),
+            bulb.top() + rect.height() * 0.16,
+        )
+        _ActionCardIcon._draw_line(
+            painter,
+            bulb.right() + rect.width() * 0.08,
+            bulb.top() + rect.height() * 0.08,
+            bulb.right(),
+            bulb.top() + rect.height() * 0.16,
+        )
+
+    @staticmethod
+    def _draw_research_icon(painter: QPainter, rect: QRectF) -> None:
+        lens = QRectF(
+            rect.left() + rect.width() * 0.10,
+            rect.top() + rect.height() * 0.10,
+            rect.width() * 0.52,
+            rect.height() * 0.52,
+        )
+        painter.drawEllipse(lens)
+        _ActionCardIcon._draw_line(
+            painter,
+            lens.right() - rect.width() * 0.02,
+            lens.bottom() - rect.height() * 0.02,
+            rect.right() - rect.width() * 0.05,
+            rect.bottom() - rect.height() * 0.05,
+        )
+        _ActionCardIcon._draw_line(
+            painter,
+            lens.left() + lens.width() * 0.24,
+            lens.center().y(),
+            lens.right() - lens.width() * 0.24,
+            lens.center().y(),
+        )
+        _ActionCardIcon._draw_line(
+            painter,
+            lens.center().x(),
+            lens.top() + lens.height() * 0.24,
+            lens.center().x(),
+            lens.bottom() - lens.height() * 0.24,
+        )
+
+    @staticmethod
+    def _draw_evidence_icon(painter: QPainter, rect: QRectF) -> None:
+        shield = QPainterPath()
+        shield.moveTo(rect.center().x(), rect.top() + rect.height() * 0.06)
+        shield.lineTo(
+            rect.right() - rect.width() * 0.14,
+            rect.top() + rect.height() * 0.20,
+        )
+        shield.lineTo(
+            rect.right() - rect.width() * 0.18,
+            rect.top() + rect.height() * 0.58,
+        )
+        shield.quadTo(
+            rect.center().x(),
+            rect.bottom(),
+            rect.left() + rect.width() * 0.18,
+            rect.top() + rect.height() * 0.58,
+        )
+        shield.lineTo(
+            rect.left() + rect.width() * 0.14,
+            rect.top() + rect.height() * 0.20,
+        )
+        shield.closeSubpath()
+        painter.drawPath(shield)
+
+        check = QPainterPath()
+        check.moveTo(rect.left() + rect.width() * 0.28, rect.top() + rect.height() * 0.54)
+        check.lineTo(rect.left() + rect.width() * 0.44, rect.top() + rect.height() * 0.70)
+        check.lineTo(rect.right() - rect.width() * 0.22, rect.top() + rect.height() * 0.36)
+        painter.drawPath(check)
+
+
+class ActionCard(QPushButton):
+    """Reusable clickable starter card with consistent spacing and theme states."""
+
+    _TEXT_MEASURE_HEIGHT = 4096
+    _MIN_HEIGHT = int(_ACTION_CARD_METRICS.get("min_height", 72))
+    _H_PADDING = int(_ACTION_CARD_METRICS.get("padding_x", 18))
+    _V_PADDING = int(_ACTION_CARD_METRICS.get("padding_y", 16))
+    _ROW_SPACING = int(_ACTION_CARD_METRICS.get("title_row_spacing", UI_SPACING["s"]))
+    _SECTION_SPACING = int(
+        _ACTION_CARD_METRICS.get("section_spacing", UI_SPACING["xs"] // 2)
+    )
+    _ICON_SIZE = int(_ACTION_CARD_METRICS.get("icon_size", 18))
+    _ICON_CONTAINER_SIZE = int(_ACTION_CARD_METRICS.get("icon_container_size", 36))
+    _RADIUS = int(_ACTION_CARD_METRICS.get("radius", STYLE_CONFIG.get("radius", 18)))
+
+    def __init__(
+        self,
+        title: str,
+        description: str,
+        parent: QWidget | None = None,
+        *,
+        palette: dict,
+        icon_key: str | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._palette = dict(palette)
+        self._icon_key = icon_key
+        self._visual_state = "idle"
+
+        self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumHeight(self._MIN_HEIGHT)
+        self.setText("")
+        self.setStyleSheet(
+            "QPushButton { background: transparent; border: none; padding: 0px; }"
+        )
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._surface = RoundedCard(
+            self,
+            radius=self._RADIUS,
+            bg=self._palette.get("surface_alt", "#171F29"),
+            border_color=self._palette.get("border", "#2B3542"),
+            inner_padding=0,
+        )
+        self._surface.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._surface.inner.setAttribute(Qt.WA_TransparentForMouseEvents)
+        root.addWidget(self._surface)
+
+        content = QVBoxLayout(self._surface.inner)
+        content.setContentsMargins(
+            self._H_PADDING,
+            self._V_PADDING,
+            self._H_PADDING,
+            self._V_PADDING,
+        )
+        content.setSpacing(self._SECTION_SPACING)
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(self._ROW_SPACING)
+        content.addLayout(title_row)
+
+        self._icon_widget: _ActionCardIcon | None = None
+        if self._icon_key:
+            self._icon_widget = _ActionCardIcon(
+                self._icon_key,
+                self._surface.inner,
+                container_size=self._ICON_CONTAINER_SIZE,
+                icon_size=self._ICON_SIZE,
+            )
+            self._icon_widget.setObjectName("actionCardIcon")
+            title_row.addWidget(self._icon_widget, 0, Qt.AlignTop)
+
+        self._title_label = MetricAwareWrapLabel(title, self._surface.inner)
+        self._title_label.setObjectName("actionCardTitle")
+        self._title_label.setWordWrap(True)
+        self._title_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._title_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        title_row.addWidget(self._title_label, 1)
+
+        self._description_label = MetricAwareWrapLabel(description, self._surface.inner)
+        self._description_label.setObjectName("actionCardDescription")
+        self._description_label.setWordWrap(True)
+        self._description_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._description_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        content.addWidget(self._description_label)
+
+        self._apply_type_styles()
+        self.update_palette(self._palette)
+
+    def event(self, event: QEvent | None) -> bool:
+        if event is not None and event.type() in (
+            QEvent.FontChange,
+            QEvent.Polish,
+            QEvent.PolishRequest,
+            QEvent.StyleChange,
+        ) and hasattr(self, "_title_label"):
+            self._sync_label_widths(self.width())
+            self.updateGeometry()
+        return super().event(event)
+
+    def resizeEvent(self, event: Any) -> None:
+        if hasattr(self, "_title_label"):
+            self._sync_label_widths(self.width())
+        super().resizeEvent(event)
+
+    def enterEvent(self, event: Any) -> None:
+        if self.isEnabled() and self._visual_state != "pressed":
+            self._apply_visual_state("hover")
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: Any) -> None:
+        if self.isEnabled():
+            self._apply_visual_state("idle")
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.LeftButton and self.isEnabled():
+            self._apply_visual_state("pressed")
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        super().mouseReleaseEvent(event)
+        if not self.isEnabled():
+            self._apply_visual_state("idle")
+            return
+        local_pos = event.position().toPoint()
+        if self.rect().contains(local_pos):
+            self._apply_visual_state("hover")
+        else:
+            self._apply_visual_state("idle")
+
+    def update_palette(self, palette: dict) -> None:
+        self._palette = dict(palette)
+        self._apply_visual_state(self._visual_state)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        content_width, title_width = self._sync_label_widths(width)
+        spacing = max(self._section_spacing_for_text(), 0)
+        title_height = self._wrapped_label_height(self._title_label, title_width)
+        description_height = self._wrapped_label_height(
+            self._description_label,
+            content_width,
+        )
+        title_row_height = max(title_height, self._icon_container_height())
+        row_height = title_row_height + spacing + description_height
+        total_height = (
+            self._V_PADDING
+            + row_height
+            + self._V_PADDING
+        )
+        return max(self._MIN_HEIGHT, total_height)
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
+
+    def sizeHint(self) -> QSize:
+        title_hint = self._title_label.sizeHint()
+        description_hint = self._description_label.sizeHint()
+        content_width = max(
+            title_hint.width() + self._icon_slot_width(),
+            description_hint.width(),
+            1,
+        )
+        width = content_width + self._H_PADDING * 2
+        return QSize(width, self.heightForWidth(width))
+
+    def _apply_type_styles(self) -> None:
+        self._title_label.setStyleSheet(
+            "background: transparent; font-size: 14px; font-weight: 600;"
+        )
+        self._description_label.setStyleSheet(
+            "background: transparent; font-size: 13px;"
+        )
+
+    def _resolved_width(self, width: int) -> int:
+        if width > 0:
+            return width
+        if self.width() > 0:
+            return self.width()
+        return max(QPushButton.sizeHint(self).width(), 1)
+
+    def _content_width_for_button_width(self, width: int) -> int:
+        return max(1, self._resolved_width(width) - self._H_PADDING * 2)
+
+    def _icon_slot_width(self) -> int:
+        if self._icon_widget is None:
+            return 0
+        return self._ICON_CONTAINER_SIZE + self._ROW_SPACING
+
+    def _icon_container_height(self) -> int:
+        if self._icon_widget is None:
+            return 0
+        return self._ICON_CONTAINER_SIZE
+
+    def _section_spacing_for_text(self) -> int:
+        if not self._description_label.text().strip():
+            return 0
+        return self._SECTION_SPACING
+
+    def _title_width_for_content_width(self, content_width: int) -> int:
+        return max(1, content_width - self._icon_slot_width())
+
+    def _sync_label_widths(self, width: int) -> tuple[int, int]:
+        content_width = self._content_width_for_button_width(width)
+        title_width = self._title_width_for_content_width(content_width)
+        self._title_label.setMaximumWidth(title_width)
+        self._description_label.setMaximumWidth(content_width)
+        self._title_label.updateGeometry()
+        self._description_label.updateGeometry()
+        return content_width, title_width
+
+    def _wrapped_label_height(self, label: QLabel, width: int) -> int:
+        height = label.heightForWidth(width)
+        if height > 0:
+            return height
+        text_rect = label.fontMetrics().boundingRect(
+            QRect(0, 0, width, self._TEXT_MEASURE_HEIGHT),
+            int(Qt.TextWordWrap | Qt.AlignLeft | Qt.AlignTop),
+            label.text(),
+        )
+        return max(1, text_rect.height())
+
+    def _apply_visual_state(self, state: str) -> None:
+        self._visual_state = state
+        state_colors = self._colors_for_state(state)
+        self._surface.configure_colors(
+            bg=state_colors["bg"],
+            border_color=state_colors["border"],
+        )
+        if self._icon_widget is not None:
+            self._icon_widget.update_colors(
+                background_color=state_colors["icon_bg"],
+                border_color=state_colors["icon_border"],
+                icon_color=state_colors["icon"],
+            )
+        self._title_label.setStyleSheet(
+            "background: transparent; "
+            f"color: {state_colors['title']}; "
+            "font-size: 14px; font-weight: 600;"
+        )
+        self._description_label.setStyleSheet(
+            "background: transparent; "
+            f"color: {state_colors['description']}; "
+            "font-size: 13px;"
+        )
+
+    def _colors_for_state(self, state: str) -> dict[str, str]:
+        palette = self._palette
+        primary = palette.get("primary", "#45C2FF")
+        pressed_border = palette.get("primary_pressed", primary)
+        colors = {
+            "idle": {
+                "bg": palette.get("surface_alt", "#171F29"),
+                "border": palette.get("border", "#2B3542"),
+                "title": palette.get("text", "#F6FAFD"),
+                "description": palette.get("muted_text", "#95A2B3"),
+                "icon_bg": palette.get("surface", "#11161D"),
+                "icon_border": palette.get("border", "#2B3542"),
+                "icon": palette.get("status", palette.get("muted_text", "#95A2B3")),
+            },
+            "hover": {
+                "bg": palette.get("nav_hover_bg", "#1D2632"),
+                "border": primary,
+                "title": palette.get("text", "#F6FAFD"),
+                "description": palette.get("muted_text", "#95A2B3"),
+                "icon_bg": palette.get(
+                    "surface_elevated",
+                    palette.get("surface", "#11161D"),
+                ),
+                "icon_border": primary,
+                "icon": primary,
+            },
+            "pressed": {
+                "bg": palette.get("nav_active_bg", "#202D3D"),
+                "border": pressed_border,
+                "title": palette.get("text", "#F6FAFD"),
+                "description": palette.get("muted_text", "#95A2B3"),
+                "icon_bg": palette.get("surface", "#11161D"),
+                "icon_border": pressed_border,
+                "icon": pressed_border,
+            },
+        }
+        return colors.get(state, colors["idle"])
 
 
 # ---------------------------------------------------------------------------
