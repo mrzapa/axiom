@@ -137,7 +137,7 @@ export default function ChatPage() {
     } finally {
       setIsSending(false);
     }
-  }, []);
+  }, [selectedMode]);
 
   const handleRagSend = useCallback(async (question: string) => {
     if (!activeIndexPath) return;
@@ -180,7 +180,7 @@ export default function ChatPage() {
     } finally {
       setIsSending(false);
     }
-  }, [activeIndexPath]);
+  }, [activeIndexPath, selectedMode]);
 
   const handleNewChat = useCallback(() => {
     setSelectedId(null);
