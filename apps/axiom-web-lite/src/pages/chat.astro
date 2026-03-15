@@ -1,0 +1,233 @@
+---
+import Shell from "../layouts/Shell.astro";
+---
+
+<Shell title="Chat — axiom-web-lite">
+  <div class="chat-controls">
+    <label>
+      Index
+      <select id="index-select">
+        <option value="">Loading indexes…</option>
+      </select>
+      <span id="index-empty" class="empty-state" style="display:none;">
+        No indexes found. Build one first in
+        <a href="http://localhost:3000/library" target="_blank" rel="noopener">axiom-web</a>.
+      </span>
+    </label>
+
+    <label>
+      Question
+      <textarea id="question" placeholder="Ask something about your documents…" rows="3"></textarea>
+    </label>
+
+    <button id="submit-btn" type="button">Ask</button>
+  </div>
+
+  <div id="transcript" class="transcript"></div>
+  <p id="status" class="status-line"></p>
+</Shell>
+
+<script>
+  // ---------------------------------------------------------------------------
+  // Config
+  // ---------------------------------------------------------------------------
+  const apiBase: string =
+    (document.querySelector<HTMLMetaElement>('meta[name="api-base"]')?.content ?? "").replace(/\/$/, "") ||
+    "http://127.0.0.1:8000";
+
+  // ---------------------------------------------------------------------------
+  // DOM refs
+  // ---------------------------------------------------------------------------
+  const indexSelect = document.getElementById("index-select") as HTMLSelectElement;
+  const indexEmpty = document.getElementById("index-empty") as HTMLSpanElement;
+  const questionEl = document.getElementById("question") as HTMLTextAreaElement;
+  const submitBtn = document.getElementById("submit-btn") as HTMLButtonElement;
+  const transcript = document.getElementById("transcript") as HTMLDivElement;
+  const statusEl = document.getElementById("status") as HTMLParagraphElement;
+
+  // ---------------------------------------------------------------------------
+  // Load index list
+  // ---------------------------------------------------------------------------
+  interface IndexSummary {
+    index_id: string;
+    manifest_path: string;
+    document_count: number;
+  }
+
+  async function loadIndexes(): Promise<void> {
+    try {
+      const res = await fetch(`${apiBase}/v1/index/list`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const indexes: IndexSummary[] = await res.json();
+
+      if (indexes.length === 0) {
+        indexSelect.style.display = "none";
+        indexEmpty.style.display = "block";
+        submitBtn.disabled = true;
+        return;
+      }
+
+      indexSelect.innerHTML = "";
+      for (const idx of indexes) {
+        const opt = document.createElement("option");
+        opt.value = idx.manifest_path;
+        opt.textContent = `${idx.index_id} (${idx.document_count} docs)`;
+        indexSelect.appendChild(opt);
+      }
+    } catch {
+      indexSelect.innerHTML = '<option value="">Could not reach API</option>';
+      submitBtn.disabled = true;
+      setStatus("API unreachable — is `python -m axiom_app.api` running?", true);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // SSE stream helpers (POST-based — EventSource is GET-only)
+  // ---------------------------------------------------------------------------
+  interface SseEvent {
+    type: string;
+    run_id?: string;
+    text?: string;
+    answer_text?: string;
+    message?: string;
+    queries?: string[];
+  }
+
+  function parseSseFrame(frame: string): SseEvent | null {
+    const dataLines: string[] = [];
+    for (const raw of frame.split("\n")) {
+      const line = raw.trimEnd();
+      if (line.startsWith("data:")) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+    if (dataLines.length === 0) return null;
+    try {
+      return JSON.parse(dataLines.join("\n")) as SseEvent;
+    } catch {
+      return null;
+    }
+  }
+
+  async function streamRagQuery(manifestPath: string, question: string): Promise<void> {
+    const res = await fetch(`${apiBase}/v1/query/rag/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        manifest_path: manifestPath,
+        question,
+        settings: {},
+      }),
+    });
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => `HTTP ${res.status}`);
+      throw new Error(detail || `HTTP ${res.status}`);
+    }
+
+    if (!res.body) throw new Error("Response body missing");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const flush = (force = false): string => {
+      const frames = buffer.replace(/\r\n/g, "\n").split("\n\n");
+      const remainder = force ? "" : (frames.pop() ?? "");
+      for (const frame of frames) {
+        if (!frame.trim()) continue;
+        const evt = parseSseFrame(frame);
+        if (evt) handleEvent(evt);
+      }
+      if (force && remainder.trim()) {
+        const evt = parseSseFrame(remainder);
+        if (evt) handleEvent(evt);
+        return "";
+      }
+      return remainder;
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      buffer = flush(done);
+      if (done) break;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event handler
+  // ---------------------------------------------------------------------------
+  function handleEvent(evt: SseEvent): void {
+    if (evt.type === "run_started") {
+      setStatus(`Run started (${evt.run_id ?? ""})`);
+    } else if (evt.type === "retrieval_complete") {
+      setStatus("Retrieving context…");
+    } else if (evt.type === "subqueries" && evt.queries?.length) {
+      setStatus(`Searching: ${evt.queries.slice(0, 2).join(" · ")}${evt.queries.length > 2 ? " …" : ""}`);
+    } else if (evt.type === "token" && evt.text) {
+      transcript.textContent = (transcript.textContent ?? "") + evt.text;
+    } else if (evt.type === "final") {
+      transcript.classList.remove("streaming");
+      setStatus("Done.");
+    } else if (evt.type === "error") {
+      transcript.classList.remove("streaming");
+      setStatus(evt.message ?? "Stream error", true);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI helpers
+  // ---------------------------------------------------------------------------
+  function setStatus(msg: string, isError = false): void {
+    statusEl.textContent = msg;
+    statusEl.className = `status-line${isError ? " error" : ""}`;
+  }
+
+  function setStreaming(active: boolean): void {
+    submitBtn.disabled = active;
+    if (active) {
+      transcript.classList.add("streaming");
+    } else {
+      transcript.classList.remove("streaming");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Submit
+  // ---------------------------------------------------------------------------
+  submitBtn.addEventListener("click", async () => {
+    const manifestPath = indexSelect.value.trim();
+    const question = questionEl.value.trim();
+
+    if (!manifestPath) { setStatus("Select an index first.", true); return; }
+    if (!question) { setStatus("Enter a question.", true); return; }
+
+    transcript.textContent = "";
+    setStatus("Connecting…");
+    setStreaming(true);
+
+    try {
+      await streamRagQuery(manifestPath, question);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus(`Error: ${msg}`, true);
+      transcript.classList.remove("streaming");
+    } finally {
+      setStreaming(false);
+    }
+  });
+
+  // Enter key in textarea (Shift+Enter = newline, Enter = submit)
+  questionEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submitBtn.click();
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Init
+  // ---------------------------------------------------------------------------
+  loadIndexes();
+</script>
