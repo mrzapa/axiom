@@ -29,7 +29,7 @@ def test_query_direct_happy_path(monkeypatch) -> None:
             answer_text = "Mock/Test Backend: hello"
             selected_mode = "Q&A"
             llm_provider = "mock"
-            llm_model = "stub-model"
+            llm_model = "mock-model"
 
         return _Result()
 
@@ -100,9 +100,15 @@ def test_stream_rag_happy_path_includes_sse_ids(monkeypatch, tmp_path) -> None:
     assert response.status_code == 200
     assert "text/event-stream" in response.headers["content-type"]
     frames = _parse_sse_frames(response.text)
+    data_line_types = [
+        json.loads(line[len("data: "):])["type"]
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
 
     assert [frame_id for frame_id, _ in frames] == [1, 2, 3]
     assert [payload["type"] for _, payload in frames] == ["run_started", "token", "final"]
+    assert data_line_types == ["run_started", "token", "final"]
 
 
 def test_stream_rag_replays_only_events_after_last_event_id(monkeypatch, tmp_path) -> None:
@@ -181,3 +187,28 @@ def test_stream_rag_reconnect_ignores_unrelated_trace_rows(monkeypatch, tmp_path
 
     assert response.status_code == 200
     assert response.text == ""
+
+
+def test_stream_rag_error_event(monkeypatch, tmp_path) -> None:
+    _set_stream_manager(monkeypatch, tmp_path)
+    client = TestClient(api_app_module.create_app())
+
+    def _fake_stream(req, cancel_token=None):
+        yield {"type": "error", "run_id": "r0", "message": "question must not be empty."}
+
+    monkeypatch.setattr(api_app_module, "stream_rag_answer", _fake_stream)
+
+    response = client.post(
+        "/v1/query/rag/stream",
+        json={
+            "manifest_path": "/tmp/fake/manifest.json",
+            "question": "",
+            "settings": {},
+        },
+    )
+
+    assert response.status_code == 200
+    frames = _parse_sse_frames(response.text)
+
+    assert [frame_id for frame_id, _ in frames] == [1]
+    assert [payload["type"] for _, payload in frames] == ["error"]
