@@ -21,19 +21,30 @@ interface PanelConfig {
 interface ResizablePanelsProps {
   panels: [PanelConfig, PanelConfig, PanelConfig];
   className?: string;
+  resetToken?: number;
 }
 
 /**
  * Three-panel resizable layout using CSS grid + pointer-drag dividers.
  * Falls back gracefully — panels can be collapsed below min width on small screens.
  */
-export function ResizablePanels({ panels, className }: ResizablePanelsProps) {
+export function ResizablePanels({ panels, className, resetToken }: ResizablePanelsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [sizes, setSizes] = useState<[number, number, number]>([
     panels[0].default,
     panels[1].default,
     panels[2].default,
   ]);
+
+  const isFirstResetRender = useRef(true);
+  useEffect(() => {
+    if (isFirstResetRender.current) {
+      isFirstResetRender.current = false;
+      return;
+    }
+    setSizes([panels[0].default, panels[1].default, panels[2].default]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetToken]);
 
   // Which divider is being dragged: 0 = left|center, 1 = center|right
   const draggingRef = useRef<number | null>(null);
