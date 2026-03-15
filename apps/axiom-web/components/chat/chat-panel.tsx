@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { SessionSummary } from "@/lib/api";
+import type { SessionSummary, TraceEvent } from "@/lib/api";
 import type { ChatMessage } from "@/lib/chat-types";
 import { ActionCard } from "@/components/chat/action-card";
 import { AssistantCopyActions } from "@/components/chat/assistant-copy-actions";
 import { AssistantMarkdown } from "@/components/chat/assistant-markdown";
-import { AlertCircle, Loader2, SendHorizontal, Square } from "lucide-react";
+import { AlertCircle, Bot, Loader2, SendHorizontal, Square } from "lucide-react";
+import { AgenticStepIndicator } from "@/components/chat/agentic-step-indicator";
 import { IndexPickerDialog } from "@/components/chat/index-picker-dialog";
 import { ModelStatusDialog } from "@/components/chat/model-status-dialog";
 
@@ -42,6 +43,11 @@ interface ChatPanelProps {
   } | null;
   onReconnectRun?: () => void;
   onDiscardReconnect?: () => void;
+  agenticMode?: boolean;
+  agenticModeSaving?: boolean;
+  agenticModeError?: string | null;
+  onAgenticModeChange?: (enabled: boolean) => void;
+  liveTraceEvents?: TraceEvent[];
 }
 
 export function ChatPanel({
@@ -67,6 +73,11 @@ export function ChatPanel({
   reconnectState,
   onReconnectRun,
   onDiscardReconnect,
+  agenticMode,
+  agenticModeSaving,
+  agenticModeError,
+  onAgenticModeChange,
+  liveTraceEvents,
 }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
   const [queryMode, setQueryMode] = useState<"direct" | "rag">(initialQueryMode ?? "direct");
@@ -140,22 +151,53 @@ export function ChatPanel({
             )}
           </div>
         )}
-        {/* Model status badge */}
-        {(modelProvider || modelName) && (
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            <span className="rounded bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-              {[modelProvider, modelName].filter(Boolean).join(" / ")}
-            </span>
-            <button
-              type="button"
-              onClick={() => setModelDialogOpen(true)}
-              className="rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:underline"
-            >
-              Change
-            </button>
-          </div>
-        )}
+        {/* Agentic mode toggle + settings link */}
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onAgenticModeChange?.(!agenticMode)}
+            disabled={agenticModeSaving}
+            className={cn(
+              "flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+              agenticMode
+                ? "bg-sky-100 text-sky-700 hover:bg-sky-200"
+                : "bg-muted text-muted-foreground hover:bg-muted/80",
+            )}
+            aria-pressed={agenticMode}
+          >
+            <Bot className="size-3" />
+            Agentic {agenticMode ? "on" : "off"}
+          </button>
+          <a
+            href="/settings"
+            className="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Settings
+          </a>
+          {/* Model status badge */}
+          {(modelProvider || modelName) && (
+            <>
+              <span className="rounded bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                {[modelProvider, modelName].filter(Boolean).join(" / ")}
+              </span>
+              <button
+                type="button"
+                onClick={() => setModelDialogOpen(true)}
+                className="rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:underline"
+              >
+                Change
+              </button>
+            </>
+          )}
+        </div>
       </div>
+
+      {agenticModeError && (
+        <div className="flex items-center gap-1.5 border-b bg-destructive/10 px-4 py-1.5 text-[11px] text-destructive">
+          <AlertCircle className="size-3 shrink-0" />
+          {agenticModeError}
+        </div>
+      )}
 
       {reconnectState && (
         <div className="border-b bg-amber-50/60 px-4 py-3">
@@ -292,10 +334,17 @@ export function ChatPanel({
                     </p>
                   )}
                   {msg.role === "assistant" && msg.status === "streaming" && (
-                    <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <span className="size-1.5 animate-pulse rounded-full bg-current/70" />
-                      Streaming
-                    </div>
+                    agenticMode ? (
+                      <AgenticStepIndicator
+                        liveTraceEvents={liveTraceEvents ?? []}
+                        isStreaming={true}
+                      />
+                    ) : (
+                      <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span className="size-1.5 animate-pulse rounded-full bg-current/70" />
+                        Streaming
+                      </div>
+                    )
                   )}
                   {msg.role === "assistant" && msg.status === "error" && (
                     <div className="mt-1.5 text-[10px] text-destructive">

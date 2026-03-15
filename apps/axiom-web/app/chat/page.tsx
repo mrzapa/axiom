@@ -5,7 +5,7 @@ import { ResizablePanels } from "@/components/chat/resizable-panels";
 import { SessionsPanel } from "@/components/chat/sessions-panel";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { EvidencePanel } from "@/components/chat/evidence-panel";
-import { fetchSession, fetchSettings, queryDirect, queryRagStream, submitRunAction } from "@/lib/api";
+import { fetchSession, fetchSettings, updateSettings, queryDirect, queryRagStream, submitRunAction } from "@/lib/api";
 import type { SessionSummary, TraceEvent } from "@/lib/api";
 import type { RagStreamEvent } from "@/lib/api";
 import type { EvidenceSource } from "@/lib/chat-types";
@@ -136,6 +136,12 @@ export default function ChatPage() {
   const activeRagStreamRef = useRef<ActiveRagStream | null>(null);
   const [modelProvider, setModelProvider] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
+  const [agenticMode, setAgenticMode] = useState(false);
+  const [agenticModeSaving, setAgenticModeSaving] = useState(false);
+  const [agenticModeError, setAgenticModeError] = useState<string | null>(null);
+  const [traceFirstLayout, setTraceFirstLayout] = useState(false);
+  const [shellPostureToken, setShellPostureToken] = useState(0);
+  const [preferredEvidenceTab, setPreferredEvidenceTab] = useState<"sources" | "trace">("sources");
   const {
     createMessage,
     restoreStreamingRun,
@@ -192,6 +198,32 @@ export default function ChatPage() {
     [markMessageAborted, markRunAborted, publishResumableRun],
   );
 
+  const applyShellPosture = useCallback((isAgentic: boolean) => {
+    setTraceFirstLayout(isAgentic);
+    setPreferredEvidenceTab(isAgentic ? "trace" : "sources");
+    setShellPostureToken((t) => t + 1);
+  }, []);
+
+  const handleAgenticModeChange = useCallback(
+    async (enabled: boolean) => {
+      setAgenticMode(enabled);
+      setAgenticModeSaving(true);
+      setAgenticModeError(null);
+      applyShellPosture(enabled);
+      try {
+        await updateSettings({ agentic_mode: enabled });
+        settingsRef.current = null;
+      } catch (err) {
+        setAgenticMode(!enabled);
+        applyShellPosture(!enabled);
+        setAgenticModeError(err instanceof Error ? err.message : "Failed to save");
+      } finally {
+        setAgenticModeSaving(false);
+      }
+    },
+    [applyShellPosture],
+  );
+
   useEffect(() => {
     fetchSettings()
       .then((settings) => {
@@ -205,11 +237,15 @@ export default function ChatPage() {
         setModelProvider(provider);
         setModelName(model);
         settingsRef.current = settings;
+
+        const isAgentic = Boolean(settings.agentic_mode);
+        setAgenticMode(isAgentic);
+        applyShellPosture(isAgentic);
       })
       .catch(() => {
         // Keep the badge empty on fetch error.
       });
-  }, []);
+  }, [applyShellPosture]);
 
   const handleModelChange = useCallback((provider: string, model: string) => {
     setModelProvider(provider);
@@ -333,8 +369,9 @@ export default function ChatPage() {
       publishResumableRun(null);
       setSelectedId(id);
       loadSession(id);
+      applyShellPosture(agenticMode);
     },
-    [loadSession, publishResumableRun, stopRagStream],
+    [agenticMode, applyShellPosture, loadSession, publishResumableRun, stopRagStream],
   );
 
   const handleDirectSend = useCallback(
@@ -777,7 +814,8 @@ export default function ChatPage() {
     setLoadingSession(false);
     setSessionError(null);
     setLiveTraceEvents([]);
-  }, [publishResumableRun, reset, stopRagStream]);
+    applyShellPosture(agenticMode);
+  }, [agenticMode, applyShellPosture, publishResumableRun, reset, stopRagStream]);
 
   const handleActionApprove = useCallback(
     async (messageId: string) => {
@@ -831,6 +869,7 @@ export default function ChatPage() {
   return (
     <main className="h-screen w-screen overflow-hidden bg-background">
       <ResizablePanels
+        resetToken={shellPostureToken}
         panels={[
           {
             default: 1,
@@ -844,7 +883,7 @@ export default function ChatPage() {
             ),
           },
           {
-            default: 3,
+            default: traceFirstLayout ? 2.5 : 3,
             min: 400,
             children: (
               <ChatPanel
@@ -880,11 +919,16 @@ export default function ChatPage() {
                 composerRef={composerRef}
                 onActionApprove={handleActionApprove}
                 onActionDeny={handleActionDeny}
+                agenticMode={agenticMode}
+                agenticModeSaving={agenticModeSaving}
+                agenticModeError={agenticModeError}
+                onAgenticModeChange={handleAgenticModeChange}
+                liveTraceEvents={liveTraceEvents}
               />
             ),
           },
           {
-            default: 1.5,
+            default: traceFirstLayout ? 2 : 1.5,
             min: 240,
             children: (
               <EvidencePanel
@@ -893,6 +937,8 @@ export default function ChatPage() {
                 latestRunId={latestRunId}
                 liveTraceEvents={liveTraceEvents}
                 isStreaming={isStreamingRag}
+                preferredTab={preferredEvidenceTab}
+                postureToken={shellPostureToken}
               />
             ),
           },

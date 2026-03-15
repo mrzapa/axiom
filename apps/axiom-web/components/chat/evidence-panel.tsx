@@ -18,22 +18,32 @@ interface EvidencePanelProps {
   latestAnswer?: string;
   liveTraceEvents?: TraceEvent[];
   isStreaming?: boolean;
+  preferredTab?: "sources" | "trace";
+  postureToken?: number;
 }
 
-export function EvidencePanel({ sources, runIds, latestRunId, selectedMode, latestAnswer, liveTraceEvents, isStreaming }: EvidencePanelProps) {
+export function EvidencePanel({ sources, runIds, latestRunId, selectedMode, latestAnswer, liveTraceEvents, isStreaming, preferredTab, postureToken }: EvidencePanelProps) {
   const [selectedRunId, setSelectedRunId] = useState<string>(latestRunId ?? "");
   const [syncedLatestRunId, setSyncedLatestRunId] = useState<string | null>(latestRunId);
   const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
   const [traceLoading, setTraceLoading] = useState(Boolean(latestRunId));
   const [traceError, setTraceError] = useState<string | null>(null);
   const [traceStateRunId, setTraceStateRunId] = useState<string>(latestRunId ?? "");
-  const [activeTab, setActiveTab] = useState("sources");
+  const [activeTab, setActiveTab] = useState(preferredTab ?? "sources");
   const [syncedMode, setSyncedMode] = useState(selectedMode);
+  const [syncedPostureToken, setSyncedPostureToken] = useState(postureToken ?? 0);
 
   if (selectedMode !== syncedMode) {
     setSyncedMode(selectedMode);
     if (selectedMode === "Evidence Pack") {
       setActiveTab("sources");
+    }
+  }
+
+  if ((postureToken ?? 0) !== syncedPostureToken) {
+    setSyncedPostureToken(postureToken ?? 0);
+    if (preferredTab) {
+      setActiveTab(preferredTab);
     }
   }
 
