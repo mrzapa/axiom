@@ -3,15 +3,16 @@ import Shell from "../layouts/Shell.astro";
 ---
 
 <Shell title="axiom-web-lite">
-  <h2 style="margin-bottom:1rem;font-size:1.1rem;">Streaming shell experiment</h2>
-  <p style="color:var(--muted);margin-bottom:1.5rem;line-height:1.6;">
-    This is a minimal prototype that demonstrates perceived-performance streaming
-    against the local Axiom API. It is intentionally plain — not a design showcase.
+  <h2 class="page-title">axiom-web-lite</h2>
+  <p class="page-subtitle">
+    Minimal prototype for streaming RAG queries, session management, and settings
+    against the local Axiom API. Intentionally plain — not a design showcase.
   </p>
-  <a
-    href="/chat"
-    style="background:var(--accent);color:#fff;padding:0.6rem 1.4rem;border-radius:6px;text-decoration:none;font-size:0.9rem;"
-  >
-    Open chat →
-  </a>
+
+  <div style="display:flex;flex-wrap:wrap;gap:0.75rem;">
+    <a href="/chat" class="btn">Open Chat</a>
+    <a href="/sessions" class="btn btn-ghost">Sessions</a>
+    <a href="/library" class="btn btn-ghost">Library</a>
+    <a href="/settings" class="btn btn-ghost">Settings</a>
+  </div>
 </Shell>

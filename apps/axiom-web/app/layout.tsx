@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SetupGuard } from "@/components/setup-guard";
 
 export const metadata: Metadata = {
   title: "Axiom",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          <SetupGuard>{children}</SetupGuard>
+        </TooltipProvider>
       </body>
     </html>
   );

@@ -71,8 +71,21 @@ if (Test-Path (Join-Path `$axiomDir ".git")) {
     try { git -C `$axiomDir pull origin `$branch --ff-only 2>`$null } catch {}
 }
 
-# Run Axiom (MVC is the default path in main.py)
-& "$VenvPython" (Join-Path `$axiomDir "main.py") @args
+if (`$args -contains "--web") {
+    # Start API dev server in the background and open the web UI
+    `$filteredArgs = `$args | Where-Object { `$_ -ne "--web" }
+    `$apiProcess = Start-Process -FilePath "$VenvPython" ``
+        -ArgumentList "-m", "axiom_app.api" ``
+        -WorkingDirectory `$axiomDir ``
+        -PassThru -WindowStyle Minimized
+    Start-Sleep -Seconds 2
+    Start-Process "http://localhost:3000"
+    Write-Host "Axiom API server running (PID `$(`$apiProcess.Id)). Press Ctrl+C to stop."
+    try { Wait-Process -Id `$apiProcess.Id } catch {}
+} else {
+    # Run Axiom (MVC is the default path in main.py)
+    & "$VenvPython" (Join-Path `$axiomDir "main.py") @args
+}
 "@ | Set-Content -Path $LauncherPs1 -Encoding UTF8
 
     # CMD wrapper so `axiom` works from cmd.exe too
@@ -81,7 +94,22 @@ if (Test-Path (Join-Path `$axiomDir ".git")) {
 REM Auto-generated Axiom launcher - do not edit.
 cd /d "$InstallDir"
 git pull origin $Branch --ff-only >nul 2>&1
-"$VenvPython" "$InstallDir\main.py" %*
+
+REM Check for --web flag
+set "WEB_MODE="
+for %%a in (%*) do (
+    if "%%a"=="--web" set "WEB_MODE=1"
+)
+
+if defined WEB_MODE (
+    start /min "" "$VenvPython" -m axiom_app.api
+    timeout /t 2 /nobreak >nul
+    start http://localhost:3000
+    echo Axiom API server running. Close this window to stop.
+    "$VenvPython" -m axiom_app.api
+) else (
+    "$VenvPython" "$InstallDir\main.py" %*
+)
 "@ | Set-Content -Path $LauncherCmd -Encoding ASCII
 }
 
@@ -186,6 +214,32 @@ function Invoke-Install {
     & $VenvPip install -e $InstallSpec --quiet
     Write-Ok "Dependencies installed."
 
+    # ── Web UI (optional) ────────────────────────────────────────────────
+    $WebAppDir = Join-Path $InstallDir "apps" "axiom-web"
+    $WebPackageJson = Join-Path $WebAppDir "package.json"
+
+    if (Get-Command "node" -ErrorAction SilentlyContinue) {
+        if (Test-Path $WebPackageJson) {
+            Write-Info "Node.js detected — building web UI..."
+            Push-Location $WebAppDir
+            try {
+                npm install --silent
+                npm run build
+                Write-Ok "Web UI built successfully."
+            } catch {
+                Write-Warn "Web UI build failed: $_"
+                Write-Warn "The backend is still usable without the web UI."
+            } finally {
+                Pop-Location
+            }
+        } else {
+            Write-Warn "Web UI package.json not found at $WebPackageJson — skipping web build."
+        }
+    } else {
+        Write-Warn "Node.js not found — skipping web UI build."
+        Write-Warn "Install Node.js (https://nodejs.org) to enable the web UI."
+    }
+
     # ── Launcher scripts ─────────────────────────────────────────────────
     Write-Launchers -VenvPython $VenvPython
 
@@ -202,6 +256,7 @@ function Invoke-Install {
     Write-Host ""
     Write-Info "Run Axiom:"
     Write-Host "  axiom                            # GUI mode"
+    Write-Host "  axiom --web                      # Web UI mode"
     Write-Host "  axiom --cli index --file f.txt   # CLI mode"
     Write-Host ""
 

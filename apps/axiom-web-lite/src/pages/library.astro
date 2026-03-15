@@ -1,0 +1,71 @@
+---
+import Shell from "../layouts/Shell.astro";
+---
+
+<Shell title="Library — axiom-web-lite">
+  <h2 class="page-title">Library</h2>
+  <p class="page-subtitle">Browse indexes built by the Axiom engine.</p>
+
+  <div id="index-list"></div>
+  <p id="status" class="status-msg"></p>
+</Shell>
+
+<script>
+  const apiBase: string =
+    (document.querySelector<HTMLMetaElement>('meta[name="api-base"]')?.content ?? "").replace(/\/$/, "") ||
+    "http://127.0.0.1:8000";
+
+  const listEl = document.getElementById("index-list") as HTMLDivElement;
+  const statusEl = document.getElementById("status") as HTMLParagraphElement;
+
+  interface IndexSummary {
+    index_id: string;
+    manifest_path: string;
+    document_count: number;
+    chunk_count: number;
+    backend: string;
+  }
+
+  function setStatus(msg: string, cls = ""): void {
+    statusEl.textContent = msg;
+    statusEl.className = `status-msg ${cls}`;
+  }
+
+  function escHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  async function loadIndexes(): Promise<void> {
+    try {
+      const res = await fetch(`${apiBase}/v1/index/list`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const indexes: IndexSummary[] = await res.json();
+
+      if (indexes.length === 0) {
+        listEl.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;">No indexes found. Use the API or axiom-web to build one.</p>';
+        return;
+      }
+
+      listEl.innerHTML = indexes
+        .map(
+          (idx) => `
+        <div class="card">
+          <div class="card-title">${escHtml(idx.index_id)}</div>
+          <div class="card-meta">
+            ${idx.document_count} doc${idx.document_count !== 1 ? "s" : ""}
+            &middot; ${idx.chunk_count} chunk${idx.chunk_count !== 1 ? "s" : ""}
+            &middot; ${escHtml(idx.backend)}
+          </div>
+          <div class="card-meta" style="margin-top:0.25rem;font-size:0.72rem;word-break:break-all;">
+            ${escHtml(idx.manifest_path)}
+          </div>
+        </div>`
+        )
+        .join("");
+    } catch {
+      setStatus("Could not reach API — is the server running?", "error");
+    }
+  }
+
+  loadIndexes();
+</script>

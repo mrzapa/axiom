@@ -1,0 +1,103 @@
+---
+import Shell from "../layouts/Shell.astro";
+---
+
+<Shell title="Settings — axiom-web-lite">
+  <h2 class="page-title">Settings</h2>
+  <p class="page-subtitle">View and update Axiom engine settings.</p>
+
+  <form id="settings-form" style="max-width:480px;">
+    <div class="form-group">
+      <label for="s-provider">LLM Provider</label>
+      <input id="s-provider" type="text" placeholder="e.g. anthropic, openai" />
+    </div>
+
+    <div class="form-group">
+      <label for="s-model">LLM Model</label>
+      <input id="s-model" type="text" placeholder="e.g. claude-haiku-4-5-20251001" />
+    </div>
+
+    <div class="form-group">
+      <label for="s-chunk">Chunk Size</label>
+      <input id="s-chunk" type="number" placeholder="e.g. 512" />
+    </div>
+
+    <div class="form-group">
+      <label for="s-k">Retrieval K</label>
+      <input id="s-k" type="number" placeholder="e.g. 10" />
+    </div>
+
+    <button class="btn" type="submit">Save Settings</button>
+  </form>
+
+  <p id="status" class="status-msg"></p>
+</Shell>
+
+<script>
+  const apiBase: string =
+    (document.querySelector<HTMLMetaElement>('meta[name="api-base"]')?.content ?? "").replace(/\/$/, "") ||
+    "http://127.0.0.1:8000";
+
+  const form = document.getElementById("settings-form") as HTMLFormElement;
+  const statusEl = document.getElementById("status") as HTMLParagraphElement;
+
+  const providerEl = document.getElementById("s-provider") as HTMLInputElement;
+  const modelEl = document.getElementById("s-model") as HTMLInputElement;
+  const chunkEl = document.getElementById("s-chunk") as HTMLInputElement;
+  const kEl = document.getElementById("s-k") as HTMLInputElement;
+
+  function setStatus(msg: string, cls = ""): void {
+    statusEl.textContent = msg;
+    statusEl.className = `status-msg ${cls}`;
+  }
+
+  async function loadSettings(): Promise<void> {
+    try {
+      const res = await fetch(`${apiBase}/v1/settings`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const s = await res.json();
+
+      providerEl.value = s.llm_provider ?? "";
+      modelEl.value = s.llm_model ?? "";
+      chunkEl.value = s.chunk_size != null ? String(s.chunk_size) : "";
+      kEl.value = s.retrieval_k != null ? String(s.retrieval_k) : "";
+    } catch {
+      setStatus("Could not load settings — is the server running?", "error");
+    }
+  }
+
+  async function saveSettings(): Promise<void> {
+    const payload: Record<string, unknown> = {};
+    if (providerEl.value.trim()) payload.llm_provider = providerEl.value.trim();
+    if (modelEl.value.trim()) payload.llm_model = modelEl.value.trim();
+    if (chunkEl.value.trim()) {
+      const v = parseInt(chunkEl.value.trim(), 10);
+      if (isNaN(v)) { setStatus("Chunk size must be a number.", "error"); return; }
+      payload.chunk_size = v;
+    }
+    if (kEl.value.trim()) {
+      const v = parseInt(kEl.value.trim(), 10);
+      if (isNaN(v)) { setStatus("Retrieval K must be a number.", "error"); return; }
+      payload.retrieval_k = v;
+    }
+
+    try {
+      const res = await fetch(`${apiBase}/v1/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setStatus("Settings saved.", "success");
+    } catch {
+      setStatus("Failed to save settings.", "error");
+    }
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveSettings();
+  });
+
+  loadSettings();
+</script>

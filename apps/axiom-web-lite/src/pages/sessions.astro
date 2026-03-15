@@ -1,0 +1,115 @@
+---
+import Shell from "../layouts/Shell.astro";
+---
+
+<Shell title="Sessions — axiom-web-lite">
+  <h2 class="page-title">Sessions</h2>
+  <p class="page-subtitle">View and manage chat sessions stored by the Axiom API.</p>
+
+  <div style="margin-bottom:1.25rem;">
+    <div style="display:flex;gap:0.5rem;">
+      <input id="new-title" type="text" placeholder="New session title…"
+        style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:0.5rem 0.75rem;font-size:0.9rem;" />
+      <button id="create-btn" class="btn btn-sm" type="button">Create</button>
+    </div>
+  </div>
+
+  <div id="session-list"></div>
+  <p id="status" class="status-msg"></p>
+</Shell>
+
+<script>
+  const apiBase: string =
+    (document.querySelector<HTMLMetaElement>('meta[name="api-base"]')?.content ?? "").replace(/\/$/, "") ||
+    "http://127.0.0.1:8000";
+
+  const listEl = document.getElementById("session-list") as HTMLDivElement;
+  const statusEl = document.getElementById("status") as HTMLParagraphElement;
+  const newTitleEl = document.getElementById("new-title") as HTMLInputElement;
+  const createBtn = document.getElementById("create-btn") as HTMLButtonElement;
+
+  interface Session {
+    session_id: string;
+    title: string;
+    updated_at: string;
+  }
+
+  function setStatus(msg: string, cls = ""): void {
+    statusEl.textContent = msg;
+    statusEl.className = `status-msg ${cls}`;
+  }
+
+  async function loadSessions(): Promise<void> {
+    try {
+      const res = await fetch(`${apiBase}/v1/sessions`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const sessions: Session[] = await res.json();
+
+      if (sessions.length === 0) {
+        listEl.innerHTML = '<p style="color:var(--muted);font-size:0.85rem;">No sessions yet.</p>';
+        return;
+      }
+
+      listEl.innerHTML = sessions
+        .map(
+          (s) => `
+        <div class="session-row">
+          <div>
+            <div class="session-title">${escHtml(s.title || "(untitled)")}</div>
+            <div class="session-date">${escHtml(s.updated_at)}</div>
+          </div>
+          <button class="btn btn-sm btn-danger" data-delete="${escAttr(s.session_id)}">Delete</button>
+        </div>`
+        )
+        .join("");
+
+      listEl.querySelectorAll<HTMLButtonElement>("[data-delete]").forEach((btn) => {
+        btn.addEventListener("click", () => deleteSession(btn.dataset.delete!));
+      });
+    } catch {
+      setStatus("Could not reach API — is the server running?", "error");
+    }
+  }
+
+  async function createSession(): Promise<void> {
+    const title = newTitleEl.value.trim() || "New Chat";
+    try {
+      const res = await fetch(`${apiBase}/v1/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      newTitleEl.value = "";
+      setStatus("Session created.", "success");
+      await loadSessions();
+    } catch {
+      setStatus("Failed to create session.", "error");
+    }
+  }
+
+  async function deleteSession(sessionId: string): Promise<void> {
+    try {
+      const res = await fetch(`${apiBase}/v1/sessions/${sessionId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setStatus("Session deleted.", "success");
+      await loadSessions();
+    } catch {
+      setStatus("Failed to delete session.", "error");
+    }
+  }
+
+  function escHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function escAttr(s: string): string {
+    return escHtml(s);
+  }
+
+  createBtn.addEventListener("click", createSession);
+  newTitleEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") createSession();
+  });
+
+  loadSessions();
+</script>
