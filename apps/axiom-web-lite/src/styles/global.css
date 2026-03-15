@@ -1,0 +1,94 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f0f11;
+  --surface: #1a1a1f;
+  --border: #2e2e38;
+  --text: #e8e8f0;
+  --muted: #8888a0;
+  --accent: #7c7cf8;
+  --danger: #f87c7c;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+body { min-height: 100dvh; display: flex; flex-direction: column; }
+
+/* Shell */
+.shell-header {
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.shell-header h1 { font-size: 1rem; font-weight: 600; }
+.badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.shell-main { flex: 1; padding: 1.5rem; max-width: 800px; width: 100%; margin: 0 auto; }
+.shell-footer {
+  border-top: 1px solid var(--border);
+  padding: 0.6rem 1.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+}
+.shell-footer a { color: var(--accent); text-decoration: none; }
+
+/* Chat */
+.chat-controls { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
+.chat-controls label { font-size: 0.8rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.3rem; }
+.chat-controls select,
+.chat-controls input[type="text"],
+.chat-controls textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  width: 100%;
+}
+.chat-controls textarea { resize: vertical; min-height: 80px; }
+.chat-controls button {
+  align-self: flex-start;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.5rem 1.25rem;
+}
+.chat-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Transcript */
+.transcript {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 200px;
+  padding: 1rem 1.25rem;
+  white-space: pre-wrap;
+  line-height: 1.65;
+  font-size: 0.9rem;
+}
+.transcript:empty::before { content: "Response will appear here…"; color: var(--muted); }
+.transcript.streaming::after { content: "▌"; animation: blink 1s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.status-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.6rem; min-height: 1.2em; }
+.status-line.error { color: var(--danger); }
+
+/* Index empty state */
+.empty-state { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
+.empty-state a { color: var(--accent); }

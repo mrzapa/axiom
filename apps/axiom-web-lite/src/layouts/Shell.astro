@@ -1,0 +1,35 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+}
+
+const { title = "axiom-web-lite" } = Astro.props;
+const apiBase = import.meta.env.PUBLIC_AXIOM_API_BASE ?? "http://127.0.0.1:8000";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="api-base" content={apiBase} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="shell-header">
+      <h1>axiom-web-lite</h1>
+      <span class="badge">experimental</span>
+    </header>
+
+    <main class="shell-main">
+      <slot />
+    </main>
+
+    <footer class="shell-footer">
+      Full UI: <a href="http://localhost:3000" target="_blank" rel="noopener">axiom-web</a>
+      &nbsp;·&nbsp; WOR-23 prototype
+    </footer>
+  </body>
+</html>
