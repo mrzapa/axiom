@@ -51,14 +51,43 @@ set -euo pipefail
 
 AXIOM_DIR="$INSTALL_DIR"
 BRANCH="$BRANCH"
+VENV_PYTHON="$VENV_DIR/bin/python"
 
 # Pull latest code silently
 if [ -d "\$AXIOM_DIR/.git" ]; then
     git -C "\$AXIOM_DIR" pull origin "\$BRANCH" --ff-only 2>/dev/null || true
 fi
 
-# Activate venv and run
-exec "$VENV_DIR/bin/python" "\$AXIOM_DIR/main.py" "\$@"
+# Check for --web flag
+WEB_MODE=false
+FILTERED_ARGS=()
+for arg in "\$@"; do
+    if [ "\$arg" = "--web" ]; then
+        WEB_MODE=true
+    else
+        FILTERED_ARGS+=("\$arg")
+    fi
+done
+
+if [ "\$WEB_MODE" = "true" ]; then
+    # Start API dev server in the background and open the web UI
+    "\$VENV_PYTHON" -m axiom_app.api &
+    API_PID=\$!
+    sleep 2
+    # Open browser (cross-platform)
+    if command -v xdg-open &>/dev/null; then
+        xdg-open "http://localhost:3000"
+    elif command -v open &>/dev/null; then
+        open "http://localhost:3000"
+    else
+        echo "Open http://localhost:3000 in your browser."
+    fi
+    echo "Axiom API server running (PID \$API_PID). Press Ctrl+C to stop."
+    trap "kill \$API_PID 2>/dev/null" EXIT INT TERM
+    wait \$API_PID
+else
+    exec "\$VENV_PYTHON" "\$AXIOM_DIR/main.py" "\${FILTERED_ARGS[@]}"
+fi
 LAUNCHER_EOF
 
     chmod +x "$LAUNCHER"
@@ -152,6 +181,24 @@ do_install() {
     "$VENV_DIR/bin/pip" install -e "$INSTALL_SPEC" --quiet
     ok "Dependencies installed."
 
+    # ── Web UI (optional) ────────────────────────────────────────────────
+    local web_app_dir="$INSTALL_DIR/apps/axiom-web"
+    if command -v node &>/dev/null; then
+        if [ -f "$web_app_dir/package.json" ]; then
+            info "Node.js detected — building web UI..."
+            (cd "$web_app_dir" && npm install --silent && npm run build) && {
+                ok "Web UI built successfully."
+            } || {
+                warn "Web UI build failed. The backend is still usable without the web UI."
+            }
+        else
+            warn "Web UI package.json not found — skipping web build."
+        fi
+    else
+        warn "Node.js not found — skipping web UI build."
+        warn "Install Node.js (https://nodejs.org) to enable the web UI."
+    fi
+
     # ── Launcher script ──────────────────────────────────────────────────
     write_launcher
     ok "Launcher installed: $LAUNCHER"
@@ -166,6 +213,7 @@ do_install() {
     echo ""
     info "Run Axiom:"
     printf "  ${BOLD}axiom${NC}                          # GUI mode\n"
+    printf "  ${BOLD}axiom --web${NC}                     # Web UI mode\n"
     printf "  ${BOLD}axiom --cli index --file f.txt${NC}  # CLI mode\n"
     echo ""
     if [[ ":$PATH:" != *":$LAUNCHER_DIR:"* ]]; then

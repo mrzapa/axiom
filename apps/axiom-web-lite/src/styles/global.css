@@ -92,3 +92,85 @@ body { min-height: 100dvh; display: flex; flex-direction: column; }
 /* Index empty state */
 .empty-state { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
 .empty-state a { color: var(--accent); }
+
+/* Navigation */
+.shell-nav {
+  display: flex;
+  gap: 1rem;
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+.shell-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.shell-nav a:hover { color: var(--accent); }
+
+/* Page sections */
+.page-title { font-size: 1.3rem; font-weight: 600; margin-bottom: 0.5rem; }
+.page-subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 1.5rem; line-height: 1.5; }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+.card + .card { margin-top: 0.75rem; }
+.card-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem; }
+.card-meta { color: var(--muted); font-size: 0.78rem; }
+
+/* Form elements (shared) */
+.form-group { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; }
+.form-group label { font-size: 0.8rem; color: var(--muted); }
+.form-group input,
+.form-group select,
+.form-group textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  width: 100%;
+}
+.form-group textarea { resize: vertical; min-height: 80px; }
+
+.btn {
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.5rem 1.25rem;
+  display: inline-block;
+  text-decoration: none;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-sm { padding: 0.3rem 0.8rem; font-size: 0.8rem; }
+.btn-danger { background: var(--danger); }
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* Session list */
+.session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.session-row:last-child { border-bottom: none; }
+.session-title { font-weight: 500; font-size: 0.9rem; }
+.session-date { color: var(--muted); font-size: 0.78rem; }
+
+/* Status messages */
+.status-msg { font-size: 0.82rem; color: var(--muted); margin-top: 0.75rem; min-height: 1.2em; }
+.status-msg.error { color: var(--danger); }
+.status-msg.success { color: oklch(0.7 0.15 145); }
