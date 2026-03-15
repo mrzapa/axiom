@@ -17,6 +17,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build web UI static export
+        run: |
+          cd apps/axiom-web
+          npm install --silent
+          npm run build
+          # Package the static export so end users can skip the Node.js requirement
+          tar -czf ../../axiom-web-dist.tar.gz -C out .
+        continue-on-error: true
+
       - name: Prepare release artifacts
         run: |
           mkdir -p release-artifacts
@@ -25,6 +39,11 @@ jobs:
           cp scripts/install_axiom.sh  release-artifacts/install_axiom.sh
           cp scripts/install_axiom.ps1 release-artifacts/install_axiom.ps1
           chmod +x release-artifacts/install_axiom.sh
+
+          # Include pre-built web UI if the build succeeded
+          if [ -f axiom-web-dist.tar.gz ]; then
+            cp axiom-web-dist.tar.gz release-artifacts/axiom-web-dist.tar.gz
+          fi
 
           # Create a one-liner bootstrap wrapper for curl|bash convenience
           cat > release-artifacts/install.sh <<'BOOTSTRAP'
@@ -54,6 +73,7 @@ jobs:
             release-artifacts/install_axiom.sh
             release-artifacts/install_axiom.ps1
             release-artifacts/install.sh
+            release-artifacts/axiom-web-dist.tar.gz
           body: |
             ## Axiom Installer Release
 

@@ -36,6 +36,20 @@ const schema = z.object({
   // LLM fine-tuning
   llm_temperature: z.number().min(0).max(2),
   llm_max_tokens: z.number().int().min(64, "Min 64").max(32768, "Max 32768"),
+  // Provider
+  llm_provider: z.string().min(1),
+  llm_model: z.string().min(1),
+  embedding_provider: z.string().min(1),
+  embedding_model: z.string().min(1),
+  // Advanced Retrieval
+  subquery_max_docs: z.number().int().min(1, "Min 1").max(50, "Max 50"),
+  document_loader: z.string().min(1),
+  structure_aware_ingestion: z.boolean(),
+  semantic_layout_ingestion: z.boolean(),
+  // Experimental
+  deepread_mode: z.boolean(),
+  enable_langextract: z.boolean(),
+  agent_lightning_enabled: z.boolean(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -120,6 +134,17 @@ export default function SettingsPage() {
       verbose_mode: false,
       llm_temperature: 0.0,
       llm_max_tokens: 1024,
+      llm_provider: "anthropic",
+      llm_model: "claude-opus-4-6",
+      embedding_provider: "voyage",
+      embedding_model: "voyage-4-large",
+      subquery_max_docs: 200,
+      document_loader: "auto",
+      structure_aware_ingestion: false,
+      semantic_layout_ingestion: false,
+      deepread_mode: false,
+      enable_langextract: false,
+      agent_lightning_enabled: false,
     },
   });
 
@@ -148,6 +173,17 @@ export default function SettingsPage() {
           verbose_mode: (raw.verbose_mode as boolean) ?? false,
           llm_temperature: (raw.llm_temperature as number) ?? 0.0,
           llm_max_tokens: (raw.llm_max_tokens as number) ?? 1024,
+          llm_provider: (raw.llm_provider as string) ?? "anthropic",
+          llm_model: (raw.llm_model as string) ?? "claude-opus-4-6",
+          embedding_provider: (raw.embedding_provider as string) ?? "voyage",
+          embedding_model: (raw.embedding_model as string) ?? "voyage-4-large",
+          subquery_max_docs: (raw.subquery_max_docs as number) ?? 200,
+          document_loader: (raw.document_loader as string) ?? "auto",
+          structure_aware_ingestion: (raw.structure_aware_ingestion as boolean) ?? false,
+          semantic_layout_ingestion: (raw.semantic_layout_ingestion as boolean) ?? false,
+          deepread_mode: (raw.deepread_mode as boolean) ?? false,
+          enable_langextract: (raw.enable_langextract as boolean) ?? false,
+          agent_lightning_enabled: (raw.agent_lightning_enabled as boolean) ?? false,
         });
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load settings"))
@@ -218,7 +254,7 @@ export default function SettingsPage() {
           <div>
             <p className="font-medium">Advanced settings</p>
             <p className="mt-0.5">
-              For provider/model selection, local LLM config, embeddings, and vector DB settings,
+              For local LLM config and vector DB settings,
               edit <code className="rounded bg-blue-100 px-1 dark:bg-blue-900/50">settings.json</code> at
               the repo root directly. Changes made there take effect on next server restart.
             </p>
@@ -513,6 +549,130 @@ export default function SettingsPage() {
                   className="max-w-[200px]"
                 />
                 <FieldError message={errors.llm_max_tokens?.message} />
+              </div>
+            </section>
+
+            {/* Section 5 — Provider */}
+            <section className="space-y-4">
+              <h2 className="text-base font-semibold">Provider</h2>
+              <Separator />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <FieldLabel htmlFor="llm_provider">LLM provider</FieldLabel>
+                  <Input
+                    id="llm_provider"
+                    type="text"
+                    {...register("llm_provider")}
+                  />
+                  <FieldError message={errors.llm_provider?.message} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <FieldLabel htmlFor="llm_model">LLM model</FieldLabel>
+                  <Input
+                    id="llm_model"
+                    type="text"
+                    {...register("llm_model")}
+                  />
+                  <FieldError message={errors.llm_model?.message} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <FieldLabel htmlFor="embedding_provider">Embedding provider</FieldLabel>
+                  <Input
+                    id="embedding_provider"
+                    type="text"
+                    {...register("embedding_provider")}
+                  />
+                  <FieldError message={errors.embedding_provider?.message} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <FieldLabel htmlFor="embedding_model">Embedding model</FieldLabel>
+                  <Input
+                    id="embedding_model"
+                    type="text"
+                    {...register("embedding_model")}
+                  />
+                  <FieldError message={errors.embedding_model?.message} />
+                </div>
+              </div>
+            </section>
+
+            {/* Section 6 — Advanced Retrieval */}
+            <section className="space-y-4">
+              <h2 className="text-base font-semibold">Advanced Retrieval</h2>
+              <Separator />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <FieldLabel htmlFor="subquery_max_docs">Sub-query max docs</FieldLabel>
+                  <Input
+                    id="subquery_max_docs"
+                    type="number"
+                    min={1}
+                    max={50}
+                    {...register("subquery_max_docs", { valueAsNumber: true })}
+                  />
+                  <FieldError message={errors.subquery_max_docs?.message} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <FieldLabel htmlFor="document_loader">Document loader</FieldLabel>
+                  <Input
+                    id="document_loader"
+                    type="text"
+                    {...register("document_loader")}
+                  />
+                  <FieldError message={errors.document_loader?.message} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <ToggleRow
+                  id="structure_aware_ingestion"
+                  label="Structure-aware ingestion"
+                  description="Parse document structure (headings, tables) during ingestion for better chunking."
+                  checked={watch("structure_aware_ingestion")}
+                  onChange={(v) => setValue("structure_aware_ingestion", v)}
+                />
+                <ToggleRow
+                  id="semantic_layout_ingestion"
+                  label="Semantic layout ingestion"
+                  description="Use layout analysis to understand document spatial structure during ingestion."
+                  checked={watch("semantic_layout_ingestion")}
+                  onChange={(v) => setValue("semantic_layout_ingestion", v)}
+                />
+              </div>
+            </section>
+
+            {/* Section 7 — Experimental */}
+            <section className="space-y-4">
+              <h2 className="text-base font-semibold">Experimental</h2>
+              <Separator />
+              <div className="space-y-2">
+                <ToggleRow
+                  id="deepread_mode"
+                  label="Deep-read mode"
+                  description="Enable multi-pass deep reading for complex documents."
+                  checked={watch("deepread_mode")}
+                  onChange={(v) => setValue("deepread_mode", v)}
+                />
+                <ToggleRow
+                  id="enable_langextract"
+                  label="Language extraction"
+                  description="Enable experimental language-aware extraction pipeline."
+                  checked={watch("enable_langextract")}
+                  onChange={(v) => setValue("enable_langextract", v)}
+                />
+                <ToggleRow
+                  id="agent_lightning_enabled"
+                  label="Agent lightning mode"
+                  description="Enable fast-path agent execution for simple queries."
+                  checked={watch("agent_lightning_enabled")}
+                  onChange={(v) => setValue("agent_lightning_enabled", v)}
+                />
               </div>
             </section>
 
