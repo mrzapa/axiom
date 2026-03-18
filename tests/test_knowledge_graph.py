@@ -72,7 +72,7 @@ def test_knowledge_graph_to_dict_round_trips() -> None:
     assert "implements" in restored.edges["python"]["function"]
 
 
-def test_build_knowledge_graph_use_spacy_false_uses_heuristic() -> None:
+def test_build_knowledge_graph_without_spacy_uses_heuristic() -> None:
     chunks = ["Alan Turing invented the Turing Machine."]
     graph, entity_to_chunks = build_knowledge_graph(chunks, use_spacy=False)
 
