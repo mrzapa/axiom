@@ -76,11 +76,8 @@ class SessionRepository:
         """Explicit transaction context manager for multi-statement operations."""
         conn: sqlite3.Connection | None = None
         try:
-            if self._shared_conn is not None and self._db_target != ":memory:":
+            if self._shared_conn is not None:
                 conn = self._shared_conn
-            elif self._db_target == ":memory:":
-                conn = sqlite3.connect(":memory:")
-                conn.row_factory = sqlite3.Row
             else:
                 conn = sqlite3.connect(str(self._db_target), timeout=30.0)
                 conn.row_factory = sqlite3.Row
@@ -94,7 +91,7 @@ class SessionRepository:
                 conn.rollback()
             raise
         finally:
-            if conn and conn != self._shared_conn and self._db_target != ":memory:":
+            if conn and conn != self._shared_conn:
                 conn.close()
 
     def init_db(self) -> None:
