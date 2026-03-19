@@ -936,6 +936,7 @@ export default function ChatPage() {
         <ResizablePanels
           className="h-full"
           resetToken={shellPostureToken}
+          storageKey="axiom_chat_panel_sizes"
           panels={[
             {
               default: 1,

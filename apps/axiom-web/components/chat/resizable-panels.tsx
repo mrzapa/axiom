@@ -22,19 +22,70 @@ interface ResizablePanelsProps {
   panels: [PanelConfig, PanelConfig, PanelConfig];
   className?: string;
   resetToken?: number;
+  /**
+   * Optional localStorage key for persisting panel sizes across sessions.
+   * New users (no stored preference) always see the default open layout.
+   * When resetToken changes the stored preference is overwritten with the new defaults.
+   */
+  storageKey?: string;
+}
+
+function loadSizes(
+  storageKey: string | undefined,
+  defaults: [number, number, number],
+): [number, number, number] {
+  if (!storageKey || typeof window === "undefined") return defaults;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 3 &&
+      parsed.every((n) => typeof n === "number" && n > 0 && n < 50)
+    ) {
+      return parsed as [number, number, number];
+    }
+  } catch {
+    // Ignore malformed entries.
+  }
+  return defaults;
+}
+
+function saveSizes(
+  storageKey: string | undefined,
+  sizes: [number, number, number],
+): void {
+  if (!storageKey || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(sizes));
+  } catch {
+    // Ignore storage errors (e.g., quota exceeded in private browsing).
+  }
 }
 
 /**
  * Three-panel resizable layout using CSS grid + pointer-drag dividers.
  * Falls back gracefully — panels can be collapsed below min width on small screens.
  */
-export function ResizablePanels({ panels, className, resetToken }: ResizablePanelsProps) {
+export function ResizablePanels({
+  panels,
+  className,
+  resetToken,
+  storageKey,
+}: ResizablePanelsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [sizes, setSizes] = useState<[number, number, number]>([
-    panels[0].default,
-    panels[1].default,
-    panels[2].default,
-  ]);
+
+  const [sizes, setSizes] = useState<[number, number, number]>(() =>
+    loadSizes(storageKey, [panels[0].default, panels[1].default, panels[2].default]),
+  );
+
+  // Keep a ref that always reflects the latest sizes so we can read it
+  // inside event callbacks without capturing stale closures.
+  const sizesRef = useRef(sizes);
+  useEffect(() => {
+    sizesRef.current = sizes;
+  }, [sizes]);
 
   const isFirstResetRender = useRef(true);
   useEffect(() => {
@@ -42,7 +93,17 @@ export function ResizablePanels({ panels, className, resetToken }: ResizablePane
       isFirstResetRender.current = false;
       return;
     }
-    setSizes([panels[0].default, panels[1].default, panels[2].default]);
+    const next: [number, number, number] = [
+      panels[0].default,
+      panels[1].default,
+      panels[2].default,
+    ];
+    setSizes(next);
+    // Persist the reset so the new posture survives the next page load.
+    saveSizes(storageKey, next);
+    // `panels` and `storageKey` are intentionally excluded: `panels` changes
+    // every render (array literal), and `storageKey` is treated as a stable
+    // prop (like an id). The effect should only fire on explicit posture resets.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetToken]);
 
@@ -88,8 +149,12 @@ export function ResizablePanels({ panels, className, resetToken }: ResizablePane
   );
 
   const handlePointerUp = useCallback(() => {
+    if (draggingRef.current !== null) {
+      // Persist the final layout after a drag completes.
+      saveSizes(storageKey, sizesRef.current);
+    }
     draggingRef.current = null;
-  }, []);
+  }, [storageKey]);
 
   useEffect(() => {
     document.addEventListener("pointermove", handlePointerMove);
@@ -122,11 +187,15 @@ export function ResizablePanels({ panels, className, resetToken }: ResizablePane
           if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
             e.preventDefault();
             const delta = e.key === "ArrowLeft" ? -0.5 : 0.5;
-            setSizes((prev) => [
-              Math.max(1, prev[0] + delta),
-              Math.max(1, prev[1] - delta),
-              prev[2],
-            ]);
+            setSizes((prev) => {
+              const next: [number, number, number] = [
+                Math.max(1, prev[0] + delta),
+                Math.max(1, prev[1] - delta),
+                prev[2],
+              ];
+              saveSizes(storageKey, next);
+              return next;
+            });
           }
         }}
         className="mx-1 cursor-col-resize rounded-full bg-white/6 transition-colors hover:bg-primary/30 focus-visible:bg-primary/30 focus-visible:outline-none"
@@ -145,11 +214,15 @@ export function ResizablePanels({ panels, className, resetToken }: ResizablePane
           if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
             e.preventDefault();
             const delta = e.key === "ArrowLeft" ? -0.5 : 0.5;
-            setSizes((prev) => [
-              prev[0],
-              Math.max(1, prev[1] + delta),
-              Math.max(1, prev[2] - delta),
-            ]);
+            setSizes((prev) => {
+              const next: [number, number, number] = [
+                prev[0],
+                Math.max(1, prev[1] + delta),
+                Math.max(1, prev[2] - delta),
+              ];
+              saveSizes(storageKey, next);
+              return next;
+            });
           }
         }}
         className="mx-1 cursor-col-resize rounded-full bg-white/6 transition-colors hover:bg-primary/30 focus-visible:bg-primary/30 focus-visible:outline-none"
