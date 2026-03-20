@@ -2,12 +2,12 @@
 
 /**
  * Brain Graph page - visualises indexes, sessions, assistant memory, and
- * relationships as an interactive force-directed SVG graph.
+ * relationships as an interactive 3D force-directed graph.
  */
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import {
-  BrainGraph,
   type BrainGraphData,
   type BrainNode,
   type BrainScope,
@@ -16,6 +16,17 @@ import { PageChrome } from "@/components/shell/page-chrome";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchBrainGraph } from "@/lib/api";
+
+const BrainGraph3D = dynamic(() => import("@/components/brain/brain-graph-3d"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex flex-1 items-center justify-center">
+      <span className="animate-pulse text-sm text-muted-foreground">
+        Initialising 3D engine...
+      </span>
+    </div>
+  ),
+});
 
 const ALL_SCOPES: BrainScope[] = ["workspace", "assistant_self", "assistant_learned"];
 
@@ -508,7 +519,7 @@ export default function BrainPage() {
                 <p className="text-sm text-destructive">{error}</p>
               </div>
             ) : data ? (
-              <BrainGraph
+              <BrainGraph3D
                 data={data}
                 filter={filter}
                 activeScopes={activeScopes}
