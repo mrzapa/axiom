@@ -178,9 +178,6 @@ export default function BrainGraph3D({
 
   useEffect(() => {
     needsInitialZoomRef.current = true;
-  }, [graphData]);
-
-  useEffect(() => {
     const fg = fgRef.current;
     if (!fg || graphData.nodes.length === 0) return;
     const timer = setTimeout(() => {
@@ -194,10 +191,8 @@ export default function BrainGraph3D({
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    const controls = fg.controls?.() as
-      | { minDistance?: number; maxDistance?: number }
-      | undefined;
-    if (controls) {
+    const controls = fg.controls?.() as Record<string, unknown> | undefined;
+    if (controls && "minDistance" in controls && "maxDistance" in controls) {
       controls.minDistance = 10;
       controls.maxDistance = 5000;
     }
