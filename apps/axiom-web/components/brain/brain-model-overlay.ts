@@ -55,16 +55,16 @@ function noise3(x: number, y: number, z: number): number {
   const uy = fy * fy * (3 - 2 * fy);
   const uz = fz * fz * (3 - 2 * fz);
 
-  const n_ = ix + iy * 157 + iz * 113;
+  const cellIndex = ix + iy * 157 + iz * 113;
 
-  const a = hash(n_);
-  const b = hash(n_ + 1);
-  const c = hash(n_ + 157);
-  const d = hash(n_ + 158);
-  const e = hash(n_ + 113);
-  const f = hash(n_ + 114);
-  const g = hash(n_ + 270);
-  const h = hash(n_ + 271);
+  const a = hash(cellIndex);
+  const b = hash(cellIndex + 1);
+  const c = hash(cellIndex + 157);
+  const d = hash(cellIndex + 158);
+  const e = hash(cellIndex + 113);
+  const f = hash(cellIndex + 114);
+  const g = hash(cellIndex + 270);
+  const h = hash(cellIndex + 271);
 
   return (
     a +
