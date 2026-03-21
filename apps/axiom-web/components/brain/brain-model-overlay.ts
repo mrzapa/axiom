@@ -1,7 +1,21 @@
 "use client";
 
+/**
+ * Procedural particle-based brain overlay.
+ *
+ * Instead of loading a GLB mesh (which causes zoom/clipping issues and looks
+ * plastic), this module generates a brain-shaped point cloud procedurally and
+ * renders it with custom ShaderMaterial for a glowing, holographic neural
+ * aesthetic.  Inspired by victors1681/3dbrain.
+ *
+ * The brain shape is produced by sampling points on a pair of deformed
+ * ellipsoids (left/right hemispheres) plus a brain-stem extension, with
+ * simplex-style noise displacement to mimic sulci and gyri.
+ */
+
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+// -- Public interface -------------------------------------------------------
 
 interface GraphPoint {
   x?: number;
@@ -13,71 +27,237 @@ export interface BrainModelOverlayHandle {
   root: THREE.Group;
   lightRig: THREE.Group;
   fitToGraph: (nodes: readonly GraphPoint[]) => void;
+  update: (deltaSeconds: number) => void;
   dispose: () => void;
 }
 
-function disposeMaterial(material: THREE.Material): void {
-  if ("map" in material && (material as THREE.MeshBasicMaterial).map) {
-    (material as THREE.MeshBasicMaterial).map?.dispose();
+// -- Constants ---------------------------------------------------------------
+
+/** Number of particles that form the brain shape. */
+const PARTICLE_COUNT = 18_000;
+/** Extra scale so the brain shell comfortably encloses graph nodes. */
+const BRAIN_SCALE_FACTOR = 1.15;
+/** Base colour of the brain particles (soft blue-white). */
+const BRAIN_COLOR = new THREE.Color(0x84ccff);
+
+// -- Procedural noise (hash-based, no external deps) ------------------------
+
+function hash(n: number): number {
+  const x = Math.sin(n) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function noise3(x: number, y: number, z: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fy = y - iy;
+  const fz = z - iz;
+
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const uz = fz * fz * (3 - 2 * fz);
+
+  const n = ix + iy * 157 + iz * 113;
+
+  const a = hash(n);
+  const b = hash(n + 1);
+  const c = hash(n + 157);
+  const d = hash(n + 158);
+  const e = hash(n + 113);
+  const f = hash(n + 114);
+  const g = hash(n + 270);
+  const h = hash(n + 271);
+
+  return (
+    a +
+    (b - a) * ux +
+    (c - a) * uy +
+    (a - b - c + d) * ux * uy +
+    (e - a) * uz +
+    (a - b - e + f) * ux * uz +
+    (a - c - e + g) * uy * uz +
+    (-a + b + c - d + e - f - g + h) * ux * uy * uz
+  );
+}
+
+/** Fractal Brownian Motion with 3 octaves. */
+function fbm3(x: number, y: number, z: number): number {
+  let val = 0;
+  let amp = 0.5;
+  let freq = 1.0;
+  for (let i = 0; i < 3; i++) {
+    val += amp * noise3(x * freq, y * freq, z * freq);
+    amp *= 0.5;
+    freq *= 2.0;
   }
-  material.dispose();
+  return val;
 }
 
-function disposeObject3D(object: THREE.Object3D): void {
-  object.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      child.geometry?.dispose();
-      if (Array.isArray(child.material)) {
-        child.material.forEach(disposeMaterial);
-      } else if (child.material) {
-        disposeMaterial(child.material);
-      }
-    }
-  });
+// -- Brain point-cloud generator --------------------------------------------
+
+/**
+ * Produce a brain-shaped point cloud.
+ *
+ * Strategy:
+ * 1. Sample points uniformly on a unit sphere.
+ * 2. Deform into an ellipsoid (wider than tall, elongated front-to-back).
+ * 3. Split into two hemispheres with a narrow gap.
+ * 4. Apply noise displacement for cortical folds.
+ * 5. Add a brain-stem / cerebellum extension below.
+ * 6. Mix surface points with a few interior volumetric points.
+ */
+function generateBrainPoints(count: number): Float32Array {
+  const positions = new Float32Array(count * 3);
+  const surfaceCount = Math.floor(count * 0.82);
+  const volumeCount = Math.floor(count * 0.10);
+  const stemCount = count - surfaceCount - volumeCount;
+  let idx = 0;
+
+  const pushPoint = (x: number, y: number, z: number) => {
+    positions[idx++] = x;
+    positions[idx++] = y;
+    positions[idx++] = z;
+  };
+
+  // -- Surface particles (two hemispheres) --
+  for (let i = 0; i < surfaceCount; i++) {
+    // Uniform point on unit sphere (Marsaglia method)
+    let u: number, v: number, s: number;
+    do {
+      u = Math.random() * 2 - 1;
+      v = Math.random() * 2 - 1;
+      s = u * u + v * v;
+    } while (s >= 1 || s === 0);
+    const factor = Math.sqrt(1 - s);
+    const nx = 2 * u * factor;
+    const ny = 2 * v * factor;
+    const nz = 1 - 2 * s;
+
+    // Ellipsoid deformation: wider laterally (x), taller (y), deep (z)
+    const rx = 0.52; // half-width (left-right)
+    const ry = 0.42; // half-height (top-bottom)
+    const rz = 0.48; // half-depth (front-back)
+
+    let px = nx * rx;
+    let py = ny * ry;
+    let pz = nz * rz;
+
+    // Hemisphere split: push halves apart along x
+    const gap = 0.03;
+    px += px >= 0 ? gap : -gap;
+
+    // Cortical fold displacement via noise
+    const noiseScale = 3.5;
+    const noiseAmp = 0.06;
+    const displacement = fbm3(
+      px * noiseScale + 7.3,
+      py * noiseScale + 2.1,
+      pz * noiseScale + 5.7,
+    );
+    const radial = Math.sqrt(px * px + py * py + pz * pz) || 1;
+    px += (px / radial) * displacement * noiseAmp;
+    py += (py / radial) * displacement * noiseAmp;
+    pz += (pz / radial) * displacement * noiseAmp;
+
+    // Slight random scatter to avoid perfectly crisp surface
+    const scatter = 0.008;
+    px += (Math.random() - 0.5) * scatter;
+    py += (Math.random() - 0.5) * scatter;
+    pz += (Math.random() - 0.5) * scatter;
+
+    pushPoint(px, py, pz);
+  }
+
+  // -- Volumetric interior particles (neural pathways feel) --
+  for (let i = 0; i < volumeCount; i++) {
+    const r = Math.random() * 0.38;
+    let u2: number, v2: number, s2: number;
+    do {
+      u2 = Math.random() * 2 - 1;
+      v2 = Math.random() * 2 - 1;
+      s2 = u2 * u2 + v2 * v2;
+    } while (s2 >= 1 || s2 === 0);
+    const f2 = Math.sqrt(1 - s2);
+    pushPoint(
+      2 * u2 * f2 * r * 0.52,
+      2 * v2 * f2 * r * 0.42,
+      (1 - 2 * s2) * r * 0.48,
+    );
+  }
+
+  // -- Brain stem / cerebellum extension --
+  for (let i = 0; i < stemCount; i++) {
+    const t = Math.random();
+    const stemLen = 0.28;
+    const baseRadius = 0.14 * (1 - t * 0.6);
+    const angle = Math.random() * Math.PI * 2;
+    const rr = baseRadius * Math.sqrt(Math.random());
+    pushPoint(
+      Math.cos(angle) * rr,
+      -0.42 - t * stemLen,
+      Math.sin(angle) * rr + 0.05,
+    );
+  }
+
+  return positions;
 }
 
-function normalizeModel(model: THREE.Object3D): void {
-  const bounds = new THREE.Box3().setFromObject(model);
-  const center = new THREE.Vector3();
-  const size = new THREE.Vector3();
-  bounds.getCenter(center);
-  bounds.getSize(size);
+// -- Custom shader material -------------------------------------------------
 
-  const maxDimension = Math.max(size.x, size.y, size.z) || 1;
-  const scale = 1 / maxDimension;
+const VERTEX_SHADER = /* glsl */ `
+  uniform float uTime;
+  uniform float uPointSize;
+  attribute float aRandom;
+  varying float vAlpha;
+  varying float vRandom;
 
-  model.position.sub(center);
-  model.scale.setScalar(scale);
-  model.rotation.y = Math.PI * 0.08;
-  model.updateMatrixWorld(true);
-}
+  void main() {
+    vRandom = aRandom;
 
-function stylizeModel(model: THREE.Object3D): void {
-  model.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
+    // Subtle breathing displacement along normals (approximated by position dir)
+    vec3 pos = position;
+    float pulse = sin(uTime * 0.8 + aRandom * 6.2831) * 0.003;
+    pos += normalize(pos) * pulse;
 
-    const baseMaterial = Array.isArray(child.material) ? child.material[0] : child.material;
-    const baseColor =
-      baseMaterial && "color" in baseMaterial && baseMaterial.color instanceof THREE.Color
-        ? baseMaterial.color.clone()
-        : new THREE.Color("#e8c3b7");
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
 
-    child.material = new THREE.MeshPhysicalMaterial({
-      color: baseColor.lerp(new THREE.Color("#f4d4c8"), 0.3),
-      transparent: true,
-      opacity: 0.3,
-      roughness: 0.4,
-      metalness: 0.05,
-      transmission: 0.02,
-      clearcoat: 0.15,
-      side: THREE.DoubleSide,
-      depthWrite: true,
-    });
-    child.castShadow = false;
-    child.receiveShadow = false;
-    child.renderOrder = -1;
-  });
-}
+    // Size attenuation: particles shrink with distance
+    gl_PointSize = uPointSize * (200.0 / -mvPosition.z);
+
+    // Alpha fades slightly for particles further from camera
+    vAlpha = clamp(1.0 - (-mvPosition.z - 50.0) / 600.0, 0.15, 1.0);
+
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const FRAGMENT_SHADER = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uTime;
+  varying float vAlpha;
+  varying float vRandom;
+
+  void main() {
+    // Soft circle shape (discard hard square edges)
+    float dist = distance(gl_PointCoord, vec2(0.5));
+    if (dist > 0.5) discard;
+
+    float circle = 1.0 - smoothstep(0.0, 0.5, dist);
+
+    // Subtle colour variation per particle
+    float hueShift = vRandom * 0.15;
+    vec3 col = uColor + vec3(hueShift * 0.1, -hueShift * 0.05, hueShift * 0.2);
+
+    // Gentle pulse glow
+    float glow = 0.7 + 0.3 * sin(uTime * 1.2 + vRandom * 6.2831);
+
+    gl_FragColor = vec4(col * glow, circle * vAlpha * 0.55);
+  }
+`;
+
+// -- Bounds helper (same logic as before) -----------------------------------
 
 function computeBounds(nodes: readonly GraphPoint[]): {
   center: THREE.Vector3;
@@ -117,52 +297,56 @@ function computeBounds(nodes: readonly GraphPoint[]): {
   };
 }
 
-function buildLightRig(): {
-  rig: THREE.Group;
-  keyLight: THREE.DirectionalLight;
-  rimLight: THREE.DirectionalLight;
-} {
-  const rig = new THREE.Group();
-  rig.name = "brain-model-light-rig";
-
-  const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-  const hemisphere = new THREE.HemisphereLight(0xf4c2b3, 0x0a1220, 0.7);
-  const keyLight = new THREE.DirectionalLight(0xfff3e8, 1.2);
-  const rimLight = new THREE.DirectionalLight(0xc2dbff, 0.5);
-  const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-  fillLight.position.set(0, -1, 0.5);
-
-  rig.add(ambient);
-  rig.add(hemisphere);
-  rig.add(keyLight);
-  rig.add(rimLight);
-  rig.add(fillLight);
-
-  return { rig, keyLight, rimLight };
-}
+// -- Public API -------------------------------------------------------------
 
 /**
- * Scale the brain model relative to the graph's maximum dimension.
- * After normalizeModel the GLB occupies a 1×1×1 unit cube, so targetScale
- * directly controls the world-unit diameter of the brain mesh.
- * A value slightly above 1.0 keeps nodes comfortably inside the brain.
+ * Create the procedural brain particle overlay.
+ *
+ * Unlike the previous GLB-based approach, this is synchronous and never fails
+ * to load a network resource, but we keep the async signature for API compat.
  */
-const BRAIN_SCALE_FACTOR = 1.15;
-
 export async function loadBrainModelOverlay(
-  modelUrl = "/brain/brain-model.glb",
+  _modelUrl?: string,
 ): Promise<BrainModelOverlayHandle> {
-  const loader = new GLTFLoader();
-  const gltf = await loader.loadAsync(modelUrl);
-  const model = gltf.scene;
-  normalizeModel(model);
-  stylizeModel(model);
+  // Generate procedural brain point cloud
+  const positions = generateBrainPoints(PARTICLE_COUNT);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+
+  // Per-particle random value for shader variation
+  const randoms = new Float32Array(PARTICLE_COUNT);
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    randoms[i] = Math.random();
+  }
+  geometry.setAttribute("aRandom", new THREE.Float32BufferAttribute(randoms, 1));
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0.0 },
+      uColor: { value: BRAIN_COLOR.clone() },
+      uPointSize: { value: 2.5 },
+    },
+    vertexShader: VERTEX_SHADER,
+    fragmentShader: FRAGMENT_SHADER,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  points.renderOrder = -1;
 
   const root = new THREE.Group();
   root.name = "brain-model-overlay";
-  root.add(model);
+  root.add(points);
 
-  const { rig: lightRig, keyLight, rimLight } = buildLightRig();
+  // The particle brain doesn't need a heavy light rig; use a minimal group
+  // to keep the interface compatible.
+  const lightRig = new THREE.Group();
+  lightRig.name = "brain-model-light-rig";
 
   const fitToGraph = (nodes: readonly GraphPoint[]) => {
     const bounds = computeBounds(nodes);
@@ -172,15 +356,21 @@ export async function loadBrainModelOverlay(
 
     root.position.copy(center);
     root.scale.setScalar(targetScale);
-
     lightRig.position.copy(center);
-    keyLight.position.set(center.x + targetScale * 0.8, center.y + targetScale * 0.6, center.z + targetScale);
-    rimLight.position.set(center.x - targetScale * 0.6, center.y + targetScale * 0.3, center.z - targetScale * 0.8);
+  };
+
+  let disposed = false;
+
+  const update = (deltaSeconds: number) => {
+    if (disposed) return;
+    material.uniforms.uTime.value += deltaSeconds;
   };
 
   const dispose = () => {
-    disposeObject3D(root);
+    disposed = true;
+    geometry.dispose();
+    material.dispose();
   };
 
-  return { root, lightRig, fitToGraph, dispose };
+  return { root, lightRig, fitToGraph, update, dispose };
 }
