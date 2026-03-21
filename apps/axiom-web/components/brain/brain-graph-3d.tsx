@@ -101,7 +101,18 @@ function makeTextSprite(text: string, color: string, nodeRadius: number): THREE.
   const bgRadius = 14;
   ctx.fillStyle = "rgba(5, 7, 10, 0.65)";
   ctx.beginPath();
-  ctx.roundRect(4, 4, canvas.width - 8, canvas.height - 8, bgRadius);
+  if (ctx.roundRect) {
+    ctx.roundRect(4, 4, canvas.width - 8, canvas.height - 8, bgRadius);
+  } else {
+    // Fallback for browsers without roundRect
+    const x = 4, y = 4, w = canvas.width - 8, h = canvas.height - 8, r = bgRadius;
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
   ctx.fill();
 
   // Text
