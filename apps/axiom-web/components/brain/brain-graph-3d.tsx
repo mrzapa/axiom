@@ -43,7 +43,7 @@ import {
 // -- Constants ----------------------------------------------------------------
 
 const BG_COLOR = "#05070a";
-const FOG_DENSITY = 0.0018;
+const FOG_DENSITY = 0.001;
 const CAMERA_TRANSITION_MS = 1000;
 const ZOOM_TO_FIT_MS = 600;
 const ZOOM_TO_FIT_PADDING = 60;
@@ -180,6 +180,20 @@ export default function BrainGraph3D({
     };
   }, []);
 
+  // -- Animation loop for particle brain overlay ----------------------------
+  useEffect(() => {
+    if (!sceneReady) return;
+    const clock = new THREE.Clock();
+    let rafId: number;
+    const tick = () => {
+      const overlay = modelOverlayRef.current;
+      if (overlay) overlay.update(clock.getDelta());
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [sceneReady]);
+
   // -- Build filtered graph data -------------------------------------------
   const graphData = useMemo<BrainSceneGraph>(
     () => buildBrainSceneGraph(data, { filter, activeScopes }),
@@ -226,8 +240,8 @@ export default function BrainGraph3D({
       controls.dampingFactor = 0.08;
       controls.rotateSpeed = 0.8;
       controls.zoomSpeed = 1.2;
-      controls.minDistance = 30;
-      controls.maxDistance = 2000;
+      controls.minDistance = 5;
+      controls.maxDistance = 5000;
     }
 
     // d3-force tuning: spread nodes out to fill the brain volume
