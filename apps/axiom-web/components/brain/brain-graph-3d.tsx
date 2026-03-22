@@ -523,19 +523,74 @@ export default function BrainGraph3D({
 
   // Track container dimensions for the ForceGraph width/height props
   const [dims, setDims] = useState({ w: 800, h: 600 });
+  const wasZeroSizedRef = useRef(false);
+
+  const recoverGraphViewport = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+
+    // react-force-graph can pause/lose momentum when the canvas is hidden.
+    // Explicitly resume + reheat + refit after visibility/size recovery.
+    (
+      fg as ForceGraphMethods<BrainSceneNode, BrainSceneLink> & {
+        resumeAnimation?: () => void;
+      }
+    ).resumeAnimation?.();
+    fg.d3ReheatSimulation();
+    needsInitialZoomRef.current = true;
+
+    window.setTimeout(() => {
+      if (!fgRef.current) return;
+      fgRef.current.zoomToFit(ZOOM_TO_FIT_MS, ZOOM_TO_FIT_PADDING);
+      const liveGraph = (
+        fgRef.current as ForceGraphMethods<BrainSceneNode, BrainSceneLink> & {
+          graphData?: () => { nodes?: Array<{ x?: number; y?: number; z?: number }> };
+        }
+      ).graphData?.();
+      modelOverlayRef.current?.fitToGraph(liveGraph?.nodes ?? []);
+    }, 120);
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      if (width > 0 && height > 0) {
-        setDims({ w: width, h: height });
+      if (width <= 0 || height <= 0) {
+        wasZeroSizedRef.current = true;
+        return;
+      }
+
+      const recoveredFromZero = wasZeroSizedRef.current;
+      wasZeroSizedRef.current = false;
+      setDims({ w: width, h: height });
+
+      if (recoveredFromZero) {
+        recoverGraphViewport();
       }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [recoverGraphViewport]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      recoverGraphViewport();
+    };
+
+    const onWindowFocus = () => {
+      recoverGraphViewport();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onWindowFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onWindowFocus);
+    };
+  }, [recoverGraphViewport]);
 
   useEffect(() => {
     const el = containerRef.current;
