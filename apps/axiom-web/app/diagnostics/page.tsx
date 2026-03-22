@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import { AlertCircle, CheckCircle2, ClipboardCopy, Loader2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,13 +43,18 @@ function StatCard({
   caption: string;
 }) {
   return (
-    <div className="rounded-[1.2rem] border border-white/8 bg-black/10 px-4 py-3">
+    <motion.div
+      className="rounded-[1.2rem] border border-white/8 bg-black/10 px-4 py-3"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+    >
       <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
         {label}
       </p>
       <p className="mt-2 font-mono text-lg text-foreground">{value}</p>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{caption}</p>
-    </div>
+    </motion.div>
   );
 }
 

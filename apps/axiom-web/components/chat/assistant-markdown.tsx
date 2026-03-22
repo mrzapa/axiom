@@ -1,15 +1,17 @@
 "use client";
 
+import { motion } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 
 interface AssistantMarkdownProps {
   content: string;
+  isStreaming?: boolean;
   className?: string;
 }
 
-export function AssistantMarkdown({ content, className }: AssistantMarkdownProps) {
-  if (!content) {
+export function AssistantMarkdown({ content, isStreaming = false, className }: AssistantMarkdownProps) {
+  if (!content && !isStreaming) {
     return null;
   }
 
@@ -57,7 +59,15 @@ export function AssistantMarkdown({ content, className }: AssistantMarkdownProps
         className,
       )}
     >
-      <ReactMarkdown skipHtml>{content}</ReactMarkdown>
+      {content ? <ReactMarkdown skipHtml>{content}</ReactMarkdown> : null}
+      {isStreaming && (
+        <motion.span
+          aria-hidden="true"
+          className="ml-0.5 inline-block h-[1em] w-0.5 rounded-full bg-primary align-middle"
+          animate={{ opacity: [1, 0, 1] }}
+          transition={{ duration: 1.1, ease: "linear", repeat: Infinity }}
+        />
+      )}
     </div>
   );
 }

@@ -359,6 +359,7 @@ export function ChatPanel({
                         })()}
                         <AssistantMarkdown
                           content={msg.content || (msg.status === "aborted" ? "Stopped." : "")}
+                          isStreaming={msg.status === "streaming"}
                         />
                       </div>
                       <AssistantCopyActions message={msg} sessionId={sessionMeta?.session_id} />

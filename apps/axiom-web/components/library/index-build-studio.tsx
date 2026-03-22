@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -430,13 +431,42 @@ export function IndexBuildStudio({
                     ] as const
                   ).map(([key, label]) => (
                     <div key={key} className="flex items-center gap-3 text-sm">
-                      {progress[key] === "done" ? (
-                        <CheckCircle2 className="size-4 text-emerald-300" />
-                      ) : progress[key] === "active" ? (
-                        <Loader2 className="size-4 animate-spin text-primary" />
-                      ) : (
-                        <Circle className="size-4 text-muted-foreground/40" />
-                      )}
+                      <AnimatePresence mode="wait" initial={false}>
+                        {progress[key] === "done" ? (
+                          <motion.span
+                            key="done"
+                            className="flex"
+                            initial={{ scale: 0.6, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.6, opacity: 0 }}
+                            transition={{ duration: 0.18, ease: "easeOut" }}
+                          >
+                            <CheckCircle2 className="size-4 text-emerald-300" />
+                          </motion.span>
+                        ) : progress[key] === "active" ? (
+                          <motion.span
+                            key="active"
+                            className="flex"
+                            initial={{ scale: 0.6, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.6, opacity: 0 }}
+                            transition={{ duration: 0.18, ease: "easeOut" }}
+                          >
+                            <Loader2 className="size-4 animate-spin text-primary" />
+                          </motion.span>
+                        ) : (
+                          <motion.span
+                            key="idle"
+                            className="flex"
+                            initial={{ scale: 0.6, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.6, opacity: 0 }}
+                            transition={{ duration: 0.18, ease: "easeOut" }}
+                          >
+                            <Circle className="size-4 text-muted-foreground/40" />
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
                       <span
                         className={cn(
                           progress[key] === "done"

@@ -1,3 +1,7 @@
+"use client";
+
+import { animate, motion, useMotionValue, useTransform } from "motion/react";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -7,6 +11,45 @@ interface StatCardProps {
   value: string | number;
   detail?: string;
   className?: string;
+}
+
+function isNumericValue(value: string | number): value is number {
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  const parsed = Number(value.replace(/,/g, "").trim());
+  return Number.isFinite(parsed);
+}
+
+function AnimatedValue({ value }: { value: string | number }) {
+  const target = isNumericValue(value) ? Number(value) : null;
+  const count = useMotionValue(0);
+  const rounded = useTransform(count, (latest) => Math.round(latest));
+
+  useEffect(() => {
+    if (target === null) {
+      return;
+    }
+    const controls = animate(count, target, {
+      duration: 0.9,
+      ease: "easeOut",
+    });
+    return () => controls.stop();
+  }, [count, target]);
+
+  if (target === null) {
+    return (
+      <motion.span
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.24, ease: "easeOut" }}
+      >
+        {value}
+      </motion.span>
+    );
+  }
+
+  return <motion.span>{rounded}</motion.span>;
 }
 
 export function StatCard({ icon, label, value, detail, className }: StatCardProps) {
@@ -23,7 +66,7 @@ export function StatCard({ icon, label, value, detail, className }: StatCardProp
             {label}
           </p>
           <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">
-            {value}
+            <AnimatedValue value={value} />
           </p>
         </div>
       </div>
