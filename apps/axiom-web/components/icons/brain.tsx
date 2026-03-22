@@ -91,6 +91,7 @@ const BrainIcon = forwardRef<BrainIconHandle, BrainIconProps>(
         if (isControlledRef.current) {
           onMouseEnter?.(e);
         } else {
+          onMouseEnter?.(e);
           controls.start("animate");
         }
       },
@@ -102,6 +103,7 @@ const BrainIcon = forwardRef<BrainIconHandle, BrainIconProps>(
         if (isControlledRef.current) {
           onMouseLeave?.(e);
         } else {
+          onMouseLeave?.(e);
           controls.start("normal");
         }
       },

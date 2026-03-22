@@ -33,6 +33,7 @@ const SendIcon = forwardRef<SendIconHandle, SendIconProps>(
         if (isControlledRef.current) {
           onMouseEnter?.(e);
         } else {
+          onMouseEnter?.(e);
           controls.start("animate");
         }
       },
@@ -44,6 +45,7 @@ const SendIcon = forwardRef<SendIconHandle, SendIconProps>(
         if (isControlledRef.current) {
           onMouseLeave?.(e);
         } else {
+          onMouseLeave?.(e);
           controls.start("normal");
         }
       },
