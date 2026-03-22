@@ -54,15 +54,26 @@ The installer clones the repo, sets up a virtual environment, installs dependenc
 
 ### Run
 
+**Installed launcher (recommended):**
+
 ```bash
 axiom
 ```
 
-Axiom opens the local web UI at `http://127.0.0.1:3000` by default.
+This starts the local API plus static web UI and opens `http://127.0.0.1:3000`.
+
+**From source (no launcher):**
+
+```bash
+python main.py
+```
+
+This starts the FastAPI app directly at `http://127.0.0.1:8000`.
 
 | Interface | Command |
 |-----------|---------|
-| **Web UI** | `axiom` |
+| **Web UI (installed launcher)** | `axiom` |
+| **Web UI (from source)** | `python main.py` |
 | **Desktop GUI** | `axiom --desktop` or `axiom --gui` |
 | **CLI** | `axiom --cli <command>` |
 
@@ -119,6 +130,44 @@ axiom --cli index --file docs/my_notes.txt
 axiom --cli query --file docs/my_notes.txt --question "What are the key takeaways?"
 ```
 
+You can also run the same CLI entrypoint from source:
+
+```bash
+python main.py --cli index --file docs/my_notes.txt
+python main.py --cli query --file docs/my_notes.txt --question "What are the key takeaways?"
+```
+
+---
+
+## 🛠️ Local Development
+
+### API only
+
+```bash
+python -m axiom_app.api
+```
+
+Runs the API at `http://127.0.0.1:8000`.
+
+### API + Next.js dev UI
+
+**macOS / Linux:**
+
+```bash
+bash scripts/run_nextgen_dev.sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+.\scripts\run_nextgen_dev.ps1
+```
+
+This starts:
+
+- API at `http://127.0.0.1:8000`
+- Next.js dev UI at `http://127.0.0.1:3000`
+
 ---
 
 ## 🔧 Configuration
@@ -129,6 +178,7 @@ Axiom ships with sensible defaults in `axiom_app/default_settings.json`. To cust
 
 | Variable | What it does |
 |----------|-------------|
+| `NEXT_PUBLIC_AXIOM_API_BASE` | Overrides the API base URL used by the web UI during local Next.js development |
 | `AXIOM_TEST_WEAVIATE_URL` | Weaviate endpoint for live parity tests |
 | `AXIOM_TEST_WEAVIATE_API_KEY` | Weaviate API key |
 | `AXIOM_TEST_WEAVIATE_GRPC_HOST` | Weaviate gRPC host |
@@ -180,6 +230,12 @@ docker/             # Weaviate for integration testing
 pip install -e ".[dev]"
 ruff check .
 python -m pytest
+```
+
+For full-stack local development:
+
+```bash
+bash scripts/run_nextgen_dev.sh
 ```
 
 Make sure linting and tests pass before opening a PR.
