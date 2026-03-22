@@ -21,6 +21,7 @@ import {
 } from "react";
 import ForceGraph3D, { type ForceGraphMethods } from "react-force-graph-3d";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
@@ -143,6 +144,73 @@ const ACTIVITY_PROFILES: Record<
 const DUST_COUNT = 800;
 /** Radius of the dust cloud. */
 const DUST_RADIUS = 1200;
+
+const NEURON_MODEL_URLS = {
+  pyramidal: "/brain/neurons/neuronspinous_pyramidyal_cell.glb",
+  stellate: "/brain/neurons/neuronspinous_stellate_cell.glb",
+} as const;
+
+export type NeuronKind = keyof typeof NEURON_MODEL_URLS;
+
+export type NodeTypeNeuronMapping = Record<BrainNode["node_type"], NeuronKind>;
+
+export const DEFAULT_NODE_TYPE_TO_NEURON_KIND: NodeTypeNeuronMapping = {
+  category: "stellate",
+  index: "stellate",
+  session: "stellate",
+  assistant: "pyramidal",
+  memory: "pyramidal",
+  playbook: "pyramidal",
+};
+
+interface NeuronTemplate {
+  scene: THREE.Object3D;
+  maxDimension: number;
+}
+
+function neuronKindFromMetadata(metadata: Record<string, unknown>): NeuronKind | null {
+  const explicitKind = metadata.neuron_kind;
+  if (explicitKind === "pyramidal" || explicitKind === "stellate") {
+    return explicitKind;
+  }
+
+  const explicitModel = metadata.neuron_model;
+  if (typeof explicitModel === "string") {
+    const normalized = explicitModel.trim().toLowerCase();
+    if (normalized.includes("pyramidal") || normalized.includes("pyramid")) {
+      return "pyramidal";
+    }
+    if (normalized.includes("stellate") || normalized.includes("star")) {
+      return "stellate";
+    }
+  }
+
+  return null;
+}
+
+function resolveNeuronKind(
+  node: BrainSceneNode,
+  nodeTypeNeuronMapping: NodeTypeNeuronMapping,
+): NeuronKind {
+  return neuronKindFromMetadata(node.brain.metadata) ?? nodeTypeNeuronMapping[node.brain.node_type];
+}
+
+function hashToUnit(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash % 10_000) / 10_000;
+}
+
+function maxDimensionOfObject(object: THREE.Object3D): number {
+  const bbox = new THREE.Box3().setFromObject(object);
+  if (bbox.isEmpty()) return 1;
+  const size = new THREE.Vector3();
+  bbox.getSize(size);
+  return Math.max(size.x, size.y, size.z, 1e-3);
+}
 
 // -- Vignette colours ---------------------------------------------------------
 
@@ -446,6 +514,7 @@ export interface BrainGraph3DProps {
   data: BrainGraphData;
   filter?: string;
   activeScopes?: BrainScope[];
+  nodeTypeNeuronMapping?: Partial<NodeTypeNeuronMapping>;
   renderMode?: BrainRenderMode;
   selectedNodeId?: string | null;
   onSelectedNodeIdChange?: (nodeId: string | null) => void;
@@ -469,6 +538,7 @@ export default function BrainGraph3D({
   data,
   filter = "",
   activeScopes = ALL_BRAIN_SCOPES,
+  nodeTypeNeuronMapping,
   renderMode = "hybrid",
   selectedNodeId = null,
   onSelectedNodeIdChange,
@@ -507,6 +577,8 @@ export default function BrainGraph3D({
   const pointerCurrentRef = useRef(new THREE.Vector2(0, 0));
   const presenceTargetRef = useRef(0);
   const presenceCurrentRef = useRef(0);
+  const neuronTemplatesRef = useRef<Partial<Record<NeuronKind, NeuronTemplate>>>({});
+  const [neuronModelsReady, setNeuronModelsReady] = useState(false);
   const bloomBoostRef = useRef(0);
   // Active shockwave effects
   const shockwavesRef = useRef<ShockwaveHandle[]>([]);
@@ -524,6 +596,11 @@ export default function BrainGraph3D({
   // Track container dimensions for the ForceGraph width/height props
   const [dims, setDims] = useState({ w: 800, h: 600 });
   const wasZeroSizedRef = useRef(false);
+
+  const mergedNodeTypeNeuronMapping = useMemo<NodeTypeNeuronMapping>(() => ({
+    ...DEFAULT_NODE_TYPE_TO_NEURON_KIND,
+    ...(nodeTypeNeuronMapping ?? {}),
+  }), [nodeTypeNeuronMapping]);
 
   const recoverGraphViewport = useCallback(() => {
     const fg = fgRef.current;
@@ -621,6 +698,41 @@ export default function BrainGraph3D({
     return () => {
       el.removeEventListener("pointermove", handlePointerMove);
       el.removeEventListener("pointerleave", handlePointerLeave);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loader = new GLTFLoader();
+
+    Promise.all(
+      (Object.entries(NEURON_MODEL_URLS) as Array<[NeuronKind, string]>).map(async ([kind, url]) => {
+        const gltf = await loader.loadAsync(url);
+        const scene = gltf.scene.clone(true);
+        const maxDimension = maxDimensionOfObject(scene);
+        return { kind, scene, maxDimension } as const;
+      }),
+    )
+      .then((templates) => {
+        if (cancelled) return;
+        const next: Partial<Record<NeuronKind, NeuronTemplate>> = {};
+        for (const template of templates) {
+          next[template.kind] = {
+            scene: template.scene,
+            maxDimension: template.maxDimension,
+          };
+        }
+        neuronTemplatesRef.current = next;
+        setNeuronModelsReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        neuronTemplatesRef.current = {};
+        setNeuronModelsReady(false);
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -1213,6 +1325,9 @@ export default function BrainGraph3D({
     const isSelected = node.id === selectedNodeId;
     const r = node.radius;
     const color = new THREE.Color(node.color);
+    const neuronTemplate = neuronModelsReady
+      ? neuronTemplatesRef.current[resolveNeuronKind(node, mergedNodeTypeNeuronMapping)]
+      : undefined;
 
     // --- Tight additive aura – crisp glow without a diffuse halo ---
     if (!node.dimmed) {
@@ -1258,20 +1373,62 @@ export default function BrainGraph3D({
     });
     group.add(new THREE.Mesh(nucleusGeo, nucleusMat));
 
-    // Main soma – Apple-quality PBR with clearcoat for a glassy, premium finish
-    const geo = new THREE.SphereGeometry(r + (isSelected ? 0.6 : 0), 32, 32);
-    const mat = new THREE.MeshPhysicalMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: isSelected ? 0.55 : 0.42,
-      roughness: 0.22,
-      metalness: 0.10,
-      clearcoat: 0.65,
-      clearcoatRoughness: 0.08,
-      transparent: true,
-      opacity: node.dimmed ? 0.14 : 0.90,
-    });
-    group.add(new THREE.Mesh(geo, mat));
+    if (neuronTemplate) {
+      const neuron = neuronTemplate.scene.clone(true);
+      const seed = hashToUnit(node.id);
+      const scale = (r + (isSelected ? 0.6 : 0)) * (2.15 / neuronTemplate.maxDimension);
+      neuron.scale.setScalar(scale);
+      neuron.rotation.x = -Math.PI / 2 + (seed - 0.5) * 0.35;
+      neuron.rotation.y = seed * Math.PI * 2;
+      neuron.rotation.z = (seed - 0.5) * 0.25;
+
+      neuron.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        child.castShadow = false;
+        child.receiveShadow = false;
+
+        const applyMaterial = (source: THREE.Material): THREE.Material => {
+          const material = source.clone();
+          if ("color" in material && material.color instanceof THREE.Color) {
+            material.color.copy(color).lerp(new THREE.Color(0xffffff), 0.24);
+          }
+          if ("emissive" in material && material.emissive instanceof THREE.Color) {
+            material.emissive.copy(color);
+          }
+          if ("emissiveIntensity" in material && typeof material.emissiveIntensity === "number") {
+            material.emissiveIntensity = isSelected ? 0.48 : 0.32;
+          }
+          if ("transparent" in material) {
+            material.transparent = true;
+          }
+          if ("opacity" in material && typeof material.opacity === "number") {
+            material.opacity = node.dimmed ? 0.15 : 0.92;
+          }
+          return material;
+        };
+
+        child.material = Array.isArray(child.material)
+          ? child.material.map((mat) => applyMaterial(mat))
+          : applyMaterial(child.material);
+      });
+
+      group.add(neuron);
+    } else {
+      // Fallback soma if neuron GLBs are unavailable.
+      const geo = new THREE.SphereGeometry(r + (isSelected ? 0.6 : 0), 32, 32);
+      const mat = new THREE.MeshPhysicalMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: isSelected ? 0.55 : 0.42,
+        roughness: 0.22,
+        metalness: 0.10,
+        clearcoat: 0.65,
+        clearcoatRoughness: 0.08,
+        transparent: true,
+        opacity: node.dimmed ? 0.14 : 0.90,
+      });
+      group.add(new THREE.Mesh(geo, mat));
+    }
 
     // --- Readable text label ---
     const label = node.brain.label.length > 28
@@ -1290,7 +1447,7 @@ export default function BrainGraph3D({
     }
 
     return group;
-  }, [selectedNodeId, visibleLabelNodeIds]);
+  }, [mergedNodeTypeNeuronMapping, neuronModelsReady, selectedNodeId, visibleLabelNodeIds]);
 
   // -- Node click handler with shockwave effect ----------------------------
 
