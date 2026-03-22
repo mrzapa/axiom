@@ -79,7 +79,25 @@ const DENDRITE_COUNT_SELECTED = 10;
 /** Number of dendrite tendrils on a default (non-selected) node. */
 const DENDRITE_COUNT_DEFAULT = 6;
 
+// -- Vignette colours ---------------------------------------------------------
+
+/** Inner purple tint of the cinematic vignette (inspired by Digital-Brain VignettePass). */
+const VIGNETTE_PURPLE_TINT = "rgba(30,0,60,0.25)";
+/** Outer dark edge of the cinematic vignette. */
+const VIGNETTE_DARK_EDGE = "rgba(3,5,8,0.65)";
+
 // -- Helpers ------------------------------------------------------------------
+
+/**
+ * Extract a node ID from a force-graph link endpoint.
+ * After force simulation, source/target may be replaced by node objects.
+ */
+function getLinkNodeId(endpoint: unknown): string {
+  if (typeof endpoint === "object" && endpoint !== null && "id" in endpoint) {
+    return String((endpoint as { id: unknown }).id);
+  }
+  return String(endpoint);
+}
 
 /** Recursively dispose all Three.js geometries, materials, and textures. */
 function disposeObject3D(obj: THREE.Object3D): void {
@@ -479,20 +497,23 @@ export default function BrainGraph3D({
 
       // Slowly rotate ambient dust for living atmosphere
       // Plus per-particle bobbing motion (inspired by Vestige ParticleSystem.animate)
+      // Throttled to every 4th frame to avoid updating 800 buffer attributes each tick
       const dust = dustRef.current;
       if (dust) {
         dust.rotation.y += dt * 0.015;
         dust.rotation.x += dt * 0.005;
 
-        // Per-particle subtle bobbing (neural particle motion from Vestige)
-        const dustPos = dust.geometry.attributes.position as THREE.BufferAttribute;
-        for (let i = 0; i < Math.min(dustPos.count, DUST_COUNT); i++) {
-          const y = dustPos.getY(i);
-          dustPos.setY(i, y + Math.sin(elapsedTime + i * 0.1) * 0.04);
-          const x = dustPos.getX(i);
-          dustPos.setX(i, x + Math.cos(elapsedTime + i * 0.05) * 0.02);
+        const frameCounter = Math.round(elapsedTime * 60);
+        if (frameCounter % 4 === 0) {
+          const dustPos = dust.geometry.attributes.position as THREE.BufferAttribute;
+          for (let i = 0; i < Math.min(dustPos.count, DUST_COUNT); i++) {
+            const y = dustPos.getY(i);
+            dustPos.setY(i, y + Math.sin(elapsedTime + i * 0.1) * 0.04);
+            const x = dustPos.getX(i);
+            dustPos.setX(i, x + Math.cos(elapsedTime + i * 0.05) * 0.02);
+          }
+          dustPos.needsUpdate = true;
         }
-        dustPos.needsUpdate = true;
       }
 
       // Animate shockwaves (expand + fade)
@@ -998,11 +1019,11 @@ export default function BrainGraph3D({
         // Flash bright lines from clicked node to all connected neighbours
         for (const link of graphData.links) {
           // After force simulation, source/target may be objects or strings
-          const sourceId = (link.source as unknown as Record<string, unknown>)?.id ?? link.source;
-          const targetId = (link.target as unknown as Record<string, unknown>)?.id ?? link.target;
+          const sourceId = getLinkNodeId(link.source);
+          const targetId = getLinkNodeId(link.target);
           let neighbourId: string | undefined;
-          if (sourceId === node.id) neighbourId = targetId as string;
-          else if (targetId === node.id) neighbourId = sourceId as string;
+          if (sourceId === node.id) neighbourId = targetId;
+          else if (targetId === node.id) neighbourId = sourceId;
           if (!neighbourId) continue;
 
           // Find the neighbour node's position
@@ -1091,9 +1112,7 @@ export default function BrainGraph3D({
       <div
         className="pointer-events-none absolute inset-0"
         style={{
-          background: `
-            radial-gradient(ellipse at center, transparent 50%, rgba(30,0,60,0.25) 75%, rgba(3,5,8,0.65) 100%)
-          `,
+          background: `radial-gradient(ellipse at center, transparent 50%, ${VIGNETTE_PURPLE_TINT} 75%, ${VIGNETTE_DARK_EDGE} 100%)`,
         }}
       />
 
