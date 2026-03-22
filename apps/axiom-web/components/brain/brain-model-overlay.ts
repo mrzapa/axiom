@@ -477,9 +477,9 @@ function generateFiberTractPoints(count: number): {
     pushPoint(x, y, z, t, 0.25 + Math.random() * 0.3);
   }
 
-  // Vertical pathways (thalamic radiations)
-  const vrCount = count - ccCount - afCount - cbCount;
-  for (let i = 0; i < vrCount; i++) {
+  // Thalamic radiations (vertical pathways)
+  const thalamicCount = count - ccCount - afCount - cbCount;
+  for (let i = 0; i < thalamicCount; i++) {
     const t = Math.random();
     const angle = Math.random() * Math.PI * 2;
     const r = 0.05 + Math.random() * 0.08;

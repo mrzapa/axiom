@@ -72,6 +72,13 @@ const DUST_COUNT = 800;
 /** Radius of the dust cloud. */
 const DUST_RADIUS = 1200;
 
+// -- Node visual tuning -------------------------------------------------------
+
+/** Number of dendrite tendrils on a selected node. */
+const DENDRITE_COUNT_SELECTED = 10;
+/** Number of dendrite tendrils on a default (non-selected) node. */
+const DENDRITE_COUNT_DEFAULT = 6;
+
 // -- Helpers ------------------------------------------------------------------
 
 /** Recursively dispose all Three.js geometries, materials, and textures. */
@@ -784,7 +791,7 @@ export default function BrainGraph3D({
 
     // --- Dendrite tendrils ---
     if (!node.dimmed) {
-      const dendCount = isSelected ? 10 : 6;
+      const dendCount = isSelected ? DENDRITE_COUNT_SELECTED : DENDRITE_COUNT_DEFAULT;
       const dendrites = createDendrites(r, color, dendCount);
       group.add(dendrites);
     }
