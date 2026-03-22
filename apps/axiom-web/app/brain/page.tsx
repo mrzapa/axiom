@@ -561,7 +561,18 @@ export default function BrainPage() {
           </div>
         </div>
 
-        <div className="relative flex min-h-[40rem] flex-1 overflow-hidden rounded-[1.9rem]">
+        <div className="relative flex min-h-[40rem] flex-1 overflow-hidden rounded-[1.9rem] gap-4">
+          <div className="hidden xl:flex xl:flex-col w-[20.5rem] shrink-0">
+            <GraphInspectorPanel
+              node={selectedNode}
+              visibleStats={visibleStats}
+              nodeCount={nodeCount}
+              edgeCount={edgeCount}
+              activeScopeCount={activeScopes.length}
+              onClose={selectedNode ? () => setSelectedNodeId(null) : undefined}
+            />
+          </div>
+
           <div className="glass-panel-strong flex min-h-0 flex-1 overflow-hidden rounded-[1.8rem]">
             {loading ? (
               <div className="flex flex-1 items-center justify-center">
@@ -588,19 +599,6 @@ export default function BrainPage() {
                 className="flex-1"
               />
             ) : null}
-          </div>
-
-          <div className="pointer-events-none absolute inset-x-4 bottom-4 hidden xl:flex xl:justify-start">
-            <div className="pointer-events-auto w-[20.5rem] max-w-full">
-              <GraphInspectorPanel
-              node={selectedNode}
-              visibleStats={visibleStats}
-              nodeCount={nodeCount}
-              edgeCount={edgeCount}
-              activeScopeCount={activeScopes.length}
-              onClose={selectedNode ? () => setSelectedNodeId(null) : undefined}
-              />
-            </div>
           </div>
         </div>
 
