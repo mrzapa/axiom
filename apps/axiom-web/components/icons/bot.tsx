@@ -34,6 +34,7 @@ const BotIcon = forwardRef<BotIconHandle, BotIconProps>(
         if (isControlledRef.current) {
           onMouseEnter?.(e);
         } else {
+          onMouseEnter?.(e);
           controls.start("animate");
         }
       },
@@ -45,6 +46,7 @@ const BotIcon = forwardRef<BotIconHandle, BotIconProps>(
         if (isControlledRef.current) {
           onMouseLeave?.(e);
         } else {
+          onMouseLeave?.(e);
           controls.start("normal");
         }
       },
