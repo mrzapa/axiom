@@ -11,6 +11,7 @@
  */
 
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 // -- Public interface -------------------------------------------------------
 
@@ -40,6 +41,135 @@ const FIBER_TRACT_COUNT = 3_500;
 const BRAIN_SCALE_FACTOR = 1.18;
 /** Base colour of the brain particles – crisp cool blue-white. */
 const BRAIN_COLOR = new THREE.Color(0x9ac8e4);
+/** Default model URL for the imported anatomical overlay. */
+const DEFAULT_BRAIN_MODEL_URL = "/brain/brain-model.glb";
+
+function maxDimensionOfObject(object: THREE.Object3D): number {
+  const bbox = new THREE.Box3().setFromObject(object);
+  if (bbox.isEmpty()) return 1;
+  const size = new THREE.Vector3();
+  bbox.getSize(size);
+  return Math.max(size.x, size.y, size.z, 1e-3);
+}
+
+function disposeObject3D(object: THREE.Object3D): void {
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.geometry?.dispose();
+    const material = child.material;
+    if (Array.isArray(material)) {
+      material.forEach((mat) => mat.dispose());
+    } else {
+      material?.dispose();
+    }
+  });
+}
+
+async function tryLoadBrainGlbOverlay(modelUrl?: string): Promise<BrainModelOverlayHandle | null> {
+  const loader = new GLTFLoader();
+  const url = modelUrl ?? DEFAULT_BRAIN_MODEL_URL;
+  const gltf = await loader.loadAsync(url);
+  const imported = gltf.scene;
+
+  if (!imported || imported.children.length === 0) {
+    return null;
+  }
+
+  // Clone so the loaded scene stays immutable and can be recoloured per-instance.
+  const modelRoot = imported.clone(true);
+  modelRoot.name = "brain-model-overlay-mesh";
+
+  modelRoot.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.castShadow = false;
+    child.receiveShadow = false;
+
+    const sourceMaterial = Array.isArray(child.material)
+      ? child.material[0]
+      : child.material;
+
+    const physical = new THREE.MeshPhysicalMaterial({
+      color: sourceMaterial?.color?.clone?.() ?? new THREE.Color(0x7ea9ff),
+      emissive: new THREE.Color(0x345ca8),
+      emissiveIntensity: 0.2,
+      roughness: 0.6,
+      metalness: 0.02,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.4,
+      transparent: true,
+      opacity: 0.32,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+
+    if (sourceMaterial?.map) {
+      physical.map = sourceMaterial.map;
+    }
+
+    child.material = physical;
+  });
+
+  const sourceMaxDimension = maxDimensionOfObject(modelRoot);
+  const root = new THREE.Group();
+  root.name = "brain-model-overlay";
+  root.add(modelRoot);
+
+  const lightRig = new THREE.Group();
+  lightRig.name = "brain-model-light-rig";
+  const rimA = new THREE.PointLight(0x8ecbff, 0.7, 1200, 2.0);
+  rimA.position.set(190, 120, 220);
+  const rimB = new THREE.PointLight(0x5d8dff, 0.55, 1200, 2.0);
+  rimB.position.set(-220, -80, -180);
+  lightRig.add(rimA, rimB);
+
+  let disposed = false;
+  let pulseStrength = 0;
+  let presenceCurrent = 0;
+  let presenceTarget = 0;
+
+  const fitToGraph = (nodes: readonly GraphPoint[]) => {
+    const bounds = computeBounds(nodes);
+    const center = bounds?.center ?? new THREE.Vector3(0, 0, 0);
+    const maxDimension = Math.max(bounds?.maxDimension ?? 80, 40);
+    const targetScale = maxDimension * BRAIN_SCALE_FACTOR;
+
+    root.position.copy(center);
+    root.scale.setScalar(targetScale / sourceMaxDimension);
+    lightRig.position.copy(center);
+  };
+
+  const update = (deltaSeconds: number) => {
+    if (disposed) return;
+    pulseStrength = Math.max(0, pulseStrength - deltaSeconds * 0.8);
+    presenceCurrent += (presenceTarget - presenceCurrent) * Math.min(1, deltaSeconds * 4.5);
+
+    const pulseScale = 1 + pulseStrength * 0.02 + presenceCurrent * 0.01;
+    root.rotation.y += deltaSeconds * (0.015 + presenceCurrent * 0.02);
+    root.rotation.x = Math.sin(performance.now() * 0.0002) * 0.02 + presenceCurrent * 0.01;
+    modelRoot.scale.setScalar(pulseScale);
+
+    for (const child of lightRig.children) {
+      if (child instanceof THREE.PointLight) {
+        child.intensity = 0.45 + pulseStrength * 0.4 + presenceCurrent * 0.18;
+      }
+    }
+  };
+
+  const setPresence = (presence: number) => {
+    presenceTarget = THREE.MathUtils.clamp(presence, 0, 1);
+  };
+
+  const triggerPulse = (strength = 1) => {
+    pulseStrength = Math.max(pulseStrength, THREE.MathUtils.clamp(strength, 0, 1.5));
+  };
+
+  const dispose = () => {
+    disposed = true;
+    disposeObject3D(modelRoot);
+  };
+
+  return { root, lightRig, fitToGraph, update, setPresence, triggerPulse, dispose };
+}
 
 // -- Procedural noise (hash-based, no external deps) ------------------------
 
@@ -632,8 +762,17 @@ function computeBounds(nodes: readonly GraphPoint[]): {
  * Keeps the async signature for API compatibility.
  */
 export async function loadBrainModelOverlay(
-  _modelUrl?: string,
+  modelUrl?: string,
 ): Promise<BrainModelOverlayHandle> {
+  try {
+    const importedOverlay = await tryLoadBrainGlbOverlay(modelUrl);
+    if (importedOverlay) {
+      return importedOverlay;
+    }
+  } catch {
+    // Fall back to the procedural overlay for resilience when model files are absent/corrupt.
+  }
+
   // Generate procedural brain point cloud
   const positions = generateBrainPoints(PARTICLE_COUNT);
 

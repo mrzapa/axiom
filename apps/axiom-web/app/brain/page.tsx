@@ -25,6 +25,11 @@ import {
   fetchBrainGraph,
   subscribeCompanionActivity,
 } from "@/lib/api";
+import {
+  DEFAULT_NODE_TYPE_TO_NEURON_KIND,
+  type NeuronKind,
+  type NodeTypeNeuronMapping,
+} from "@/components/brain/brain-graph-3d";
 
 const BrainGraph3D = dynamic(() => import("@/components/brain/brain-graph-3d"), {
   ssr: false,
@@ -61,6 +66,43 @@ const SCOPE_META: Record<
     dashed: true,
   },
 };
+
+const NEURON_MAPPING_STORAGE_KEY = "axiom.brain.nodeTypeNeuronMapping.v1";
+
+const NODE_TYPE_META: Record<
+  BrainNode["node_type"],
+  { label: string; description: string }
+> = {
+  category: {
+    label: "Category",
+    description: "Top-level grouping and structure nodes.",
+  },
+  index: {
+    label: "Index",
+    description: "Retrieved corpus and index-level memory.",
+  },
+  session: {
+    label: "Session",
+    description: "Conversation and short-horizon context.",
+  },
+  assistant: {
+    label: "Assistant",
+    description: "Companion identity and internal reasoning core.",
+  },
+  memory: {
+    label: "Memory",
+    description: "Learned long-term memory traces.",
+  },
+  playbook: {
+    label: "Playbook",
+    description: "Reusable routines and behavior scripts.",
+  },
+};
+
+const NEURON_KIND_OPTIONS: Array<{ value: NeuronKind; label: string }> = [
+  { value: "pyramidal", label: "Pyramidal" },
+  { value: "stellate", label: "Stellate" },
+];
 
 function normalizeBrainGraph(graph: Awaited<ReturnType<typeof fetchBrainGraph>>): BrainGraphData {
   return {
@@ -229,6 +271,9 @@ export default function BrainPage() {
   const [renderMode, setRenderMode] = useState<BrainRenderMode>("hybrid");
   const [modelWarning, setModelWarning] = useState<string | null>(null);
   const [companionSignal, setCompanionSignal] = useState<BrainCompanionSignal | null>(null);
+  const [nodeTypeNeuronMapping, setNodeTypeNeuronMapping] = useState<NodeTypeNeuronMapping>(
+    () => ({ ...DEFAULT_NODE_TYPE_TO_NEURON_KIND }),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -252,6 +297,28 @@ export default function BrainPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(NEURON_MAPPING_STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as Partial<NodeTypeNeuronMapping>;
+      setNodeTypeNeuronMapping({
+        ...DEFAULT_NODE_TYPE_TO_NEURON_KIND,
+        ...parsed,
+      });
+    } catch {
+      // Ignore invalid local mapping payloads.
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      NEURON_MAPPING_STORAGE_KEY,
+      JSON.stringify(nodeTypeNeuronMapping),
+    );
+  }, [nodeTypeNeuronMapping]);
 
   useEffect(() => {
     return subscribeCompanionActivity((event) => {
@@ -607,6 +674,61 @@ export default function BrainPage() {
                   );
                 })}
               </div>
+
+              <div className="mt-5 border-t border-border/60 pt-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                    Neuron mapping
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setNodeTypeNeuronMapping({ ...DEFAULT_NODE_TYPE_TO_NEURON_KIND })}
+                    className="ml-auto rounded-full border border-border/70 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                  >
+                    Reset
+                  </button>
+                </div>
+
+                <p className="mb-3 text-xs leading-5 text-muted-foreground">
+                  Choose which neuron model each node type should render with. Node metadata overrides still take precedence.
+                </p>
+
+                <div className="space-y-2">
+                  {(Object.keys(NODE_TYPE_META) as BrainNode["node_type"][]).map((nodeType) => {
+                    const meta = NODE_TYPE_META[nodeType];
+                    const selectedKind = nodeTypeNeuronMapping[nodeType];
+
+                    return (
+                      <label
+                        key={nodeType}
+                        className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-background/35 px-2.5 py-2 text-xs"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-foreground">{meta.label}</span>
+                          <span className="block text-[11px] text-muted-foreground">{meta.description}</span>
+                        </span>
+                        <select
+                          value={selectedKind}
+                          onChange={(event) => {
+                            const nextKind = event.target.value as NeuronKind;
+                            setNodeTypeNeuronMapping((prev) => ({
+                              ...prev,
+                              [nodeType]: nextKind,
+                            }));
+                          }}
+                          className="rounded-lg border border-border/70 bg-background px-2 py-1 text-xs text-foreground"
+                        >
+                          {NEURON_KIND_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -639,6 +761,7 @@ export default function BrainPage() {
                 data={data}
                 filter={filter}
                 activeScopes={activeScopes}
+                nodeTypeNeuronMapping={nodeTypeNeuronMapping}
                 renderMode={renderMode}
                 companionSignal={companionSignal}
                 selectedNodeId={selectedNodeId}
