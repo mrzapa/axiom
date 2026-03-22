@@ -59,11 +59,11 @@ const D3_LINK_DISTANCE = 80;
 // -- Bloom post-processing (inspired by Hastur-HP/The-Brain) ------------------
 
 /** Bloom strength – how bright the glow is. */
-const BLOOM_STRENGTH = 0.55;
+const BLOOM_STRENGTH = 0.25;
 /** Bloom radius – how far the glow spreads. */
-const BLOOM_RADIUS = 0.35;
+const BLOOM_RADIUS = 0.15;
 /** Bloom threshold – luminance threshold for bloom to kick in. */
-const BLOOM_THRESHOLD = 0.3;
+const BLOOM_THRESHOLD = 0.5;
 
 // -- Ambient dust particle system ---------------------------------------------
 
@@ -101,7 +101,7 @@ function getLinkNodeId(endpoint: unknown): string {
 
 /** Recursively dispose all Three.js geometries, materials, and textures. */
 function disposeObject3D(obj: THREE.Object3D): void {
-  obj.traverse((child) => {
+  obj.traverse((child: THREE.Object3D) => {
     if (child instanceof THREE.Mesh) {
       child.geometry?.dispose();
       const mat = child.material;
@@ -659,7 +659,7 @@ export default function BrainGraph3D({
     // Cinematic lighting setup
     if (scene) {
       // Soft ambient fill
-      const ambientLight = new THREE.AmbientLight(0x303050, 0.5);
+      const ambientLight = new THREE.AmbientLight(0x303050, 0.35);
       ambientLight.name = "ambient-light";
       scene.add(ambientLight);
 
@@ -673,7 +673,7 @@ export default function BrainGraph3D({
       const rimColors = [0x4488ff, 0x8844ff, 0x44ffaa];
       const rimLights: THREE.PointLight[] = [];
       for (let i = 0; i < rimColors.length; i++) {
-        const rimLight = new THREE.PointLight(rimColors[i], 0.6, 800, 1.5);
+        const rimLight = new THREE.PointLight(rimColors[i], 0.35, 800, 1.5);
         const angle = (i / rimColors.length) * Math.PI * 2;
         const r = 350;
         rimLight.position.set(Math.cos(angle) * r, 50 + i * 40, Math.sin(angle) * r);
@@ -1027,7 +1027,7 @@ export default function BrainGraph3D({
           if (!neighbourId) continue;
 
           // Find the neighbour node's position
-          const neighbour = graphData.nodes.find((n) => n.id === neighbourId);
+          const neighbour = graphData.nodes.find((n: BrainSceneNode) => n.id === neighbourId);
           if (neighbour && neighbour.x != null && neighbour.y != null && neighbour.z != null) {
             const nPos = new THREE.Vector3(neighbour.x, neighbour.y, neighbour.z);
             const flash = createConnectionFlash(pos, nPos, color);
@@ -1120,46 +1120,46 @@ export default function BrainGraph3D({
 
       {/* 3D navigation hint overlay */}
       {showHint && (
-        <div className="pointer-events-none absolute bottom-5 left-5 flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-[11px] font-medium tracking-wide text-white/50 backdrop-blur-xl transition-opacity duration-700">
+        <div className="pointer-events-none absolute bottom-5 left-5 flex items-center gap-3 rounded-2xl border border-white/20 bg-white/8 px-4 py-2.5 text-[11px] font-medium tracking-wide text-white/75 backdrop-blur-xl transition-opacity duration-700">
           <span className="flex items-center gap-1.5">
-            <span className="inline-block size-1.5 rounded-full bg-white/20" />
+            <span className="inline-block size-1.5 rounded-full bg-white/40" />
             Orbit
           </span>
-          <span className="text-white/15">·</span>
+          <span className="text-white/30">·</span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block size-1.5 rounded-full bg-white/20" />
+            <span className="inline-block size-1.5 rounded-full bg-white/40" />
             Zoom
           </span>
-          <span className="text-white/15">·</span>
+          <span className="text-white/30">·</span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block size-1.5 rounded-full bg-white/20" />
+            <span className="inline-block size-1.5 rounded-full bg-white/40" />
             Pan
           </span>
         </div>
       )}
 
       {/* Camera controls toolbar — glass-morphism design */}
-      <div className="absolute right-4 top-4 flex flex-col gap-0.5 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-1.5 backdrop-blur-xl">
+      <div className="absolute right-4 top-4 flex flex-col gap-0.5 rounded-2xl border border-white/20 bg-white/8 p-1.5 backdrop-blur-xl">
         {(["front", "top", "side"] as const).map((view) => (
           <button
             key={view}
             type="button"
             title={`${view.charAt(0).toUpperCase() + view.slice(1)} view`}
             onClick={() => setCameraView(view)}
-            className="rounded-xl px-3 py-1.5 text-[11px] font-medium capitalize tracking-wide text-white/50 transition-all duration-200 hover:bg-white/[0.08] hover:text-white/90"
+            className="rounded-xl px-3 py-1.5 text-[11px] font-medium capitalize tracking-wide text-white/70 transition-all duration-200 hover:bg-white/15 hover:text-white/95"
           >
             {view}
           </button>
         ))}
-        <div className="mx-2 my-1 border-t border-white/[0.06]" />
+        <div className="mx-2 my-1 border-t border-white/12" />
         <button
           type="button"
           title={autoRotate ? "Stop rotation" : "Auto-rotate"}
-          onClick={() => setAutoRotate((prev) => !prev)}
+          onClick={() => setAutoRotate((prev: boolean) => !prev)}
           className={`rounded-xl px-3 py-1.5 text-[11px] font-medium tracking-wide transition-all duration-200 ${
             autoRotate
-              ? "bg-white/[0.1] text-white/90"
-              : "text-white/50 hover:bg-white/[0.08] hover:text-white/90"
+              ? "bg-white/15 text-white/95"
+              : "text-white/70 hover:bg-white/15 hover:text-white/95"
           }`}
         >
           {autoRotate ? "⏸ Pause" : "↻ Orbit"}
@@ -1168,7 +1168,7 @@ export default function BrainGraph3D({
           type="button"
           title="Reset view"
           onClick={resetView}
-          className="rounded-xl px-3 py-1.5 text-[11px] font-medium tracking-wide text-white/50 transition-all duration-200 hover:bg-white/[0.08] hover:text-white/90"
+          className="rounded-xl px-3 py-1.5 text-[11px] font-medium tracking-wide text-white/70 transition-all duration-200 hover:bg-white/15 hover:text-white/95"
         >
           ⌘ Reset
         </button>
