@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "motion/react";
 import type { TraceEvent } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -52,9 +53,23 @@ export function AgenticStepIndicator({
               )}
             >
               {state === "active" && (
-                <span className="size-1.5 rounded-full bg-sky-500 animate-pulse" />
+                <motion.span
+                  className="size-1.5 rounded-full bg-sky-500"
+                  animate={{ scale: [1, 1.45, 1], opacity: [0.65, 1, 0.65] }}
+                  transition={{ duration: 1.2, ease: "easeInOut", repeat: Infinity }}
+                />
               )}
-              {step.label}
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={`${step.label}-${state}`}
+                  initial={{ opacity: 0, y: 2 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -2 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                >
+                  {step.label}
+                </motion.span>
+              </AnimatePresence>
             </span>
           </span>
         );
