@@ -147,7 +147,7 @@ export function PageChrome({
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45, ease: "easeOut" }}
-              className="mx-auto w-full max-w-[96rem]"
+              className="mx-auto w-full max-w-384"
             >
               {/* Page header */}
               <section className="mb-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)] xl:items-stretch">

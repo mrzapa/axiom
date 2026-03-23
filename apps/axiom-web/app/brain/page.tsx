@@ -213,7 +213,7 @@ function GraphInspectorPanel({
                 <dt className="shrink-0 text-muted-foreground capitalize">
                   {key.replace(/_/g, " ")}
                 </dt>
-                <dd className="min-w-0 break-words text-foreground">
+                <dd className="min-w-0 wrap-break-word text-foreground">
                   {formatNodeValue(value)}
                 </dd>
               </div>
@@ -733,8 +733,8 @@ export default function BrainPage() {
           </div>
         </div>
 
-        <div className="relative flex min-h-[40rem] flex-1 overflow-hidden rounded-[1.9rem] gap-4">
-          <div className="hidden xl:flex xl:flex-col w-[20.5rem] shrink-0">
+        <div className="relative flex min-h-160 flex-1 gap-4 overflow-hidden rounded-[1.9rem]">
+          <div className="hidden w-82 shrink-0 xl:flex xl:flex-col">
             <GraphInspectorPanel
               node={selectedNode}
               visibleStats={visibleStats}

@@ -134,7 +134,7 @@ function RailLink({
           : "group/rail-link flex w-full items-center gap-3 rounded-[1.45rem] px-3 py-3 text-left transition-[background-color,color,transform] duration-300",
         active
           ? "text-[#dfe2eb]"
-          : "text-[#8c909f] hover:bg-white/[0.045] hover:text-[#dfe2eb]",
+          : "text-[#8c909f] hover:bg-white/4.5 hover:text-[#dfe2eb]",
         compact && "hover:bg-white/5",
       )}
     >
@@ -148,8 +148,8 @@ function RailLink({
       <span
         className={cn(
           compact
-            ? "max-w-[5.25rem] truncate font-display text-[10px] uppercase tracking-[0.18em]"
-            : "min-w-0 max-w-0 overflow-hidden whitespace-nowrap font-display text-[10.5px] uppercase tracking-[0.28em] opacity-0 transition-[max-width,opacity,transform] duration-300 group-hover/rail:max-w-[8.75rem] group-hover/rail:translate-x-0 group-hover/rail:opacity-100 group-focus-within/rail:max-w-[8.75rem] group-focus-within/rail:translate-x-0 group-focus-within/rail:opacity-100 group-hover/rail-link:text-[#eef3ff]",
+            ? "max-w-21 truncate font-display text-[10px] uppercase tracking-[0.18em]"
+            : "min-w-0 max-w-0 overflow-hidden whitespace-nowrap font-display text-[10.5px] uppercase tracking-[0.28em] opacity-0 transition-[max-width,opacity,transform] duration-300 group-hover/rail:max-w-35 group-hover/rail:translate-x-0 group-hover/rail:opacity-100 group-focus-within/rail:max-w-35 group-focus-within/rail:translate-x-0 group-focus-within/rail:opacity-100 group-hover/rail-link:text-[#eef3ff]",
           !compact && "-translate-x-1",
         )}
       >
