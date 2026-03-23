@@ -1140,7 +1140,7 @@ export default function ChatPage() {
         runId: latestRunId,
       }}
     >
-      <div className="h-[calc(100vh-13.75rem)] min-h-[44rem] overflow-hidden rounded-[1.9rem]">
+      <div className="h-[calc(100vh-13.75rem)] min-h-176 overflow-hidden rounded-[1.9rem]">
         <ResizablePanels
           className="h-full"
           resetToken={shellPostureToken}

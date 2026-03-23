@@ -17,7 +17,7 @@ export function HomeHeroAnimatedCopy() {
         animateBy="words"
         delay={90}
         stepDuration={0.3}
-        className="max-w-[34rem] font-display text-sm uppercase tracking-[0.2em] text-[#c7d8ff]/85 sm:text-base"
+        className="max-w-136 font-display text-sm uppercase tracking-[0.2em] text-[#c7d8ff]/85 sm:text-base"
       />
       <ShinyText
         text={HERO_SUBLINE}

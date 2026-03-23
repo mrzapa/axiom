@@ -115,7 +115,7 @@ function TraceEventRow({ event }: { event: TraceEvent }) {
     <div className="relative pl-5">
       {/* Timeline dot */}
       <span
-        className={`absolute left-0 top-[7px] size-2 rounded-full ${dotColor}`}
+        className={`absolute left-0 top-1.75 size-2 rounded-full ${dotColor}`}
       />
 
       <div className="overflow-hidden rounded-2xl border border-white/8 bg-black/10">
@@ -191,7 +191,7 @@ function StageGroup({ stage, events }: { stage: string; events: TraceEvent[] }) 
         <div className="relative pl-2 space-y-1.5">
           {/* Vertical line */}
           <span
-            className={`absolute left-[3px] top-0 bottom-0 w-px ${lineColor} opacity-40`}
+            className={`absolute left-0.75 top-0 bottom-0 w-px ${lineColor} opacity-40`}
           />
           {events.map((evt, i) => (
             <TraceEventRow key={evt.event_id ?? `${evt.event_type}-${i}`} event={evt} />

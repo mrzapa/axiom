@@ -191,8 +191,8 @@ export function SpaceAtmosphere({ className }: SpaceAtmosphereProps) {
       ) : null}
 
       {/* Static micro-star field */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(255,255,255,0.55)_0.6px,transparent_0.8px)] [background-size:180px_180px] opacity-20" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(173,198,255,0.5)_0.5px,transparent_0.7px)] [background-size:280px_280px] opacity-15" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.55)_0.6px,transparent_0.8px)] bg-size-[180px_180px] opacity-20" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(173,198,255,0.5)_0.5px,transparent_0.7px)] bg-size-[280px_280px] opacity-15" />
 
       {/* Twinkling stars */}
       <div className="absolute inset-0">
