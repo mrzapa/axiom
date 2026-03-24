@@ -85,7 +85,7 @@ export function IndexBuildStudio({
       setIsDesktop(true);
       setTab("desktop");
     }
-  }, []);
+  }, [setIsDesktop, setTab]);
 
   const readyPaths =
     tab === "upload"
@@ -120,7 +120,7 @@ export function IndexBuildStudio({
         setIndexError(err instanceof Error ? err.message : "Failed to load indexes"),
       )
       .finally(() => setLoadingIndexes(false));
-  }, [showExistingIndexes]);
+  }, [setIndexError, setIndexes, setLoadingIndexes, showExistingIndexes]);
 
   useEffect(() => {
     loadIndexes();

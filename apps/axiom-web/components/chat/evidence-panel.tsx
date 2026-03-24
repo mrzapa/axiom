@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fetchTraceEvents, type RetrievalFallback, type TraceEvent } from "@/lib/api";
@@ -9,6 +9,7 @@ import { FileText, List, Activity } from "lucide-react";
 import { EvidenceSourceCard } from "@/components/chat/evidence-source-card";
 import { TraceTimeline } from "@/components/chat/trace-timeline";
 import { cn } from "@/lib/utils";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 interface EvidencePanelProps {
   sources: EvidenceSource[];
@@ -24,11 +25,11 @@ interface EvidencePanelProps {
 }
 
 export function EvidencePanel({ sources, runIds, latestRunId, selectedMode, latestAnswer, fallback, liveTraceEvents, isStreaming, preferredTab, postureToken }: EvidencePanelProps) {
-  const [selectedRunId, setSelectedRunId] = useState<string>(latestRunId ?? "");
-  const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
-  const [traceLoading, setTraceLoading] = useState(Boolean(latestRunId));
-  const [traceError, setTraceError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState(preferredTab ?? "sources");
+  const [selectedRunId, setSelectedRunId] = useArrowState<string>(latestRunId ?? "");
+  const [traceEvents, setTraceEvents] = useArrowState<TraceEvent[]>([]);
+  const [traceLoading, setTraceLoading] = useArrowState(Boolean(latestRunId));
+  const [traceError, setTraceError] = useArrowState<string | null>(null);
+  const [activeTab, setActiveTab] = useArrowState(preferredTab ?? "sources");
 
   // Deduplicated, non-empty run IDs (most-recent first as they appear in the array)
   const availableRunIds = useMemo(() => [...new Set(runIds.filter(Boolean))], [runIds]);
@@ -39,21 +40,21 @@ export function EvidencePanel({ sources, runIds, latestRunId, selectedMode, late
       return;
     }
     queueMicrotask(() => setActiveTab("sources"));
-  }, [selectedMode]);
+  }, [selectedMode, setActiveTab]);
 
   useEffect(() => {
     if (!preferredTab) {
       return;
     }
     queueMicrotask(() => setActiveTab(preferredTab));
-  }, [postureToken, preferredTab]);
+  }, [postureToken, preferredTab, setActiveTab]);
 
   useEffect(() => {
     if (!latestRunId) {
       return;
     }
     queueMicrotask(() => setSelectedRunId(latestRunId));
-  }, [latestRunId]);
+  }, [latestRunId, setSelectedRunId]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -61,7 +62,7 @@ export function EvidencePanel({ sources, runIds, latestRunId, selectedMode, late
       setTraceError(null);
       setTraceLoading(Boolean(selectedRunId));
     });
-  }, [selectedRunId]);
+  }, [selectedRunId, setTraceError, setTraceEvents, setTraceLoading]);
 
   // Fetch trace events whenever selectedRunId changes (skip while streaming the active run)
   useEffect(() => {
@@ -95,10 +96,10 @@ export function EvidencePanel({ sources, runIds, latestRunId, selectedMode, late
     return () => {
       cancelled = true;
     };
-  }, [selectedRunId, showLiveTrace]);
+  }, [selectedRunId, setTraceError, setTraceEvents, setTraceLoading, showLiveTrace]);
 
   return (
-    <div className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.9rem]">
+    <div className="chat-pane-surface flex h-full min-h-0 flex-col overflow-hidden rounded-[1.9rem]">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
         {/* Tab bar */}
         <div className="glass-strip shrink-0 border-b border-white/10 px-3 pt-3">

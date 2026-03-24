@@ -198,7 +198,7 @@ export function ResizablePanels({
             });
           }
         }}
-        className="chat-pane-divider mx-1.5 my-3 cursor-col-resize rounded-full transition-[background,border-color,box-shadow] duration-200 hover:border-primary/26 hover:bg-primary/18 focus-visible:border-primary/26 focus-visible:bg-primary/18 focus-visible:outline-none"
+        className="chat-pane-divider mx-1.5 my-3 cursor-col-resize rounded-full focus-visible:outline-none"
       />
 
       {/* Centre panel */}
@@ -225,7 +225,7 @@ export function ResizablePanels({
             });
           }
         }}
-        className="chat-pane-divider mx-1.5 my-3 cursor-col-resize rounded-full transition-[background,border-color,box-shadow] duration-200 hover:border-primary/26 hover:bg-primary/18 focus-visible:border-primary/26 focus-visible:bg-primary/18 focus-visible:outline-none"
+        className="chat-pane-divider mx-1.5 my-3 cursor-col-resize rounded-full focus-visible:outline-none"
       />
 
       {/* Right panel */}
