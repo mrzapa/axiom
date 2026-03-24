@@ -17,8 +17,8 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 import ForceGraph3D, { type ForceGraphMethods } from "react-force-graph-3d";
 import * as THREE from "three";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -518,12 +518,12 @@ export default function BrainGraph3D({
   const modelOverlayRef = useRef<BrainModelOverlayHandle | null>(null);
   const modelSceneRef = useRef<THREE.Scene | null>(null);
   const modelLoadAttemptRef = useRef(0);
-  const [sceneReady, setSceneReady] = useState(false);
+  const [sceneReady, setSceneReady] = useArrowState(false);
   const needsInitialZoomRef = useRef(true);
   const rendererConfiguredRef = useRef(false);
-  const [autoRotate, setAutoRotate] = useState(false);
-  const [activityLabel, setActivityLabel] = useState("Idle");
-  const [activityProfile, setActivityProfile] = useState({
+  const [autoRotate, setAutoRotate] = useArrowState(false);
+  const [activityLabel, setActivityLabel] = useArrowState("Idle");
+  const [activityProfile, setActivityProfile] = useArrowState({
     directionalParticles: 4,
     directionalSpeed: 0.005,
     directionalWidth: 2.0,
@@ -554,7 +554,7 @@ export default function BrainGraph3D({
   const rimLightsRef = useRef<THREE.PointLight[]>([]);
 
   // Track container dimensions for the ForceGraph width/height props
-  const [dims, setDims] = useState({ w: 800, h: 600 });
+  const [dims, setDims] = useArrowState({ w: 800, h: 600 });
   const wasZeroSizedRef = useRef(false);
 
   const mergedNodeTypeNeuronMapping = useMemo<NodeTypeNeuronMapping>(() => ({

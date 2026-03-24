@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { ResizablePanels } from "@/components/chat/resizable-panels";
 import { SessionsPanel } from "@/components/chat/sessions-panel";
 import { ChatPanel } from "@/components/chat/chat-panel";
@@ -12,6 +12,7 @@ import type { RetrievalFallback, SessionSummary, TraceEvent } from "@/lib/api";
 import type { RagStreamEvent } from "@/lib/api";
 import type { EvidenceSource } from "@/lib/chat-types";
 import { useChatTranscript } from "@/app/chat/use-chat-transcript";
+import { useArrowState } from "@/hooks/use-arrow-state";
 import {
   clearResumableRagRun,
   loadResumableRagRun,
@@ -160,35 +161,35 @@ function toStoredResumableRagRun(
 }
 
 export default function ChatPage() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sessionMeta, setSessionMeta] = useState<SessionSummary | null>(null);
-  const [loadingSession, setLoadingSession] = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
-  const [isStreamingRag, setIsStreamingRag] = useState(false);
-  const [activeIndexPath, setActiveIndexPath] = useState<string | null>(null);
-  const [activeIndexLabel, setActiveIndexLabel] = useState<string | null>(null);
-  const [queryModeOverride, setQueryModeOverride] = useState<"rag" | null>(null);
-  const [liveTraceEvents, setLiveTraceEvents] = useState<TraceEvent[]>([]);
-  const [resumableRun, setResumableRun] = useState<ResumableRagRunState | null>(null);
+  const [selectedId, setSelectedId] = useArrowState<string | null>(null);
+  const [sessionMeta, setSessionMeta] = useArrowState<SessionSummary | null>(null);
+  const [loadingSession, setLoadingSession] = useArrowState(false);
+  const [sessionError, setSessionError] = useArrowState<string | null>(null);
+  const [isSending, setIsSending] = useArrowState(false);
+  const [isStreamingRag, setIsStreamingRag] = useArrowState(false);
+  const [activeIndexPath, setActiveIndexPath] = useArrowState<string | null>(null);
+  const [activeIndexLabel, setActiveIndexLabel] = useArrowState<string | null>(null);
+  const [queryModeOverride, setQueryModeOverride] = useArrowState<"rag" | null>(null);
+  const [liveTraceEvents, setLiveTraceEvents] = useArrowState<TraceEvent[]>([]);
+  const [resumableRun, setResumableRun] = useArrowState<ResumableRagRunState | null>(null);
   const settingsRef = useRef<Record<string, unknown> | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const ragRequestIdRef = useRef(0);
   const activeRagStreamRef = useRef<ActiveRagStream | null>(null);
-  const [modelProvider, setModelProvider] = useState<string | null>(null);
-  const [modelName, setModelName] = useState<string | null>(null);
-  const [agenticMode, setAgenticMode] = useState(false);
-  const [agenticModeSaving, setAgenticModeSaving] = useState(false);
-  const [agenticModeError, setAgenticModeError] = useState<string | null>(null);
-  const [traceFirstLayout, setTraceFirstLayout] = useState(false);
-  const [shellPostureToken, setShellPostureToken] = useState(0);
-  const [preferredEvidenceTab, setPreferredEvidenceTab] = useState<"sources" | "trace">("sources");
-  const [initialDraft, setInitialDraft] = useState("");
-  const [sessionRefreshToken, setSessionRefreshToken] = useState(0);
-  const [selectedRagMode, setSelectedRagMode] = useState<string>("Q&A");
-  const [latestFallback, setLatestFallback] = useState<RetrievalFallback | null>(null);
-  const [artifactsEnabled, setArtifactsEnabled] = useState<boolean | undefined>(undefined);
-  const [artifactRuntimeEnabled, setArtifactRuntimeEnabled] = useState<boolean | undefined>(undefined);
+  const [modelProvider, setModelProvider] = useArrowState<string | null>(null);
+  const [modelName, setModelName] = useArrowState<string | null>(null);
+  const [agenticMode, setAgenticMode] = useArrowState(false);
+  const [agenticModeSaving, setAgenticModeSaving] = useArrowState(false);
+  const [agenticModeError, setAgenticModeError] = useArrowState<string | null>(null);
+  const [traceFirstLayout, setTraceFirstLayout] = useArrowState(false);
+  const [shellPostureToken, setShellPostureToken] = useArrowState(0);
+  const [preferredEvidenceTab, setPreferredEvidenceTab] = useArrowState<"sources" | "trace">("sources");
+  const [initialDraft, setInitialDraft] = useArrowState("");
+  const [sessionRefreshToken, setSessionRefreshToken] = useArrowState(0);
+  const [selectedRagMode, setSelectedRagMode] = useArrowState<string>("Q&A");
+  const [latestFallback, setLatestFallback] = useArrowState<RetrievalFallback | null>(null);
+  const [artifactsEnabled, setArtifactsEnabled] = useArrowState<boolean | undefined>(undefined);
+  const [artifactRuntimeEnabled, setArtifactRuntimeEnabled] = useArrowState<boolean | undefined>(undefined);
   const sessionIdRef = useRef<string | null>(null);
   const {
     createMessage,

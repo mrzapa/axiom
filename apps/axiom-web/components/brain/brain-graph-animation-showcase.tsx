@@ -8,7 +8,8 @@
  * animation timing, stagger patterns, and visual feedback loops.
  */
 
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 import BrainGraph3D, { type BrainGraph3DProps } from "./brain-graph-3d";
 import { BrainGraphAnimatedWrapper } from "./brain-graph-animated-wrapper";
 import { AnimatedEvidencePanel, type EvidenceItem } from "./animated-evidence-panel";
@@ -82,13 +83,13 @@ export function BrainGraphAnimationShowcase({
   ...brainGraphProps
 }: BrainGraphAnimationShowcaseProps) {
   // State for demo cycling
-  const [isResearchMode, setIsResearchMode] = useState(demoMode);
-  const [isExpanding, setIsExpanding] = useState(demoMode);
-  const [highlightedEvidenceId, setHighlightedEvidenceId] = useState<string | null>(
+  const [isResearchMode, setIsResearchMode] = useArrowState(demoMode);
+  const [isExpanding, setIsExpanding] = useArrowState(demoMode);
+  const [highlightedEvidenceId, setHighlightedEvidenceId] = useArrowState<string | null>(
     null,
   );
-  const [iteration, setIteration] = useState(1);
-  const [subQueries, setSubQueries] = useState<SubQuery[]>(MOCK_SUB_QUERIES);
+  const [iteration, setIteration] = useArrowState(1);
+  const [subQueries, setSubQueries] = useArrowState<SubQuery[]>(MOCK_SUB_QUERIES);
 
   const handleStartResearch = useCallback(() => {
     setIsResearchMode(true);

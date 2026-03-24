@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,8 +57,8 @@ function Section({
 const scrollItems = Array.from({ length: 20 }, (_, i) => `Item ${i + 1}`);
 
 export default function DesignPage() {
-  const [inputValue, setInputValue] = useState("");
-  const [textareaValue, setTextareaValue] = useState("");
+  const [inputValue, setInputValue] = useArrowState("");
+  const [textareaValue, setTextareaValue] = useArrowState("");
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12 space-y-10">

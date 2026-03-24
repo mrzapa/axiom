@@ -6,7 +6,8 @@
  */
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 import {
   type BrainGraphData,
   type BrainNode,
@@ -262,17 +263,17 @@ function GraphInspectorPanel({
 }
 
 export default function BrainPage() {
-  const [data, setData] = useState<BrainGraphData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
-  const [activeScopes, setActiveScopes] = useState<BrainScope[]>(() => [...ALL_BRAIN_SCOPES]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [renderMode, setRenderMode] = useState<BrainRenderMode>("hybrid");
-  const [modelWarning, setModelWarning] = useState<string | null>(null);
-  const [companionSignal, setCompanionSignal] = useState<BrainCompanionSignal | null>(null);
-  const [nodeTypeNeuronMapping, setNodeTypeNeuronMapping] = useState<NodeTypeNeuronMapping>(
-    () => ({ ...DEFAULT_NODE_TYPE_TO_NEURON_KIND }),
+  const [data, setData] = useArrowState<BrainGraphData | null>(null);
+  const [loading, setLoading] = useArrowState(true);
+  const [error, setError] = useArrowState<string | null>(null);
+  const [filter, setFilter] = useArrowState("");
+  const [activeScopes, setActiveScopes] = useArrowState<BrainScope[]>([...ALL_BRAIN_SCOPES]);
+  const [selectedNodeId, setSelectedNodeId] = useArrowState<string | null>(null);
+  const [renderMode, setRenderMode] = useArrowState<BrainRenderMode>("hybrid");
+  const [modelWarning, setModelWarning] = useArrowState<string | null>(null);
+  const [companionSignal, setCompanionSignal] = useArrowState<BrainCompanionSignal | null>(null);
+  const [nodeTypeNeuronMapping, setNodeTypeNeuronMapping] = useArrowState<NodeTypeNeuronMapping>(
+    { ...DEFAULT_NODE_TYPE_TO_NEURON_KIND },
   );
 
   useEffect(() => {

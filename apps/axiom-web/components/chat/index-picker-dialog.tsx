@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { fetchIndexes } from "@/lib/api";
 import type { IndexSummary } from "@/lib/api";
 import { Database, Loader2, AlertCircle } from "lucide-react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 interface IndexPickerDialogProps {
   open: boolean;
@@ -24,9 +25,9 @@ export function IndexPickerDialog({
   onOpenChange,
   onSelect,
 }: IndexPickerDialogProps) {
-  const [indexes, setIndexes] = useState<IndexSummary[] | null>(open ? null : []);
-  const [error, setError] = useState<string | null>(null);
-  const [syncedOpen, setSyncedOpen] = useState(open);
+  const [indexes, setIndexes] = useArrowState<IndexSummary[] | null>(open ? null : []);
+  const [error, setError] = useArrowState<string | null>(null);
+  const [syncedOpen, setSyncedOpen] = useArrowState(open);
 
   if (open !== syncedOpen) {
     setSyncedOpen(open);

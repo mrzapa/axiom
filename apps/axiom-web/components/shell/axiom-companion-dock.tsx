@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   bootstrapAssistant,
   clearAssistantMemory,
@@ -22,6 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { BrainIcon } from "@/components/icons";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 interface AxiomCompanionDockProps {
   sessionId?: string | null;
@@ -34,11 +35,11 @@ export function AxiomCompanionDock({
   runId,
   className,
 }: AxiomCompanionDockProps) {
-  const [snapshot, setSnapshot] = useState<AssistantSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busyAction, setBusyAction] = useState<"" | "toggle" | "reflect" | "clear" | "bootstrap">("");
-  const [showWhy, setShowWhy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useArrowState<AssistantSnapshot | null>(null);
+  const [loading, setLoading] = useArrowState(true);
+  const [busyAction, setBusyAction] = useArrowState<"" | "toggle" | "reflect" | "clear" | "bootstrap">("");
+  const [showWhy, setShowWhy] = useArrowState(false);
+  const [error, setError] = useArrowState<string | null>(null);
   const requestIdRef = useRef(0);
   const previousContextRef = useRef<{ sessionId?: string | null; runId?: string | null } | null>(null);
 

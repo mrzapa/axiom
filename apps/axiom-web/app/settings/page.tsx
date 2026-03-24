@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { AlertCircle, CheckCircle2, Info, Loader2, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 const schema = z.object({
   // ── Core ──────────────────────────────────────────────────────────────────
@@ -220,17 +221,17 @@ function ToggleRow({
 }
 
 export default function SettingsPage() {
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [assistantLoading, setAssistantLoading] = useState(true);
-  const [assistantLoadError, setAssistantLoadError] = useState<string | null>(null);
-  const [assistantSaving, setAssistantSaving] = useState(false);
-  const [assistantSaveError, setAssistantSaveError] = useState<string | null>(null);
-  const [assistantSaved, setAssistantSaved] = useState(false);
-  const [uiVariant, setUiVariant] = useState<UiVariant>("refined");
+  const [loading, setLoading] = useArrowState(true);
+  const [loadError, setLoadError] = useArrowState<string | null>(null);
+  const [saving, setSaving] = useArrowState(false);
+  const [saveError, setSaveError] = useArrowState<string | null>(null);
+  const [saved, setSaved] = useArrowState(false);
+  const [assistantLoading, setAssistantLoading] = useArrowState(true);
+  const [assistantLoadError, setAssistantLoadError] = useArrowState<string | null>(null);
+  const [assistantSaving, setAssistantSaving] = useArrowState(false);
+  const [assistantSaveError, setAssistantSaveError] = useArrowState<string | null>(null);
+  const [assistantSaved, setAssistantSaved] = useArrowState(false);
+  const [uiVariant, setUiVariant] = useArrowState<UiVariant>("refined");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),

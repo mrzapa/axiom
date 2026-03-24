@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,8 +38,8 @@ function toPreviewList(value: unknown): string[] {
 }
 
 export function EvidenceSourceCard({ source: src }: EvidenceSourceCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useArrowState(false);
+  const [copied, setCopied] = useArrowState(false);
 
   const citation = `[${src.sid}]`;
   const isLong = src.snippet.length > SNIPPET_COLLAPSE_THRESHOLD;
