@@ -12,15 +12,14 @@ type ArrowStateSetter<T> = T | ((previousValue: T) => T);
  * through `watch()` to re-render on updates.
  */
 export function useArrowState<T>(initialValue: T): [T, (nextValue: ArrowStateSetter<T>) => void] {
-  const storeRef = useRef<ReturnType<typeof reactive<{ value: T }>> | null>(null);
-  if (!storeRef.current) {
-    storeRef.current = reactive({ value: initialValue });
-  }
-
-  const store = storeRef.current as unknown as { value: T };
-  const [value, setValue] = useState<T>(store.value);
+  const [value, setValue] = useState<T>(initialValue);
+  const initialValueRef = useRef(initialValue);
+  const storeRef = useRef<{ value: T } | null>(null);
 
   useEffect(() => {
+    const store = reactive({ value: initialValueRef.current }) as unknown as { value: T };
+    storeRef.current = store;
+
     const [, stop] = watch(
       () => store.value,
       (nextValue) => {
@@ -29,18 +28,31 @@ export function useArrowState<T>(initialValue: T): [T, (nextValue: ArrowStateSet
       },
     );
 
-    return stop;
-  }, [store]);
+    return () => {
+      stop();
+      storeRef.current = null;
+    };
+  }, []);
 
   const setArrowValue = useCallback(
     (nextValue: ArrowStateSetter<T>) => {
+      const store = storeRef.current;
+      if (!store) {
+        setValue((previousValue) =>
+          typeof nextValue === "function"
+            ? (nextValue as (currentValue: T) => T)(previousValue)
+            : nextValue,
+        );
+        return;
+      }
+
       const currentValue = store.value;
       store.value =
         typeof nextValue === "function"
           ? (nextValue as (previousValue: T) => T)(currentValue)
           : nextValue;
     },
-    [store],
+    [],
   );
 
   return [value, setArrowValue];

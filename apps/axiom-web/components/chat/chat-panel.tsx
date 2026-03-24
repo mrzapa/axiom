@@ -143,7 +143,7 @@ export function ChatPanel({
   const ragInputDisabled = queryMode === "rag" && !activeIndexPath;
 
   return (
-    <div className="glass-panel-strong flex h-full min-h-0 flex-col overflow-hidden rounded-[1.9rem]">
+    <div className="chat-pane-surface flex h-full min-h-0 flex-col overflow-hidden rounded-[1.9rem]">
       {/* Header */}
       <div className="glass-strip flex min-h-13 shrink-0 flex-wrap items-center gap-2.5 border-b border-white/10 px-4 py-3.5">
         <h2 className="truncate text-sm font-semibold">
@@ -521,7 +521,7 @@ export function ChatPanel({
             ) : (
               <Button
                 size="icon"
-                className="size-11 shrink-0 rounded-2xl border border-primary/25 bg-primary/92 text-primary-foreground shadow-lg shadow-primary/25 transition-all duration-150 hover:scale-[1.05] hover:shadow-primary/38 active:scale-[0.94] disabled:opacity-50 disabled:scale-95"
+                className="chat-send-button size-11 shrink-0 rounded-2xl text-primary-foreground disabled:opacity-50 disabled:scale-95"
                 onClick={handleSend}
                 disabled={!canSend}
                 aria-label="Send message"

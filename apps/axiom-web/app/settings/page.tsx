@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -88,6 +88,25 @@ const SKILL_MODES = ["Q&A", "Summary", "Tutor", "Research", "Evidence Pack", "Kn
 const FALLBACK_STRATEGIES = ["synthesize_anyway", "no_answer"];
 const KG_QUERY_MODES = ["hybrid", "vector", "keyword"];
 const COMPREHENSION_DEPTHS = ["Standard", "Deep", "Exhaustive"];
+const UI_VARIANTS = [
+  {
+    value: "bold",
+    label: "Bolder",
+    description: "Higher contrast, stronger depth, louder controls.",
+  },
+  {
+    value: "refined",
+    label: "Premium",
+    description: "Same language, quieter surfacing and subtler lift.",
+  },
+  {
+    value: "motion",
+    label: "Motion",
+    description: "More obvious transitions with reduced-motion fallback.",
+  },
+] as const;
+
+type UiVariant = (typeof UI_VARIANTS)[number]["value"];
 
 const ASSISTANT_DEFAULT_VALUES: AssistantFormValues = {
   assistant_identity: {
@@ -176,17 +195,24 @@ function ToggleRow({
   return (
     <label
       htmlFor={id}
-      className="glass-micro-surface flex cursor-pointer items-start gap-3 rounded-xl px-4 py-3 transition-colors hover:border-white/16 hover:bg-white/10"
+      className="settings-toggle flex cursor-pointer items-start gap-3 rounded-xl px-4 py-3"
+      data-checked={checked ? "true" : "false"}
     >
       <input
         id={id}
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 size-4 rounded accent-primary"
+        className="settings-toggle__input"
       />
-      <div>
-        <p className="text-sm font-medium">{label}</p>
+      <span className="settings-toggle__switch mt-0.5" aria-hidden="true">
+        <span className="settings-toggle__thumb" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium">{label}</p>
+          <span className="settings-toggle__state">{checked ? "On" : "Off"}</span>
+        </div>
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
     </label>
@@ -204,6 +230,7 @@ export default function SettingsPage() {
   const [assistantSaving, setAssistantSaving] = useState(false);
   const [assistantSaveError, setAssistantSaveError] = useState<string | null>(null);
   const [assistantSaved, setAssistantSaved] = useState(false);
+  const [uiVariant, setUiVariant] = useState<UiVariant>("refined");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -265,6 +292,24 @@ export default function SettingsPage() {
       agent_lightning_enabled: false,
     },
   });
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const current = document.documentElement.dataset.uiVariant;
+    if (current === "refined" || current === "motion" || current === "bold") {
+      setUiVariant(current);
+    }
+  }, []);
+
+  function applyUiVariant(nextVariant: UiVariant) {
+    setUiVariant(nextVariant);
+    document.documentElement.dataset.uiVariant = nextVariant;
+    try {
+      window.localStorage.setItem("axiom-ui-variant", nextVariant);
+    } catch {
+      // Ignore storage failures and keep the in-memory selection.
+    }
+  }
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = form;
   const assistantForm = useForm<AssistantFormValues>({
@@ -423,6 +468,39 @@ export default function SettingsPage() {
               must be set in <code className="rounded bg-blue-100 px-1 dark:bg-blue-900/50">settings.json</code> at
               the repo root. Changes take effect on next server restart.
             </p>
+          </div>
+        </div>
+
+        <div className="glass-settings-pane space-y-3 rounded-[1.35rem]">
+          <div>
+            <p className="text-sm font-semibold">Interface direction</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Switch the live treatment for panes, toggles, sliders, and the chat composer.
+            </p>
+          </div>
+          <div className="grid gap-2 md:grid-cols-3">
+            {UI_VARIANTS.map((variant) => (
+              <button
+                key={variant.value}
+                type="button"
+                onClick={() => applyUiVariant(variant.value)}
+                className={cn(
+                  "glass-micro-surface rounded-[1.1rem] border px-4 py-3 text-left transition-all duration-200",
+                  uiVariant === variant.value
+                    ? "border-primary/40 bg-primary/14 shadow-[0_14px_36px_-22px_color-mix(in_oklch,var(--primary)_68%,transparent)]"
+                    : "border-white/8 hover:border-white/14 hover:bg-white/8",
+                )}
+                aria-pressed={uiVariant === variant.value}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium">{variant.label}</span>
+                  <span className="chat-control-pill rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {uiVariant === variant.value ? "Active" : "Preview"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">{variant.description}</p>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -722,7 +800,8 @@ export default function SettingsPage() {
                       max={1}
                       step={0.05}
                       {...register("mmr_lambda", { valueAsNumber: true })}
-                      className="w-full accent-primary"
+                      className="glass-slider"
+                      style={{ "--slider-progress": `${Math.round(Number(mmrLambda) * 100)}%` } as CSSProperties}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>0 — max diversity</span>
@@ -990,7 +1069,8 @@ export default function SettingsPage() {
                       max={2}
                       step={0.1}
                       {...register("llm_temperature", { valueAsNumber: true })}
-                      className="w-full accent-primary"
+                      className="glass-slider"
+                      style={{ "--slider-progress": `${Math.round((Number(llmTemp) / 2) * 100)}%` } as CSSProperties}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>0 — deterministic</span>

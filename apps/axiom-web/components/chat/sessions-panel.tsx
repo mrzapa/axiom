@@ -33,7 +33,7 @@ export function SessionsPanel({ selectedId, onSelect, onNewChat, refreshToken }:
   const isConnectionError = error?.toLowerCase().includes("connection error");
 
   return (
-    <div className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.9rem]">
+    <div className="chat-pane-surface flex h-full min-h-0 flex-col overflow-hidden rounded-[1.9rem]">
       {/* Header */}
       <div className="glass-strip flex items-center justify-between border-b border-white/10 px-4 py-3">
         <h2 className="text-sm font-semibold">Sessions</h2>
