@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { updateSettings } from "@/lib/api";
 import { AlertCircle, Loader2 } from "lucide-react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 interface ModelStatusDialogProps {
   open: boolean;
@@ -28,10 +29,10 @@ export function ModelStatusDialog({
   model,
   onSaved,
 }: ModelStatusDialogProps) {
-  const [draftProvider, setDraftProvider] = useState(provider);
-  const [draftModel, setDraftModel] = useState(model);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [draftProvider, setDraftProvider] = useArrowState(provider);
+  const [draftModel, setDraftModel] = useArrowState(model);
+  const [saving, setSaving] = useArrowState(false);
+  const [error, setError] = useArrowState<string | null>(null);
 
   // Sync drafts when dialog opens
   useEffect(() => {

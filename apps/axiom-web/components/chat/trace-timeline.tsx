@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 import { ChevronDown, ChevronRight, Clock } from "lucide-react";
 import type { TraceEvent } from "@/lib/api";
 
@@ -52,7 +52,7 @@ function truncateJson(obj: unknown): { text: string; truncated: boolean } {
 }
 
 function PayloadViewer({ payload }: { payload: Record<string, unknown> }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useArrowState(false);
   const keys = Object.keys(payload);
 
   if (keys.length === 0) {
@@ -95,7 +95,7 @@ function PayloadViewer({ payload }: { payload: Record<string, unknown> }) {
 }
 
 function TraceEventRow({ event }: { event: TraceEvent }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useArrowState(false);
   const stage = (event.stage || "").toLowerCase();
   const dotColor = STAGE_DOT_COLORS[stage] ?? "bg-muted-foreground";
 
@@ -162,7 +162,7 @@ function TraceEventRow({ event }: { event: TraceEvent }) {
 }
 
 function StageGroup({ stage, events }: { stage: string; events: TraceEvent[] }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useArrowState(false);
   const label = STAGE_LABELS[stage] ?? stage.charAt(0).toUpperCase() + stage.slice(1);
   const chipColor =
     STAGE_COLORS[stage] ?? "bg-muted text-muted-foreground";

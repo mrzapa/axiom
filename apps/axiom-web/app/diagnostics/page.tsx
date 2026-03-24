@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { motion } from "motion/react";
 import { AlertCircle, CheckCircle2, ClipboardCopy, Loader2, RotateCcw, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
   type UiTelemetrySummaryWindowHours,
   updateSettings,
 } from "@/lib/api";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 const WEB_VERSION = "1.0";
 
@@ -305,17 +306,17 @@ function StatCard({
 }
 
 export default function DiagnosticsPage() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [versions, setVersions] = useState<Versions | null>(null);
-  const [compatibility, setCompatibility] = useState<CompatibilityStatus | null>(null);
-  const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
-  const [logTail, setLogTail] = useState<LogTailResult | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [summary24h, setSummary24h] = useState<SummaryState>({ loading: true, data: null, error: null });
-  const [summary168h, setSummary168h] = useState<SummaryState>({ loading: true, data: null, error: null });
+  const [loading, setLoading] = useArrowState(true);
+  const [error, setError] = useArrowState<string | null>(null);
+  const [versions, setVersions] = useArrowState<Versions | null>(null);
+  const [compatibility, setCompatibility] = useArrowState<CompatibilityStatus | null>(null);
+  const [settings, setSettings] = useArrowState<Record<string, unknown> | null>(null);
+  const [logTail, setLogTail] = useArrowState<LogTailResult | null>(null);
+  const [copied, setCopied] = useArrowState(false);
+  const [actionError, setActionError] = useArrowState<string | null>(null);
+  const [actionLoading, setActionLoading] = useArrowState(false);
+  const [summary24h, setSummary24h] = useArrowState<SummaryState>({ loading: true, data: null, error: null });
+  const [summary168h, setSummary168h] = useArrowState<SummaryState>({ loading: true, data: null, error: null });
 
   async function loadBaseDiagnostics() {
     setLoading(true);

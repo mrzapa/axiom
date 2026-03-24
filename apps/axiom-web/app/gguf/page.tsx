@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import {
   fetchGgufCatalog,
   fetchGgufHardware,
@@ -32,6 +32,7 @@ import {
   FileCheck,
   Upload,
 } from "lucide-react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 const USE_CASES = [
   { value: "general", label: "General" },
@@ -381,27 +382,27 @@ function InstalledList({
 }
 
 export default function GgufPage() {
-  const [hardware, setHardware] = useState<GgufHardwareProfile | null>(null);
-  const [catalog, setCatalog] = useState<GgufCatalogEntry[]>([]);
-  const [installed, setInstalled] = useState<GgufInstalledEntry[]>([]);
-  const [selectedModelName, setSelectedModelName] = useState<string | null>(null);
-  const [useCase, setUseCase] = useState("general");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [hardware, setHardware] = useArrowState<GgufHardwareProfile | null>(null);
+  const [catalog, setCatalog] = useArrowState<GgufCatalogEntry[]>([]);
+  const [installed, setInstalled] = useArrowState<GgufInstalledEntry[]>([]);
+  const [selectedModelName, setSelectedModelName] = useArrowState<string | null>(null);
+  const [useCase, setUseCase] = useArrowState("general");
+  const [loading, setLoading] = useArrowState(true);
+  const [error, setError] = useArrowState<string | null>(null);
+  const [refreshing, setRefreshing] = useArrowState(false);
 
   // Validation state
-  const [validatePath, setValidatePath] = useState("");
-  const [validating, setValidating] = useState(false);
-  const [validateResult, setValidateResult] = useState<GgufValidateResult | null>(null);
-  const [validateError, setValidateError] = useState<string | null>(null);
+  const [validatePath, setValidatePath] = useArrowState("");
+  const [validating, setValidating] = useArrowState(false);
+  const [validateResult, setValidateResult] = useArrowState<GgufValidateResult | null>(null);
+  const [validateError, setValidateError] = useArrowState<string | null>(null);
 
   // Register state
-  const [registering, setRegistering] = useState(false);
-  const [registerSuccess, setRegisterSuccess] = useState(false);
+  const [registering, setRegistering] = useArrowState(false);
+  const [registerSuccess, setRegisterSuccess] = useArrowState(false);
 
   // Unregister state
-  const [unregistering, setUnregistering] = useState<string | null>(null);
+  const [unregistering, setUnregistering] = useArrowState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);

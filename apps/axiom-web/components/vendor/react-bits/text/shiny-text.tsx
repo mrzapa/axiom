@@ -10,6 +10,7 @@
  * Local modifications:
  * - Removed upstream CSS import and use inline block class for self-contained styling.
  * - Retained TypeScript implementation while adapting import quote/style conventions.
+ * - Replaced useState with useArrowState.
  */
 
 import {
@@ -18,7 +19,8 @@ import {
   useMotionValue,
   useTransform,
 } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 export interface ShinyTextProps {
   text: string;
@@ -47,7 +49,7 @@ export function ShinyText({
   direction = "left",
   delay = 0,
 }: ShinyTextProps) {
-  const [isPaused, setIsPaused] = useState(false);
+  const [isPaused, setIsPaused] = useArrowState(false);
   const progress = useMotionValue(0);
   const elapsedRef = useRef(0);
   const lastTimeRef = useRef<number | null>(null);

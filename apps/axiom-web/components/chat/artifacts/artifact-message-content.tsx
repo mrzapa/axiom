@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { NormalizedArrowArtifact } from "@/lib/artifacts/extract-arrow-artifacts";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 type ArtifactRuntimeLifecycle = "attempt" | "success" | "failure" | "skipped";
 type ArtifactRuntimeSkipReason =
@@ -310,7 +311,7 @@ function ArrowRuntimeArtifact({
   onRuntimeLifecycleEvent?: (event: ArtifactRuntimeLifecycleEvent) => void;
 }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const [runtimeReady, setRuntimeReady] = useState(false);
+  const [runtimeReady, setRuntimeReady] = useArrowState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -439,9 +440,9 @@ export function ArtifactMessageContent({
     });
   }, [artifacts, runtimeEnabled]);
 
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [liveRegionMessage, setLiveRegionMessage] = useState("");
-  const [runtimeStateByKey, setRuntimeStateByKey] = useState<Record<string, ArtifactRuntimeState>>({});
+  const [selectedIndex, setSelectedIndex] = useArrowState(0);
+  const [liveRegionMessage, setLiveRegionMessage] = useArrowState("");
+  const [runtimeStateByKey, setRuntimeStateByKey] = useArrowState<Record<string, ArtifactRuntimeState>>({});
 
   useEffect(() => {
     setSelectedIndex((current) => {
@@ -516,14 +517,10 @@ export function ArtifactMessageContent({
   const selectedResult = runtimeResults[selectedIndex] ?? runtimeResults[0];
 
   useEffect(() => {
-    if (!onRuntimeLifecycleEvent) {
-      return;
-    }
-
     runtimeResults.forEach((result) => {
       result.lifecycleEvents.forEach((event) => {
-        onRuntimeLifecycleEvent(event);
         setLiveRegionMessage(getLiveRegionMessage(event));
+        onRuntimeLifecycleEvent?.(event);
       });
     });
   }, [onRuntimeLifecycleEvent, runtimeResults]);

@@ -98,17 +98,23 @@ describe("BrainPage", () => {
     expect(graph).toHaveAttribute("data-render-mode", "hybrid");
 
     fireEvent.click(screen.getByRole("button", { name: "Graph only" }));
-    expect(screen.getByTestId("brain-graph-3d")).toHaveAttribute("data-render-mode", "raw");
+    await waitFor(() =>
+      expect(screen.getByTestId("brain-graph-3d")).toHaveAttribute("data-render-mode", "raw"),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Hybrid" }));
-    expect(screen.getByTestId("brain-graph-3d")).toHaveAttribute("data-render-mode", "hybrid");
+    await waitFor(() =>
+      expect(screen.getByTestId("brain-graph-3d")).toHaveAttribute("data-render-mode", "hybrid"),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Trigger model failure" }));
 
-    expect(screen.getByTestId("brain-graph-3d")).toHaveAttribute("data-render-mode", "raw");
-    expect(
-      screen.getByText(/Hybrid mode fell back to the raw graph: brain model missing/i),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("brain-graph-3d")).toHaveAttribute("data-render-mode", "raw");
+      expect(
+        screen.getByText(/Hybrid mode fell back to the raw graph: brain model missing/i),
+      ).toBeInTheDocument();
+    });
   });
 
   it("pins a selected node and clears it when that scope becomes hidden", async () => {

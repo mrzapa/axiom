@@ -4,7 +4,8 @@ import Particles, { initParticlesEngine } from "@tsparticles/react";
 import { loadSlim } from "@tsparticles/slim";
 import { motion, useReducedMotion } from "motion/react";
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 import type { Engine, ISourceOptions } from "@tsparticles/engine";
 
 import { cn } from "@/lib/utils";
@@ -78,7 +79,7 @@ function ensureParticlesEngineInit() {
 
 export function SpaceAtmosphere({ className }: SpaceAtmosphereProps) {
   const reduceMotion = useReducedMotion();
-  const [particlesReady, setParticlesReady] = useState(false);
+  const [particlesReady, setParticlesReady] = useArrowState(false);
 
   useEffect(() => {
     let mounted = true;

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { BrainIcon } from "@/components/icons";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 const LLM_PROVIDERS = [
   {
@@ -77,17 +78,17 @@ const STARTER_PROMPTS_DIRECT = [
 
 export default function SetupPage() {
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useArrowState(0);
   const [llmProvider, setLlmProvider] =
-    useState<(typeof LLM_PROVIDERS)[number]["value"]>("anthropic");
-  const [apiKey, setApiKey] = useState("");
+    useArrowState<(typeof LLM_PROVIDERS)[number]["value"]>("anthropic");
+  const [apiKey, setApiKey] = useArrowState("");
   const [embeddingProvider, setEmbeddingProvider] =
-    useState<(typeof EMBEDDING_PROVIDERS)[number]["value"]>("openai");
-  const [baselineSettings, setBaselineSettings] = useState<Record<string, unknown>>({});
-  const [builtIndex, setBuiltIndex] = useState<IndexBuildResult | null>(null);
-  const [selectedPrompt, setSelectedPrompt] = useState<string>("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+    useArrowState<(typeof EMBEDDING_PROVIDERS)[number]["value"]>("openai");
+  const [baselineSettings, setBaselineSettings] = useArrowState<Record<string, unknown>>({});
+  const [builtIndex, setBuiltIndex] = useArrowState<IndexBuildResult | null>(null);
+  const [selectedPrompt, setSelectedPrompt] = useArrowState<string>("");
+  const [saving, setSaving] = useArrowState(false);
+  const [error, setError] = useArrowState<string | null>(null);
 
   useEffect(() => {
     fetchSettings()

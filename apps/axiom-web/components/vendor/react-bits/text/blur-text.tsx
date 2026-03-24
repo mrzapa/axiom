@@ -9,10 +9,12 @@
  * License file: apps/axiom-web/third_party/licenses/react-bits-LICENSE.md
  * Local modifications:
  * - Retained TypeScript implementation while adapting import quote/style conventions.
+ * - Replaced useState with useArrowState.
  */
 
 import { motion, type Transition } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useArrowState } from "@/hooks/use-arrow-state";
 
 export type BlurTextProps = {
   text?: string;
@@ -60,7 +62,7 @@ export function BlurText({
   stepDuration = 0.35,
 }: BlurTextProps) {
   const elements = animateBy === "words" ? text.split(" ") : text.split("");
-  const [inView, setInView] = useState(false);
+  const [inView, setInView] = useArrowState(false);
   const ref = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
