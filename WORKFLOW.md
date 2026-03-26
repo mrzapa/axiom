@@ -19,7 +19,7 @@ workspace:
   root: ~/code/symphony-workspaces
 hooks:
   after_create: |
-    git clone --depth 1 https://github.com/mrzapa/metis.git .
+    git clone --depth 1 https://github.com/mrzapa/axiom.git .
     python -m pip install --upgrade pip
     python -m pip install -e '.[dev]'
   before_remove: |

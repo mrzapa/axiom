@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mrzapa/metis/actions/workflows/ci.yml"><img src="https://github.com/mrzapa/metis/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/mrzapa/axiom/actions/workflows/ci.yml"><img src="https://github.com/mrzapa/axiom/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/status-alpha-orange" alt="Alpha" />
@@ -43,13 +43,13 @@
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mrzapa/metis/main/scripts/install_metis.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mrzapa/axiom/main/scripts/install_metis.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/mrzapa/metis/main/scripts/install_metis.ps1 | iex
+irm https://raw.githubusercontent.com/mrzapa/axiom/main/scripts/install_metis.ps1 | iex
 ```
 
 The installer clones the repo, sets up a virtual environment, installs dependencies, and drops a launcher on your PATH. It auto-updates on every run.

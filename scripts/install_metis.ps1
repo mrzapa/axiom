@@ -23,7 +23,7 @@
 .NOTES
     Environment overrides:
       METIS_INSTALL_DIR  — where to clone  (default: ~\metis)
-      METIS_REPO         — git clone URL   (default: https://github.com/mrzapa/metis.git)
+      METIS_REPO         — git clone URL   (default: https://github.com/mrzapa/axiom.git)
       METIS_BRANCH       — branch          (default: main)
       METIS_PYTHON       — python binary   (default: python)
 #>
@@ -37,7 +37,7 @@ $ErrorActionPreference = "Stop"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 $InstallDir  = if ($env:METIS_INSTALL_DIR) { $env:METIS_INSTALL_DIR } else { Join-Path $HOME "metis" }
-$RepoUrl     = if ($env:METIS_REPO)        { $env:METIS_REPO }        else { "https://github.com/mrzapa/metis.git" }
+$RepoUrl     = if ($env:METIS_REPO)        { $env:METIS_REPO }        else { "https://github.com/mrzapa/axiom.git" }
 $Branch      = if ($env:METIS_BRANCH)      { $env:METIS_BRANCH }      else { "main" }
 $PythonBin   = if ($env:METIS_PYTHON)      { $env:METIS_PYTHON }      else { "python" }
 $VenvDir     = Join-Path $InstallDir ".venv"

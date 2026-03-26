@@ -10,7 +10,7 @@
 #
 # Configurable via environment:
 #   METIS_INSTALL_DIR   — where to clone the repo  (default: ~/metis)
-#   METIS_REPO          — git clone URL             (default: https://github.com/mrzapa/metis.git)
+#   METIS_REPO          — git clone URL             (default: https://github.com/mrzapa/axiom.git)
 #   METIS_BRANCH        — branch to track           (default: main)
 #   METIS_PYTHON        — python binary             (default: python3)
 #   METIS_PIP_RETRIES   — pip network retries       (default: 10)
@@ -21,7 +21,7 @@ set -euo pipefail
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 INSTALL_DIR="${METIS_INSTALL_DIR:-$HOME/metis}"
-REPO_URL="${METIS_REPO:-https://github.com/mrzapa/metis.git}"
+REPO_URL="${METIS_REPO:-https://github.com/mrzapa/axiom.git}"
 BRANCH="${METIS_BRANCH:-main}"
 PYTHON="${METIS_PYTHON:-python3}"
 VENV_DIR="$INSTALL_DIR/.venv"
@@ -565,7 +565,7 @@ Options:
 
 Environment variables:
   METIS_INSTALL_DIR   Install location     (default: ~/metis)
-  METIS_REPO          Git repository URL   (default: https://github.com/mrzapa/metis.git)
+  METIS_REPO          Git repository URL   (default: https://github.com/mrzapa/axiom.git)
   METIS_BRANCH        Branch to track      (default: main)
   METIS_PYTHON        Python binary        (default: python3)
     METIS_PIP_RETRIES   pip request retries  (default: 10)
