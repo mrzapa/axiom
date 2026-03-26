@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useCallback, useState } from "react";
+import { useConstellationStars } from "@/hooks/use-constellation-stars";
+import { fetchIndexes, type IndexSummary } from "@/lib/api";
 
 /* ────────────────────────────── constants ────────────────────────────── */
 
@@ -33,6 +36,22 @@ const NODE_LAYOUT: [number, number][] = [
   [-0.36, -0.04],
 ];
 const HOVER_EXPAND_DELAY_MS = 600;
+const CORE_CENTER_X = 0.56;
+const CORE_CENTER_Y = 0.43;
+const CORE_EXCLUSION_RADIUS = 0.21;
+
+function buildOutwardPlacement(targetX: number, targetY: number, existingStars: number): [number, number] {
+  const dx = targetX - CORE_CENTER_X;
+  const dy = targetY - CORE_CENTER_Y;
+  const angle = Math.atan2(dy, dx);
+  const dist = Math.hypot(dx, dy);
+  const shell = Math.floor(existingStars / 8) + 1;
+  const minRadius = CORE_EXCLUSION_RADIUS + shell * 0.055;
+  const radius = Math.max(minRadius, dist);
+  const nx = Math.min(0.96, Math.max(0.04, CORE_CENTER_X + Math.cos(angle) * radius));
+  const ny = Math.min(0.95, Math.max(0.06, CORE_CENTER_Y + Math.sin(angle) * radius));
+  return [nx, ny];
+}
 
 /* ────────────────────────────── helpers ──────────────────────────────── */
 
@@ -90,6 +109,27 @@ function applyNodeLayout(nodes: NodeData[], W: number, H: number) {
 /* ────────────────────────────── component ────────────────────────────── */
 
 export default function Home() {
+  const router = useRouter();
+  const {
+    userStars,
+    syncError,
+    addUserStar,
+    addUserStars,
+    removeUserStarById,
+    resetUserStars,
+    updateUserStarById,
+    starLimit,
+  } = useConstellationStars();
+  const [addModeEnabled, setAddModeEnabled] = useState(false);
+  const [addMessage, setAddMessage] = useState<string | null>(null);
+  const [selectedUserStarId, setSelectedUserStarId] = useState<string | null>(null);
+  const [selectedStarLabel, setSelectedStarLabel] = useState("");
+  const [selectedStarManifestPath, setSelectedStarManifestPath] = useState("");
+  const [availableIndexes, setAvailableIndexes] = useState<IndexSummary[]>([]);
+  const [indexesLoading, setIndexesLoading] = useState(true);
+  const [indexLoadError, setIndexLoadError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastTone, setToastTone] = useState<"default" | "error">("default");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const conceptCardRef = useRef<HTMLDivElement>(null);
   const cLabelRef = useRef<HTMLDivElement>(null);
@@ -99,7 +139,32 @@ export default function Home() {
   const hoveredNodeRef = useRef(-1);
   const hoverStartRef = useRef(0);
   const hoverExpandedRef = useRef(false);
+  const addModeRef = useRef(false);
+  const coarsePointerRef = useRef(false);
   const mouseRef = useRef({ x: -1000, y: -1000 });
+  const selectedUserStar = useMemo(
+    () => userStars.find((star) => star.id === selectedUserStarId) ?? null,
+    [selectedUserStarId, userStars],
+  );
+  const mappedManifestPaths = useMemo(
+    () => new Set(userStars.map((star) => star.linkedManifestPath).filter(Boolean)),
+    [userStars],
+  );
+  const unmappedIndexes = useMemo(
+    () => availableIndexes.filter((index) => !mappedManifestPaths.has(index.manifest_path)),
+    [availableIndexes, mappedManifestPaths],
+  );
+
+  const openChatWithIndex = useCallback(
+    (manifestPath: string, label: string) => {
+      window.localStorage.setItem(
+        "metis_active_index",
+        JSON.stringify({ manifest_path: manifestPath, label }),
+      );
+      router.push("/chat");
+    },
+    [router],
+  );
 
   const closeConcept = useCallback(() => {
     const el = conceptCardRef.current;
@@ -109,6 +174,64 @@ export default function Home() {
       setTimeout(() => { el.style.display = "none"; }, 400);
     }
   }, []);
+
+  useEffect(() => {
+    addModeRef.current = addModeEnabled;
+    if (addModeEnabled) {
+      closeConcept();
+    }
+  }, [addModeEnabled, closeConcept]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIndexesLoading(true);
+    setIndexLoadError(null);
+
+    fetchIndexes()
+      .then((indexes) => {
+        if (cancelled) {
+          return;
+        }
+        setAvailableIndexes(indexes);
+      })
+      .catch((error) => {
+        console.error("Failed to load library indexes for the constellation", error);
+        if (cancelled) {
+          return;
+        }
+        setIndexLoadError(error instanceof Error ? error.message : "Failed to load indexed sources.");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIndexesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSelectedStarLabel(selectedUserStar?.label ?? "");
+    setSelectedStarManifestPath(selectedUserStar?.linkedManifestPath ?? "");
+  }, [selectedUserStar]);
+
+  useEffect(() => {
+    if (!syncError && !addMessage) {
+      return;
+    }
+    const message = syncError ?? addMessage;
+    if (!message) {
+      return;
+    }
+    setToastMessage(message);
+    setToastTone(syncError ? "error" : "default");
+    const timeoutId = window.setTimeout(() => {
+      setToastMessage((current) => (current === message ? null : current));
+    }, syncError ? 4200 : 2400);
+    return () => window.clearTimeout(timeoutId);
+  }, [addMessage, syncError]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -140,6 +263,7 @@ export default function Home() {
     const motionPreviewEnabled = document.documentElement.dataset.uiVariant === "motion";
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const enhancedHoverMotion = motionPreviewEnabled && !reducedMotion;
+    coarsePointerRef.current = window.matchMedia("(pointer: coarse)").matches;
 
     function showConceptAtNode(idx: number) {
       const c = nodes[idx].concept;
@@ -232,6 +356,26 @@ export default function Home() {
       }
     }
 
+    function drawUserStars(t: number) {
+      userStars.forEach((s, i) => {
+        const px = s.x * W + (mouse.x - W / 2) * 0.006;
+        const py = s.y * H + (mouse.y - H / 2) * 0.006;
+        const twinkle = 0.75 + Math.sin(t * 0.003 + i * 1.7) * 0.15;
+        const selected = selectedUserStarId === s.id;
+        const sz = s.size * 1.35 + (selected ? 1.4 : 0);
+        ctx!.beginPath();
+        ctx!.arc(px, py, sz, 0, Math.PI * 2);
+        ctx!.fillStyle = `rgba(230,238,255,${twinkle})`;
+        ctx!.fill();
+        ctx!.beginPath();
+        ctx!.arc(px, py, sz * 2.2, 0, Math.PI * 2);
+        ctx!.fillStyle = selected
+          ? `rgba(246,252,255,${twinkle * 0.17})`
+          : `rgba(220,230,255,${twinkle * 0.05})`;
+        ctx!.fill();
+      });
+    }
+
     function drawDust() {
       dust.forEach(d => {
         d.x += d.vx + (mouse.x - W / 2) * 0.00008;
@@ -299,6 +443,7 @@ export default function Home() {
       }
       drawNebulae();
       stars.forEach(s => drawStar(s, ts));
+      drawUserStars(ts);
       drawDust();
       drawNodes(ts);
       animFrame = requestAnimationFrame(render);
@@ -313,9 +458,14 @@ export default function Home() {
       nebulae[2].x = W * 0.55; nebulae[2].y = H * 0.2;
     }
 
-    function onMouseMove(e: MouseEvent) {
+    function onPointerMove(e: PointerEvent) {
       mouse.x = e.clientX;
       mouse.y = e.clientY;
+      if (addModeRef.current) {
+        hoveredNodeRef.current = -1;
+        hoverExpandedRef.current = false;
+        return;
+      }
       let hover = -1;
       nodes.forEach((n, i) => {
         if (Math.hypot(n._sx - e.clientX, n._sy - e.clientY) < 28) {
@@ -338,10 +488,58 @@ export default function Home() {
       }
     }
 
-    function onCanvasClick(e: MouseEvent) {
+    function onCanvasPress(e: PointerEvent) {
+      if (addModeRef.current) {
+        const rect = canvas.getBoundingClientRect();
+        const targetX = (e.clientX - rect.left) / rect.width;
+        const targetY = (e.clientY - rect.top) / rect.height;
+        const [nx, ny] = buildOutwardPlacement(targetX, targetY, userStars.length);
+        addUserStar({ x: nx, y: ny, size: 0.8 + Math.random() * 0.7 }).then((added) => {
+          if (!added) {
+            setAddMessage(`Star limit reached (${starLimit}/${starLimit}).`);
+          } else {
+            setAddMessage(null);
+            setSelectedUserStarId(null);
+          }
+        });
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      let selectedId: string | null = null;
+      const hitRadiusBoost = coarsePointerRef.current ? 12 : 0;
+      userStars.forEach((s) => {
+        const px = s.x * rect.width;
+        const py = s.y * rect.height;
+        const hitRadius = s.size * 10 + 8 + hitRadiusBoost;
+        if (Math.hypot(px - cx, py - cy) < hitRadius) {
+          selectedId = s.id;
+        }
+      });
+      if (selectedId) {
+        const selectedStar = userStars.find((star) => star.id === selectedId);
+        if (
+          selectedUserStarId === selectedId &&
+          selectedStar?.linkedManifestPath
+        ) {
+          openChatWithIndex(
+            selectedStar.linkedManifestPath,
+            selectedStar.label || "Mapped constellation star",
+          );
+          return;
+        }
+        setSelectedUserStarId((prev) => (prev === selectedId ? null : selectedId));
+        closeConcept();
+        return;
+      }
+      if (selectedUserStarId) {
+        setSelectedUserStarId(null);
+      }
       let hit = -1;
       nodes.forEach((n, i) => {
-        if (Math.hypot(n._sx - e.clientX, n._sy - e.clientY) < 24) hit = i;
+        const nodeHitRadius = coarsePointerRef.current ? 34 : 24;
+        if (Math.hypot(n._sx - e.clientX, n._sy - e.clientY) < nodeHitRadius) hit = i;
       });
       if (hit >= 0) {
         if (activeNodeRef.current === hit) { closeConcept(); return; }
@@ -352,16 +550,16 @@ export default function Home() {
     }
 
     window.addEventListener("resize", onResize);
-    document.addEventListener("mousemove", onMouseMove);
-    canvas.addEventListener("click", onCanvasClick);
+    document.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerdown", onCanvasPress);
 
     return () => {
       cancelAnimationFrame(animFrame);
       window.removeEventListener("resize", onResize);
-      document.removeEventListener("mousemove", onMouseMove);
-      canvas.removeEventListener("click", onCanvasClick);
+      document.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerdown", onCanvasPress);
     };
-  }, [closeConcept]);
+  }, [addUserStar, closeConcept, openChatWithIndex, selectedUserStarId, starLimit, userStars]);
 
   /* card scroll animation */
   useEffect(() => {
@@ -399,6 +597,194 @@ export default function Home() {
         <h1 className="metis-hero-headline">Discover<br />everything.</h1>
         <Link href="/chat" className="metis-cta-btn">Explore the constellation</Link>
       </div>
+
+      <div className="metis-star-controls" role="region" aria-label="Constellation controls">
+        <div className="metis-star-controls-head">Infinite Constellation</div>
+        <p className="metis-star-controls-copy">Core stars stay gold. Add white stars beyond the core ring to build the future library map.</p>
+        <div className="metis-star-controls-actions">
+          <button
+            type="button"
+            className={`metis-star-btn ${addModeEnabled ? "active" : ""}`}
+            onClick={() => {
+              setAddModeEnabled((v) => !v);
+              setAddMessage(null);
+            }}
+          >
+            {addModeEnabled ? "Exit add mode" : "Add star"}
+          </button>
+          <button
+            type="button"
+            className="metis-star-btn"
+            onClick={() => {
+              if (selectedUserStarId) {
+                removeUserStarById(selectedUserStarId);
+                setSelectedUserStarId(null);
+              }
+              setAddMessage(null);
+            }}
+            disabled={!selectedUserStarId}
+          >
+            Remove selected
+          </button>
+          <button
+            type="button"
+            className="metis-star-btn danger"
+            onClick={() => {
+              if (userStars.length > 0 && !window.confirm("Remove all added stars?")) {
+                return;
+              }
+              resetUserStars();
+              setSelectedUserStarId(null);
+              setAddMessage(null);
+            }}
+            disabled={userStars.length === 0}
+          >
+            Reset added
+          </button>
+          <button
+            type="button"
+            className="metis-star-btn"
+            onClick={async () => {
+              if (unmappedIndexes.length === 0) {
+                setAddMessage(
+                  availableIndexes.length === 0
+                    ? "No indexed sources are available to map yet."
+                    : "All indexed sources already have constellation stars.",
+                );
+                return;
+              }
+
+              const room = Math.max(0, starLimit - userStars.length);
+              if (room === 0) {
+                setAddMessage(`Star limit reached (${starLimit}/${starLimit}).`);
+                return;
+              }
+
+              const starsToAdd = unmappedIndexes.slice(0, room).map((index, indexOffset) => {
+                const orbitIndex = userStars.length + indexOffset;
+                const shell = Math.floor(orbitIndex / 10) + 1;
+                const slot = orbitIndex % 10;
+                const angle = -Math.PI / 2 + (slot / 10) * Math.PI * 2;
+                const radius = CORE_EXCLUSION_RADIUS + 0.08 + shell * 0.07;
+                const targetX = CORE_CENTER_X + Math.cos(angle) * radius;
+                const targetY = CORE_CENTER_Y + Math.sin(angle) * radius * 0.82;
+                const [x, y] = buildOutwardPlacement(targetX, targetY, orbitIndex);
+
+                return {
+                  x,
+                  y,
+                  size: 0.95,
+                  label: index.index_id,
+                  linkedManifestPath: index.manifest_path,
+                };
+              });
+
+              const addedCount = await addUserStars(starsToAdd);
+              if (addedCount > 0) {
+                setAddMessage(null);
+                setToastTone("default");
+                setToastMessage(`Mapped ${addedCount} indexed source${addedCount === 1 ? "" : "s"} into the constellation.`);
+              }
+            }}
+            disabled={indexesLoading}
+          >
+            Map library
+          </button>
+        </div>
+        <div className="metis-star-controls-meta">{userStars.length}/{starLimit} added stars</div>
+        <div className="metis-star-controls-meta">{availableIndexes.length} indexed source{availableIndexes.length === 1 ? "" : "s"} detected</div>
+        {addModeEnabled ? <div className="metis-star-controls-hint">Add mode is active: tap anywhere outside the core to place a white star.</div> : null}
+        {selectedUserStarId ? <div className="metis-star-controls-hint">Selected star ready for removal.</div> : null}
+        {!indexesLoading && unmappedIndexes.length > 0 ? <div className="metis-star-controls-hint">{unmappedIndexes.length} indexed source{unmappedIndexes.length === 1 ? "" : "s"} can still be mapped into orbit.</div> : null}
+        {indexLoadError ? <div className="metis-star-controls-error">{indexLoadError}</div> : null}
+        {syncError ? <div className="metis-star-controls-error">Sync fallback active. Stars are still saved locally.</div> : null}
+        {addMessage ? <div className="metis-star-controls-error">{addMessage}</div> : null}
+
+        {selectedUserStar ? (
+          <div className="metis-star-editor">
+            <div className="metis-star-editor-head">Selected Star</div>
+            <label className="metis-star-field">
+              <span className="metis-star-field-label">Label</span>
+              <input
+                type="text"
+                value={selectedStarLabel}
+                onChange={(event) => setSelectedStarLabel(event.target.value)}
+                placeholder="Name this star"
+                className="metis-star-input"
+              />
+            </label>
+            <label className="metis-star-field">
+              <span className="metis-star-field-label">Linked index</span>
+              <select
+                value={selectedStarManifestPath}
+                onChange={(event) => setSelectedStarManifestPath(event.target.value)}
+                className="metis-star-input"
+              >
+                <option value="">Unlinked</option>
+                {availableIndexes.map((index) => (
+                  <option key={index.manifest_path} value={index.manifest_path}>
+                    {index.index_id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="metis-star-controls-actions">
+              <button
+                type="button"
+                className="metis-star-btn"
+                onClick={async () => {
+                  await updateUserStarById(selectedUserStar.id, {
+                    label: selectedStarLabel.trim() || undefined,
+                    linkedManifestPath: selectedStarManifestPath || undefined,
+                  });
+                  setToastTone("default");
+                  setToastMessage("Star metadata updated.");
+                }}
+              >
+                Save star
+              </button>
+              <button
+                type="button"
+                className="metis-star-btn"
+                onClick={() => {
+                  if (!selectedStarManifestPath) {
+                    return;
+                  }
+                  const linkedIndex = availableIndexes.find(
+                    (index) => index.manifest_path === selectedStarManifestPath,
+                  );
+                  openChatWithIndex(
+                    selectedStarManifestPath,
+                    linkedIndex?.index_id || selectedStarLabel || "Mapped constellation star",
+                  );
+                }}
+                disabled={!selectedStarManifestPath}
+              >
+                Open linked chat
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {addModeEnabled ? (
+        <div className="metis-add-mode-banner" aria-live="polite">
+          <span>Tap the field to place a star</span>
+          <button
+            type="button"
+            className="metis-add-mode-exit"
+            onClick={() => setAddModeEnabled(false)}
+          >
+            Done
+          </button>
+        </div>
+      ) : null}
+
+      {toastMessage ? (
+        <div className={`metis-toast ${toastTone === "error" ? "error" : ""}`} aria-live="polite">
+          {toastMessage}
+        </div>
+      ) : null}
 
       <div className="metis-cards-section">
         <div className="metis-card">
@@ -508,10 +894,194 @@ body {
 .metis-nav-link:hover { color: var(--text-bright); }
 .metis-nav-right { display: flex; align-items: center; gap: 32px; }
 
+.metis-star-controls {
+  position: fixed;
+  top: 90px;
+  right: 26px;
+  width: min(340px, calc(100vw - 32px));
+  z-index: 130;
+  background: rgba(10, 14, 28, 0.76);
+  border: 1px solid rgba(196,149,58,0.18);
+  border-radius: 14px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 14px;
+  box-shadow: 0 12px 34px rgba(0,0,0,0.22);
+}
+.metis-star-controls-head {
+  font-family: 'Space Grotesk', sans-serif;
+  color: var(--text-bright);
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+.metis-star-controls-copy {
+  margin-top: 6px;
+  color: var(--text-mid);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.metis-star-controls-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.metis-star-btn {
+  border: 1px solid rgba(200, 210, 225, 0.16);
+  background: rgba(17, 24, 46, 0.56);
+  color: var(--text-bright);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+.metis-star-btn:hover:not(:disabled) {
+  border-color: rgba(196,149,58,0.34);
+  color: var(--gold-bright);
+}
+.metis-star-btn.active {
+  border-color: rgba(196,149,58,0.4);
+  color: var(--gold-bright);
+}
+.metis-star-btn.danger:hover:not(:disabled) {
+  border-color: rgba(255,120,120,0.45);
+  color: rgba(255,180,180,0.95);
+}
+.metis-star-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.metis-star-controls-meta,
+.metis-star-controls-hint,
+.metis-star-controls-error {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.metis-star-controls-meta { color: var(--text-mid); }
+.metis-star-controls-hint { color: rgba(196,149,58,0.86); }
+.metis-star-controls-error { color: rgba(255,168,168,0.95); }
+
+.metis-star-editor {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(200, 210, 225, 0.08);
+}
+
+.metis-star-editor-head,
+.metis-star-field-label {
+  color: var(--text-bright);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.metis-star-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.metis-star-input {
+  width: 100%;
+  border: 1px solid rgba(200, 210, 225, 0.12);
+  background: rgba(15, 22, 40, 0.78);
+  color: var(--text-bright);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 12px;
+  outline: none;
+}
+
+.metis-star-input:focus {
+  border-color: rgba(196,149,58,0.4);
+  box-shadow: 0 0 0 1px rgba(196,149,58,0.16);
+}
+
+@media (max-width: 900px) {
+  .metis-star-controls {
+    top: auto;
+    right: 12px;
+    bottom: 96px;
+    width: calc(100vw - 24px);
+  }
+
+  .metis-add-mode-banner {
+    bottom: 18px;
+    width: calc(100vw - 24px);
+    justify-content: space-between;
+  }
+
+  .metis-toast {
+    top: 78px;
+  }
+}
+
 /* HERO CANVAS */
 .metis-universe {
   position: fixed; top: 0; left: 0;
   width: 100vw; height: 100vh; z-index: 0;
+  touch-action: none;
+}
+
+.metis-add-mode-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 145;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(10, 14, 28, 0.9);
+  border: 1px solid rgba(196,149,58,0.22);
+  color: var(--text-bright);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.24);
+}
+
+.metis-add-mode-exit {
+  border: 1px solid rgba(200,210,225,0.16);
+  background: rgba(20, 28, 50, 0.75);
+  color: var(--gold-bright);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.metis-toast {
+  position: fixed;
+  left: 50%;
+  top: 90px;
+  transform: translateX(-50%);
+  z-index: 170;
+  min-width: min(420px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(16, 23, 42, 0.92);
+  border: 1px solid rgba(200,210,225,0.14);
+  color: var(--text-bright);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.24);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.metis-toast.error {
+  border-color: rgba(255,120,120,0.35);
+  color: rgba(255,214,214,0.98);
 }
 
 /* HERO OVERLAY */
