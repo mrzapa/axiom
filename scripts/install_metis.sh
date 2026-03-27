@@ -413,6 +413,24 @@ do_uninstall() {
     ok "METIS has been uninstalled."
 }
 
+ensure_pyproject_exists() {
+    # pyproject.toml can be absent if a git commit that deleted it was pulled
+    # before it was re-added.  Recover with a hard reset so pip install does
+    # not fail with "not a Python project".
+    if [ ! -f "$INSTALL_DIR/pyproject.toml" ]; then
+        warn "pyproject.toml missing after git update. Forcing hard reset to origin/$BRANCH..."
+        git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH" || {
+            err "git reset --hard origin/$BRANCH failed during pyproject.toml recovery."
+            exit 1
+        }
+        if [ ! -f "$INSTALL_DIR/pyproject.toml" ]; then
+            err "pyproject.toml is still missing after reset. Try: bash install_metis.sh reinstall"
+            exit 1
+        fi
+        ok "Repository reset — pyproject.toml restored."
+    fi
+}
+
 # ── Install / Reinstall ─────────────────────────────────────────────────────
 do_install() {
     local is_reinstall="${1:-false}"
@@ -444,6 +462,9 @@ do_install() {
         git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$INSTALL_DIR"
         ok "Repository cloned."
     fi
+
+    # Guard: verify pyproject.toml survived the git operations.
+    ensure_pyproject_exists
 
     # ── Virtual environment ──────────────────────────────────────────────
     if [ "$is_reinstall" = "true" ] && [ -d "$VENV_DIR" ]; then
@@ -521,6 +542,9 @@ do_update() {
         warn "Fast-forward pull failed. Running hard reset to origin/$BRANCH."
         git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH"
     }
+
+    # Guard: verify pyproject.toml survived the git operations.
+    ensure_pyproject_exists
 
     info "Updating dependencies…"
     retry_with_backoff "pip self-upgrade" "$INSTALL_RETRIES" \

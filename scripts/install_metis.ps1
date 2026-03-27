@@ -490,6 +490,23 @@ function Assert-PythonVersion {
     }
 }
 
+function Ensure-PyprojectExists {
+    # pyproject.toml can be absent if a git commit that deleted it was pulled
+    # before it was re-added.  Recover with a hard reset so pip install does
+    # not fail with "not a Python project".
+    if (-not (Test-Path (Join-Path $InstallDir "pyproject.toml"))) {
+        Write-Warn "pyproject.toml missing after git update. Forcing hard reset to origin/$Branch..."
+        git -C $InstallDir reset --hard "origin/$Branch"
+        if ($LASTEXITCODE -ne 0) {
+            throw "git reset --hard origin/$Branch failed during pyproject.toml recovery."
+        }
+        if (-not (Test-Path (Join-Path $InstallDir "pyproject.toml"))) {
+            throw "pyproject.toml is still missing after reset. Try: .\install_metis.ps1 -Action reinstall"
+        }
+        Write-Ok "Repository reset — pyproject.toml restored."
+    }
+}
+
 # ── Uninstall ────────────────────────────────────────────────────────────────
 function Invoke-Uninstall {
     Write-Info "Uninstalling METIS..."
@@ -562,6 +579,9 @@ function Invoke-Install {
         git clone --branch $Branch --single-branch $RepoUrl $InstallDir
         Write-Ok "Repository cloned."
     }
+
+    # Guard: verify pyproject.toml survived the git operations.
+    Ensure-PyprojectExists
 
     # ── Virtual environment ──────────────────────────────────────────────
     if ($IsReinstall -and (Test-Path $VenvDir)) {
@@ -686,6 +706,9 @@ function Invoke-Update {
             throw "git reset --hard origin/$Branch failed while recovering from pull failure."
         }
     }
+
+    # Guard: verify pyproject.toml survived the git operations.
+    Ensure-PyprojectExists
 
     $VenvPython = Join-Path $VenvDir "Scripts" "python.exe"
     $PipCommonArgs = @(
