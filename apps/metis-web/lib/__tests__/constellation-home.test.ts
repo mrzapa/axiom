@@ -5,14 +5,22 @@ import {
   CORE_EXCLUSION_RADIUS,
   CONSTELLATION_FACULTIES,
   buildOutwardPlacement,
+  clampBackgroundZoomFactor,
   findHoveredAddCandidate,
+  getBackgroundCameraScale,
+  getBackgroundViewportWorldBounds,
   getConstellationBridgeSuggestion,
+  getFacultyColor,
+  getInfluenceColors,
   getPreviewConnectionNodes,
   inferConstellationFaculty,
   isAddableBackgroundStar,
+  mixConstellationColors,
+  screenToWorldPoint,
   type ConstellationFieldStar,
   type ConstellationNodePoint,
   type Point,
+  worldToScreenPoint,
 } from "@/lib/constellation-home";
 import { normalizeUserStar, parseUserStars, type UserStar } from "@/lib/constellation-types";
 
@@ -268,5 +276,63 @@ describe("getPreviewConnectionNodes", () => {
     const result = getPreviewConnectionNodes({ nx: 0.9, ny: 0.18 }, nodes, WIDTH, HEIGHT);
 
     expect(result.map((node) => node.id)).toEqual(["closest", "second"]);
+  });
+});
+
+describe("background zoom helpers", () => {
+  it("clamps the zoom factor to the supported orbit window", () => {
+    expect(clampBackgroundZoomFactor(0.01)).toBe(0.75);
+    expect(clampBackgroundZoomFactor(500)).toBe(200);
+    expect(clampBackgroundZoomFactor(24)).toBe(24);
+  });
+
+  it("uses a square-root scale so a 200x zoom factor expands area without blowing up span", () => {
+    expect(getBackgroundCameraScale(1)).toBeCloseTo(1, 6);
+    expect(getBackgroundCameraScale(200)).toBeCloseTo(1 / Math.sqrt(200), 6);
+  });
+
+  it("round-trips world coordinates through screen projection", () => {
+    const camera = {
+      x: 240,
+      y: -120,
+      zoomFactor: 16,
+    };
+    const worldPoint = { x: 560, y: 80 };
+
+    const screenPoint = worldToScreenPoint(worldPoint, WIDTH, HEIGHT, camera);
+    const roundTripped = screenToWorldPoint(screenPoint, WIDTH, HEIGHT, camera);
+
+    expect(roundTripped.x).toBeCloseTo(worldPoint.x, 6);
+    expect(roundTripped.y).toBeCloseTo(worldPoint.y, 6);
+  });
+
+  it("expands the visible world bounds as the zoom factor grows", () => {
+    const nearBounds = getBackgroundViewportWorldBounds(WIDTH, HEIGHT, { x: 0, y: 0, zoomFactor: 1 });
+    const farBounds = getBackgroundViewportWorldBounds(WIDTH, HEIGHT, { x: 0, y: 0, zoomFactor: 64 });
+
+    expect(farBounds.right - farBounds.left).toBeGreaterThan(nearBounds.right - nearBounds.left);
+    expect(farBounds.bottom - farBounds.top).toBeGreaterThan(nearBounds.bottom - nearBounds.top);
+  });
+});
+
+describe("influence colors", () => {
+  it("returns a stable fallback color when no faculty ids are present", () => {
+    expect(getInfluenceColors()).toEqual([[208, 216, 232]]);
+  });
+
+  it("keeps primary and bridge colors distinct for mixed stars", () => {
+    expect(getInfluenceColors("autonomy", ["emergence", "autonomy"])).toEqual([
+      getFacultyColor("autonomy"),
+      getFacultyColor("emergence"),
+    ]);
+  });
+
+  it("mixes multiple faculty colors into a blended constellation tint", () => {
+    expect(
+      mixConstellationColors([
+        [199, 218, 121],
+        [148, 153, 239],
+      ]),
+    ).toEqual([174, 186, 180]);
   });
 });

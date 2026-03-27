@@ -8,20 +8,30 @@ import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { fetchIndexes, type IndexBuildResult, type IndexSummary } from "@/lib/api";
 import {
   ADD_CANDIDATE_HIT_RADIUS_PX,
-  MOBILE_ADD_CANDIDATE_HIT_RADIUS_PX,
+  clampBackgroundZoomFactor,
   CONSTELLATION_FACULTIES,
   CORE_CENTER_X,
   CORE_CENTER_Y,
   CORE_EXCLUSION_RADIUS,
+  getBackgroundCameraScale,
+  getBackgroundViewportWorldBounds,
+  getFacultyColor,
+  getInfluenceColors,
   buildOutwardPlacement,
   findHoveredAddCandidate,
   getPreviewConnectionNodes,
   inferConstellationFaculty,
   isAddableBackgroundStar,
-  projectBackgroundStar,
+  MAX_BACKGROUND_ZOOM_FACTOR,
+  MIN_BACKGROUND_ZOOM_FACTOR,
+  MOBILE_ADD_CANDIDATE_HIT_RADIUS_PX,
+  mixConstellationColors,
+  screenToWorldPoint,
   type ConstellationFacultyMetadata,
   type ConstellationFieldStar,
   type ConstellationNodePoint,
+  type Point,
+  type BackgroundCameraState,
 } from "@/lib/constellation-home";
 import type { UserStar } from "@/lib/constellation-types";
 
@@ -33,20 +43,12 @@ const FACULTY_CONCEPTS = CONSTELLATION_FACULTIES.map((faculty, index) => ({
   title: faculty.label,
   desc: faculty.description,
 }));
-const FACULTY_PALETTE: Record<string, [number, number, number]> = {
-  perception: [119, 181, 235],
-  knowledge: [232, 184, 74],
-  memory: [160, 133, 228],
-  reasoning: [129, 220, 198],
-  skills: [104, 219, 170],
-  strategy: [232, 128, 103],
-  personality: [232, 144, 198],
-  values: [214, 108, 120],
-  synthesis: [136, 209, 238],
-  autonomy: [199, 218, 121],
-  emergence: [148, 153, 239],
-};
 const KNOWLEDGE_FACULTY = CONSTELLATION_FACULTIES.find((faculty) => faculty.id === "knowledge") ?? CONSTELLATION_FACULTIES[1];
+const BACKGROUND_BUTTON_ZOOM_STEP = 1.8;
+const BACKGROUND_TILE_PADDING_PX = 220;
+const BACKGROUND_TILE_SIZE = 960;
+const WORLD_STAR_COUNT_BY_LAYER = [4, 7, 10] as const;
+const WORLD_STAR_REVEAL_STEPS = [1, 1.35, 1.8, 2.4, 3.2, 4.3, 5.8, 7.8, 10.5, 14.2, 19.2, 26, 35, 47, 64, 86, 116, 156, 200] as const;
 const HOVER_EXPAND_DELAY_MS = 600;
 const DRAG_DISTANCE_PX = 6;
 
@@ -69,21 +71,195 @@ interface DustData {
   size: number; opacity: number;
 }
 
-function makeStar(layer: number, index: number): StarData {
-  const baseSize = Math.random() * (layer === 0 ? 1.2 : layer === 1 ? 0.8 : 0.5) + 0.2;
-  return {
-    id: `field-star-${layer}-${index}`,
-    nx: Math.random(),
-    ny: Math.random(),
-    layer,
-    baseSize,
-    brightness: Math.random() * 0.4 + 0.1,
-    twinkle: Math.random() > 0.92,
-    twinkleSpeed: Math.random() * 0.02 + 0.005,
-    twinklePhase: Math.random() * Math.PI * 2,
-    parallaxFactor: layer === 0 ? 0.02 : layer === 1 ? 0.008 : 0.003,
-    hasDiffraction: baseSize > 1.0 && Math.random() > 0.5,
-  };
+interface WorldStarData {
+  id: string;
+  worldX: number;
+  worldY: number;
+  layer: number;
+  baseSize: number;
+  brightness: number;
+  twinkle: boolean;
+  twinkleSpeed: number;
+  twinklePhase: number;
+  parallaxFactor: number;
+  hasDiffraction: boolean;
+  revealZoomFactor: number;
+}
+
+function nextDeterministicSeed(seed: number): number {
+  return (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+}
+
+function createTileSeed(tileX: number, tileY: number, layer: number, index: number): number {
+  let seed = 2166136261;
+
+  seed ^= Math.imul(tileX, 374761393);
+  seed = Math.imul(seed, 668265263) >>> 0;
+  seed ^= Math.imul(tileY, 1442695041);
+  seed = Math.imul(seed, 2246822519) >>> 0;
+  seed ^= Math.imul(layer + 1, 3266489917);
+  seed = Math.imul(seed, 668265263) >>> 0;
+  seed ^= Math.imul(index + 1, 1597334677);
+  seed = Math.imul(seed, 2246822519) >>> 0;
+
+  return seed >>> 0;
+}
+
+function sampleDeterministicRatio(seed: number): [number, number] {
+  const nextSeed = nextDeterministicSeed(seed);
+  return [nextSeed, nextSeed / 4294967296];
+}
+
+function formatBackgroundZoom(zoomFactor: number): string {
+  if (zoomFactor >= 10) {
+    return `${Math.round(zoomFactor)}x`;
+  }
+
+  return `${zoomFactor.toFixed(1)}x`;
+}
+
+function getBackgroundZoomNarrative(zoomFactor: number): string {
+  if (zoomFactor >= 80) {
+    return "The far field is opening. Countless micro-stars resolve beyond the faculty ring.";
+  }
+  if (zoomFactor >= 12) {
+    return "More distant stars are surfacing. Keep pulling back to reveal a deeper sky.";
+  }
+  if (zoomFactor < 1) {
+    return "You are drifting into a closer orbit. Individual influences glow harder against the dark.";
+  }
+  return "Scroll to zoom out up to 200x, or drift back in for a tighter orbit around your constellation.";
+}
+
+function buildStarInfluenceColors(star: Pick<UserStar, "primaryDomainId" | "relatedDomainIds">) {
+  return getInfluenceColors(star.primaryDomainId, star.relatedDomainIds);
+}
+
+function getWorldTileStars(
+  tileCache: Map<string, WorldStarData[]>,
+  layer: number,
+  tileX: number,
+  tileY: number,
+): WorldStarData[] {
+  const cacheKey = `${layer}:${tileX}:${tileY}`;
+  const cached = tileCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const starCount = WORLD_STAR_COUNT_BY_LAYER[layer] ?? WORLD_STAR_COUNT_BY_LAYER[WORLD_STAR_COUNT_BY_LAYER.length - 1];
+  const tileStars: WorldStarData[] = [];
+
+  for (let index = 0; index < starCount; index += 1) {
+    let seed = createTileSeed(tileX, tileY, layer, index);
+    let value: number;
+
+    [seed, value] = sampleDeterministicRatio(seed);
+    const offsetX = value;
+    [seed, value] = sampleDeterministicRatio(seed);
+    const offsetY = value;
+    [seed, value] = sampleDeterministicRatio(seed);
+    const brightness = 0.12 + value * (layer === 0 ? 0.55 : layer === 1 ? 0.42 : 0.28);
+    [seed, value] = sampleDeterministicRatio(seed);
+    const baseSize = layer === 0 ? 1.12 + value * 1.55 : layer === 1 ? 0.72 + value * 0.96 : 0.28 + value * 0.58;
+    [seed, value] = sampleDeterministicRatio(seed);
+    const revealZoomFactor = WORLD_STAR_REVEAL_STEPS[Math.floor(value * WORLD_STAR_REVEAL_STEPS.length)] ?? 1;
+    [seed, value] = sampleDeterministicRatio(seed);
+    const twinkle = value > (layer === 0 ? 0.58 : 0.76);
+    [seed, value] = sampleDeterministicRatio(seed);
+    const twinkleSpeed = 0.0018 + value * 0.0065;
+    [seed, value] = sampleDeterministicRatio(seed);
+    const twinklePhase = value * Math.PI * 2;
+    [seed, value] = sampleDeterministicRatio(seed);
+    const hasDiffraction = layer <= 1 && baseSize > (layer === 0 ? 1.75 : 1.25) && value > 0.34;
+
+    tileStars.push({
+      id: `field-star-${layer}-${tileX}-${tileY}-${index}`,
+      worldX: tileX * BACKGROUND_TILE_SIZE + offsetX * BACKGROUND_TILE_SIZE,
+      worldY: tileY * BACKGROUND_TILE_SIZE + offsetY * BACKGROUND_TILE_SIZE,
+      layer,
+      baseSize,
+      brightness,
+      twinkle,
+      twinkleSpeed,
+      twinklePhase,
+      parallaxFactor: layer === 0 ? 0.026 : layer === 1 ? 0.013 : 0.006,
+      hasDiffraction,
+      revealZoomFactor,
+    });
+  }
+
+  tileCache.set(cacheKey, tileStars);
+  return tileStars;
+}
+
+function buildVisibleBackgroundStars(
+  width: number,
+  height: number,
+  camera: BackgroundCameraState,
+  mouse: Point,
+  tileCache: Map<string, WorldStarData[]>,
+): StarData[] {
+  const visibleStars: StarData[] = [];
+  const scale = getBackgroundCameraScale(camera.zoomFactor);
+  const worldBounds = getBackgroundViewportWorldBounds(width, height, camera, BACKGROUND_TILE_PADDING_PX);
+  const minTileX = Math.floor(worldBounds.left / BACKGROUND_TILE_SIZE) - 1;
+  const maxTileX = Math.floor(worldBounds.right / BACKGROUND_TILE_SIZE) + 1;
+  const minTileY = Math.floor(worldBounds.top / BACKGROUND_TILE_SIZE) - 1;
+  const maxTileY = Math.floor(worldBounds.bottom / BACKGROUND_TILE_SIZE) + 1;
+
+  for (let layer = 2; layer >= 0; layer -= 1) {
+    for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
+      for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
+        const tileStars = getWorldTileStars(tileCache, layer, tileX, tileY);
+
+        tileStars.forEach((worldStar) => {
+          if (camera.zoomFactor + 1e-6 < worldStar.revealZoomFactor) {
+            return;
+          }
+
+          const projected = {
+            x:
+              (worldStar.worldX - camera.x) * scale
+              + width / 2
+              + (mouse.x - width / 2) * worldStar.parallaxFactor,
+            y:
+              (worldStar.worldY - camera.y) * scale
+              + height / 2
+              + (mouse.y - height / 2) * worldStar.parallaxFactor,
+          };
+
+          if (
+            projected.x < -BACKGROUND_TILE_PADDING_PX
+            || projected.x > width + BACKGROUND_TILE_PADDING_PX
+            || projected.y < -BACKGROUND_TILE_PADDING_PX
+            || projected.y > height + BACKGROUND_TILE_PADDING_PX
+          ) {
+            return;
+          }
+
+          const sizeMultiplier = layer === 0 ? 0.48 + scale * 0.98 : layer === 1 ? 0.42 + scale * 0.82 : 0.34 + scale * 0.68;
+          const projectedSize = Math.max(0.12, worldStar.baseSize * sizeMultiplier);
+
+          visibleStars.push({
+            id: worldStar.id,
+            nx: projected.x / width,
+            ny: projected.y / height,
+            layer: worldStar.layer,
+            baseSize: projectedSize,
+            brightness: Math.min(0.94, worldStar.brightness + Math.min(0.16, Math.log2(camera.zoomFactor + 1) * 0.03)),
+            twinkle: worldStar.twinkle,
+            twinkleSpeed: worldStar.twinkleSpeed,
+            twinklePhase: worldStar.twinklePhase,
+            parallaxFactor: worldStar.parallaxFactor,
+            hasDiffraction: worldStar.hasDiffraction,
+          });
+        });
+      }
+    }
+  }
+
+  return visibleStars;
 }
 
 function makeDust(W: number, H: number): DustData {
@@ -153,13 +329,6 @@ function getStarManifestPaths(star: UserStar): string[] {
 
 function getStarAttachmentCount(star: UserStar): number {
   return getStarManifestPaths(star).length;
-}
-
-function getFacultyColor(facultyId?: string): [number, number, number] {
-  if (facultyId && FACULTY_PALETTE[facultyId]) {
-    return FACULTY_PALETTE[facultyId];
-  }
-  return [208, 216, 232];
 }
 
 function getFacultyById(facultyId?: string): ConstellationFacultyMetadata | null {
@@ -247,6 +416,7 @@ export default function Home() {
   const [dragMessage, setDragMessage] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"default" | "error">("default");
+  const [backgroundZoomFactor, setBackgroundZoomFactor] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const conceptCardRef = useRef<HTMLDivElement>(null);
   const cLabelRef = useRef<HTMLDivElement>(null);
@@ -263,6 +433,10 @@ export default function Home() {
   const hoveredAddCandidateRef = useRef<StarData | null>(null);
   const armedAddCandidateIdRef = useRef<string | null>(null);
   const availableIndexesRef = useRef<IndexSummary[]>(availableIndexes);
+  const backgroundCameraOriginRef = useRef<Point>({ x: 0, y: 0 });
+  const backgroundZoomRef = useRef(1);
+  const backgroundZoomTargetRef = useRef(1);
+  const visibleStarsRef = useRef<StarData[]>([]);
   const optimisticIndexKeysRef = useRef<Set<string>>(new Set());
   const conceptHideTimeoutRef = useRef<number | null>(null);
   const dragPreviewPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
@@ -388,6 +562,14 @@ export default function Home() {
   }, [addMessage]);
   const buildNoteTone = indexLoadError ? "error" : addMessage ? addMessageTone : "accent";
   const buildNoteMessage = indexLoadError ?? addMessage ?? fieldGuideMessage;
+  const backgroundZoomLabel = useMemo(
+    () => formatBackgroundZoom(backgroundZoomFactor),
+    [backgroundZoomFactor],
+  );
+  const backgroundZoomNarrative = useMemo(
+    () => getBackgroundZoomNarrative(backgroundZoomFactor),
+    [backgroundZoomFactor],
+  );
 
   const openChatWithIndex = useCallback(
     (manifestPath: string, label: string) => {
@@ -416,6 +598,38 @@ export default function Home() {
       }, 400);
     }
   }, []);
+
+  const clearConstellationHoverState = useCallback(() => {
+    hoveredAddCandidateRef.current = null;
+    armedAddCandidateIdRef.current = null;
+    hoveredNodeRef.current = -1;
+    hoverExpandedRef.current = false;
+    setHoveredAddCandidateId(null);
+    closeConcept();
+  }, [closeConcept]);
+
+  const setBackgroundZoomTarget = useCallback((nextZoomFactor: number) => {
+    const clampedZoomFactor = clampBackgroundZoomFactor(nextZoomFactor);
+    backgroundZoomTargetRef.current = clampedZoomFactor;
+    setBackgroundZoomFactor((current) => (
+      Math.abs(current - clampedZoomFactor) < 0.001 ? current : clampedZoomFactor
+    ));
+  }, []);
+
+  const nudgeBackgroundZoom = useCallback((direction: "in" | "out") => {
+    const nextZoomFactor =
+      direction === "out"
+        ? backgroundZoomTargetRef.current * BACKGROUND_BUTTON_ZOOM_STEP
+        : backgroundZoomTargetRef.current / BACKGROUND_BUTTON_ZOOM_STEP;
+    clearConstellationHoverState();
+    setBackgroundZoomTarget(nextZoomFactor);
+  }, [clearConstellationHoverState, setBackgroundZoomTarget]);
+
+  const resetBackgroundZoom = useCallback(() => {
+    backgroundCameraOriginRef.current = { x: 0, y: 0 };
+    clearConstellationHoverState();
+    setBackgroundZoomTarget(1);
+  }, [clearConstellationHoverState, setBackgroundZoomTarget]);
 
   const refreshAvailableIndexes = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -589,11 +803,9 @@ export default function Home() {
     }
     resize();
 
-    /* build stars */
-    const stars: StarData[] = [];
-    for (let i = 0; i < 400; i++) stars.push(makeStar(2, i));
-    for (let i = 0; i < 200; i++) stars.push(makeStar(1, i));
-    for (let i = 0; i < 60; i++) stars.push(makeStar(0, i));
+    const tileCache = new Map<string, WorldStarData[]>();
+    backgroundZoomRef.current = clampBackgroundZoomFactor(backgroundZoomRef.current);
+    backgroundZoomTargetRef.current = clampBackgroundZoomFactor(backgroundZoomTargetRef.current);
 
     /* nebulae */
     const nebulae = [
@@ -698,9 +910,8 @@ export default function Home() {
     }
 
     function drawStar(s: StarData, t: number) {
-      const projected = projectBackgroundStar(s, W, H, mouse);
-      const px = projected.x;
-      const py = projected.y;
+      const px = s.nx * W;
+      const py = s.ny * H;
       const addable = isAddableBackgroundStar(s, nodes, userStarsRef.current, W, H);
       const hoveredCandidate = hoveredAddCandidateRef.current?.id === s.id;
       let b = s.brightness;
@@ -771,7 +982,11 @@ export default function Home() {
         const starX = previewPosition?.x ?? s.x;
         const starY = previewPosition?.y ?? s.y;
         const faculty = resolveStarFaculty({ x: starX, y: starY, primaryDomainId: s.primaryDomainId });
-        const [r, g, b] = getFacultyColor(faculty.id);
+        const influenceColors = buildStarInfluenceColors({
+          primaryDomainId: faculty.id,
+          relatedDomainIds: s.relatedDomainIds,
+        });
+        const [r, g, b] = mixConstellationColors(influenceColors);
         const px = starX * W + (mouse.x - W / 2) * 0.006;
         const py = starY * H + (mouse.y - H / 2) * 0.006;
         const twinkle = 0.75 + Math.sin(t * 0.003 + i * 1.7) * 0.15;
@@ -816,6 +1031,22 @@ export default function Home() {
           ctx!.arc(satelliteX, satelliteY, 1.3 + satelliteIndex * 0.25, 0, Math.PI * 2);
           ctx!.fillStyle = `rgba(${r},${g},${b},0.85)`;
           ctx!.fill();
+        }
+
+        if (influenceColors.length > 1) {
+          const segmentRadius = sz + 9 + ringCount * 4.2;
+          const segmentSweep = (Math.PI * 2) / influenceColors.length;
+
+          influenceColors.forEach(([sr, sg, sb], influenceIndex) => {
+            const startAngle = -Math.PI / 2 + influenceIndex * segmentSweep + t * 0.00018;
+            const endAngle = startAngle + segmentSweep * 0.72;
+
+            ctx!.beginPath();
+            ctx!.arc(px, py, segmentRadius, startAngle, endAngle);
+            ctx!.strokeStyle = `rgba(${sr},${sg},${sb},${selected ? 0.9 : 0.72})`;
+            ctx!.lineWidth = selected ? 2.2 : 1.6;
+            ctx!.stroke();
+          });
         }
 
         ctx!.beginPath();
@@ -897,9 +1128,15 @@ export default function Home() {
       }
 
       const previewNodes = getPreviewConnectionNodes(candidate, nodes, W, H);
-      const projected = projectBackgroundStar(candidate, W, H, mouse);
-      const px = projected.x;
-      const py = projected.y;
+      const previewInfluence = inferConstellationFaculty({ x: candidate.nx, y: candidate.ny });
+      const previewColors = getInfluenceColors(
+        previewInfluence.primary.faculty.id,
+        previewInfluence.bridgeSuggestion ? [previewInfluence.bridgeSuggestion.faculty.id] : undefined,
+      );
+      const [primaryPreviewR, primaryPreviewG, primaryPreviewB] = previewColors[0];
+      const [mixedPreviewR, mixedPreviewG, mixedPreviewB] = mixConstellationColors(previewColors);
+      const px = candidate.nx * W;
+      const py = candidate.ny * H;
       const pulse = reducedMotion ? 0.72 : 0.7 + Math.sin(ts * 0.008) * 0.18;
 
       ctx!.save();
@@ -910,8 +1147,8 @@ export default function Home() {
 
       previewNodes.forEach((node, index) => {
         const grad = ctx!.createLinearGradient(node._sx, node._sy, px, py);
-        grad.addColorStop(0, `rgba(232,184,74,${0.18 + pulse * 0.08})`);
-        grad.addColorStop(1, `rgba(240,244,255,${0.28 + pulse * 0.12})`);
+        grad.addColorStop(0, `rgba(${primaryPreviewR},${primaryPreviewG},${primaryPreviewB},${0.24 + pulse * 0.1})`);
+        grad.addColorStop(1, `rgba(${mixedPreviewR},${mixedPreviewG},${mixedPreviewB},${0.32 + pulse * 0.12})`);
         ctx!.strokeStyle = grad;
         ctx!.lineWidth = index === 0 ? 1.15 : 0.75;
         ctx!.beginPath();
@@ -924,7 +1161,7 @@ export default function Home() {
       const halo = candidate.baseSize * 10 + 12 + pulse * 4;
       const glow = ctx!.createRadialGradient(px, py, 0, px, py, halo);
       glow.addColorStop(0, `rgba(240,244,255,${0.34 + pulse * 0.12})`);
-      glow.addColorStop(0.45, `rgba(196,149,58,${0.18 + pulse * 0.08})`);
+      glow.addColorStop(0.45, `rgba(${mixedPreviewR},${mixedPreviewG},${mixedPreviewB},${0.22 + pulse * 0.1})`);
       glow.addColorStop(1, "rgba(0,0,0,0)");
       ctx!.fillStyle = glow;
       ctx!.beginPath();
@@ -938,7 +1175,7 @@ export default function Home() {
 
       ctx!.beginPath();
       ctx!.arc(px, py, candidate.baseSize * 3.5 + pulse * 2.5, 0, Math.PI * 2);
-      ctx!.strokeStyle = `rgba(196,149,58,${0.32 + pulse * 0.12})`;
+      ctx!.strokeStyle = `rgba(${primaryPreviewR},${primaryPreviewG},${primaryPreviewB},${0.36 + pulse * 0.12})`;
       ctx!.lineWidth = 0.8;
       ctx!.stroke();
 
@@ -955,13 +1192,30 @@ export default function Home() {
     }
 
     function render(ts: number) {
+      const zoomDelta = backgroundZoomTargetRef.current - backgroundZoomRef.current;
+      if (Math.abs(zoomDelta) > 0.0005) {
+        backgroundZoomRef.current = reducedMotion
+          ? backgroundZoomTargetRef.current
+          : backgroundZoomRef.current + zoomDelta * 0.12;
+      } else {
+        backgroundZoomRef.current = backgroundZoomTargetRef.current;
+      }
+
+      const backgroundCamera: BackgroundCameraState = {
+        x: backgroundCameraOriginRef.current.x,
+        y: backgroundCameraOriginRef.current.y,
+        zoomFactor: backgroundZoomRef.current,
+      };
+      const visibleStars = buildVisibleBackgroundStars(W, H, backgroundCamera, mouse, tileCache);
+      visibleStarsRef.current = visibleStars;
+
       ctx!.fillStyle = "rgba(6,8,14,1)";
       ctx!.fillRect(0, 0, W, H);
       if (!awakened && ts > 2000) {
         awakened = true; awakenStart = ts;
       }
       drawNebulae();
-      stars.forEach(s => drawStar(s, ts));
+      visibleStars.forEach((star) => drawStar(star, ts));
       drawDust();
       drawNodes(ts);
       drawAddCandidatePreview(ts);
@@ -1055,7 +1309,7 @@ export default function Home() {
       const canAddMoreStars = starLimit === null || userStarsRef.current.length < starLimit;
       if (canAddMoreStars) {
         const candidate = findHoveredAddCandidate(
-          stars,
+          visibleStarsRef.current,
           nodes,
           userStarsRef.current,
           { x: e.clientX, y: e.clientY },
@@ -1166,7 +1420,7 @@ export default function Home() {
       const currentSelectedStarId = selectedUserStarIdRef.current;
       const candidate = (starLimit === null || currentUserStars.length < starLimit)
         ? findHoveredAddCandidate(
-            stars,
+            visibleStarsRef.current,
             nodes,
             currentUserStars,
             { x: e.clientX, y: e.clientY },
@@ -1249,11 +1503,57 @@ export default function Home() {
       onPointerLeave();
     }
 
+    function onWheel(e: WheelEvent) {
+      if (dragStateRef.current) {
+        return;
+      }
+
+      const topElement = document.elementFromPoint(e.clientX, e.clientY);
+      if (topElement !== canvas) {
+        return;
+      }
+
+      e.preventDefault();
+
+      const rect = canvas!.getBoundingClientRect();
+      const pointer = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+      const currentCamera: BackgroundCameraState = {
+        x: backgroundCameraOriginRef.current.x,
+        y: backgroundCameraOriginRef.current.y,
+        zoomFactor: backgroundZoomTargetRef.current,
+      };
+      const worldBeforeZoom = screenToWorldPoint(pointer, rect.width, rect.height, currentCamera);
+      const zoomMultiplier = Math.exp(e.deltaY * 0.0014);
+      const nextZoomFactor = clampBackgroundZoomFactor(currentCamera.zoomFactor * zoomMultiplier);
+
+      if (Math.abs(nextZoomFactor - currentCamera.zoomFactor) < 0.0005) {
+        return;
+      }
+
+      const worldAfterZoom = screenToWorldPoint(
+        pointer,
+        rect.width,
+        rect.height,
+        { ...currentCamera, zoomFactor: nextZoomFactor },
+      );
+      backgroundCameraOriginRef.current = {
+        x: currentCamera.x + (worldBeforeZoom.x - worldAfterZoom.x),
+        y: currentCamera.y + (worldBeforeZoom.y - worldAfterZoom.y),
+      };
+
+      clearConstellationHoverState();
+      setBackgroundZoomTarget(nextZoomFactor);
+    }
+
     window.addEventListener("resize", onResize);
     canvas.addEventListener("pointerdown", onCanvasPointerDown);
     document.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onCanvasPress);
     canvas.addEventListener("pointerleave", onPointerLeave);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("blur", onBlur);
 
     return () => {
@@ -1263,9 +1563,10 @@ export default function Home() {
       document.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onCanvasPress);
       canvas.removeEventListener("pointerleave", onPointerLeave);
+      canvas.removeEventListener("wheel", onWheel);
       window.removeEventListener("blur", onBlur);
     };
-  }, [addUserStar, closeConcept, openStarObservatory, starLimit, updateUserStarById]);
+  }, [addUserStar, clearConstellationHoverState, closeConcept, openStarObservatory, setBackgroundZoomTarget, starLimit, updateUserStarById]);
 
   /* card scroll animation */
   useEffect(() => {
@@ -1301,124 +1602,51 @@ export default function Home() {
 
       <div className="metis-hero-overlay">
         <div className="metis-hero-shell">
-          <div className="metis-hero-kicker">Cognitive Constellation</div>
           <h1 className="metis-hero-headline">Give the night sky a mind.</h1>
-          <p className="metis-hero-copy">
-            METIS now arranges the landing field around cognitive faculties. Seed knowledge,
-            drag stars into the faculty they should strengthen, and keep the observatory magic
-            while every claim starts to mean something.
-          </p>
-          <div className="metis-hero-actions">
-            <a href="#build-map" className="metis-cta-btn">Build the constellation</a>
-            <Link href="/chat" className="metis-secondary-link">Enter chat</Link>
-          </div>
-          <div className="metis-field-guide">
-            <div className="metis-field-guide-label">Field guide</div>
-            <div className="metis-field-guide-text">{fieldGuideMessage}</div>
-          </div>
+        </div>
+      </div>
+
+      <div className="metis-zoom-panel" aria-live="polite">
+        <div className="metis-zoom-panel-label">Starfield depth</div>
+        <div className="metis-zoom-panel-value">{backgroundZoomLabel}</div>
+        <p className="metis-zoom-panel-copy">{backgroundZoomNarrative}</p>
+        <div className="metis-zoom-panel-actions">
+          <button
+            type="button"
+            className="metis-zoom-btn"
+            onClick={() => nudgeBackgroundZoom("in")}
+            disabled={backgroundZoomFactor <= MIN_BACKGROUND_ZOOM_FACTOR + 0.01}
+          >
+            Closer
+          </button>
+          <button
+            type="button"
+            className="metis-zoom-btn"
+            onClick={resetBackgroundZoom}
+            disabled={Math.abs(backgroundZoomFactor - 1) < 0.01}
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            className="metis-zoom-btn"
+            onClick={() => nudgeBackgroundZoom("out")}
+            disabled={backgroundZoomFactor >= MAX_BACKGROUND_ZOOM_FACTOR - 0.5}
+          >
+            Farther
+          </button>
         </div>
       </div>
 
       <section id="build-map" className="metis-build-section">
         <div className="metis-build-intro">
-          <div className="metis-section-kicker">Build And Control</div>
-          <h2 className="metis-section-title">Tune the faculties METIS keeps in orbit.</h2>
-          <p className="metis-section-copy">
-            Indexed sources now seed into <span className="metis-inline-accent">Knowledge</span> by
-            default. Claimed stars can be dragged across the faculty ring to persist a new domain,
-            while observatories still handle naming, source attachment, and grounded chat.
-          </p>
+
         </div>
 
-        <div className="metis-build-toolbar">
-          <div className="metis-build-stats">
-            <div className="metis-build-stat">{detectedSourceCountLabel} detected</div>
-            <div className="metis-build-stat">{readyToMapCountLabel}</div>
-            <div className="metis-build-stat">{starCountLabel}</div>
-            <div className="metis-build-stat">{attachmentsCountLabel} in orbit</div>
-          </div>
 
-          <div className="metis-star-controls-actions">
-            <button
-              type="button"
-              className="metis-star-btn"
-              onClick={() => void mapIndexedSources()}
-              disabled={indexesLoading || unmappedIndexes.length === 0}
-            >
-              Seed indexed sources
-            </button>
-            <button
-              type="button"
-              className="metis-star-btn danger"
-              onClick={() => {
-                if (!selectedUserStarId) {
-                  return;
-                }
-                void removeUserStarById(selectedUserStarId).then(() => {
-                  setSelectedUserStarId(null);
-                  setPendingDialogStar(null);
-                  setQueuedObservatoryMode(null);
-                  setToastTone("default");
-                  setToastMessage("Selected star removed from the constellation.");
-                });
-              }}
-              disabled={!selectedUserStarId}
-            >
-              Remove selected
-            </button>
-            <button
-              type="button"
-              className="metis-star-btn"
-              onClick={() => {
-                void resetUserStars().then(() => {
-                  setSelectedUserStarId(null);
-                  setPendingDialogStar(null);
-                  setQueuedObservatoryMode(null);
-                  setToastTone("default");
-                  setToastMessage("Orbit reset. The field is open again.");
-                });
-              }}
-              disabled={userStars.length === 0}
-            >
-              Reset orbit
-            </button>
-          </div>
-        </div>
-
-        <div className={`metis-build-note ${buildNoteTone}`}>
-          {buildNoteMessage}
-        </div>
-        <div className="metis-build-note">
-          {selectedStarSummary}
-        </div>
       </section>
 
-      <section className="metis-cards-section" aria-label="Constellation guide">
-        <article className="metis-card">
-          <div className="metis-card-label">Seed</div>
-          <h3 className="metis-card-title">Knowledge enters first</h3>
-          <p className="metis-card-desc">
-            Indexed sources map in as seed stars inside the Knowledge arc so the constellation starts
-            from evidence, not abstraction.
-          </p>
-        </article>
-        <article className="metis-card">
-          <div className="metis-card-label">Steer</div>
-          <h3 className="metis-card-title">Move stars toward the right faculty</h3>
-          <p className="metis-card-desc">
-            Drag a claimed star until the field guide feels right. Drop to persist the new faculty,
-            with soft bridge hints when a star sits between domains.
-          </p>
-        </article>
-        <article className="metis-card">
-          <div className="metis-card-label">Claim</div>
-          <h3 className="metis-card-title">Each star opens its own observatory</h3>
-          <p className="metis-card-desc">
-            Click-to-claim remains intact. Every star can still be named, fed, linked to sources,
-            and opened directly into grounded chat.
-          </p>
-        </article>
-      </section>
+
 
       {toastMessage ? (
         <div className={`metis-toast ${toastTone === "error" ? "error" : ""}`} aria-live="polite">
@@ -1585,6 +1813,72 @@ body {
 }
 .metis-hero-shell {
   max-width: 620px;
+}
+.metis-zoom-panel {
+  position: fixed;
+  left: 32px;
+  bottom: 28px;
+  z-index: 140;
+  width: min(360px, calc(100vw - 104px));
+  padding: 16px 18px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(200,210,225,0.12);
+  background:
+    linear-gradient(180deg, rgba(17,22,36,0.86), rgba(8,12,22,0.92)),
+    radial-gradient(circle at top left, rgba(199,218,121,0.12), rgba(199,218,121,0) 38%),
+    radial-gradient(circle at top right, rgba(148,153,239,0.14), rgba(148,153,239,0) 42%);
+  box-shadow: 0 22px 60px rgba(0,0,0,0.32);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.metis-zoom-panel-label {
+  color: rgba(232,184,74,0.82);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+.metis-zoom-panel-value {
+  margin-top: 10px;
+  font-family: 'Outfit', sans-serif;
+  font-size: clamp(28px, 3vw, 42px);
+  line-height: 1;
+  color: rgba(240,244,255,0.96);
+  letter-spacing: -0.04em;
+}
+.metis-zoom-panel-copy {
+  margin-top: 10px;
+  color: rgba(206,214,230,0.74);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.metis-zoom-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.metis-zoom-btn {
+  border: 1px solid rgba(200,210,225,0.14);
+  background: rgba(19, 28, 54, 0.58);
+  color: rgba(236,241,250,0.92);
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.24s ease, color 0.24s ease, transform 0.24s ease, background 0.24s ease;
+}
+.metis-zoom-btn:hover:not(:disabled) {
+  border-color: rgba(232,184,74,0.34);
+  color: rgba(255,246,222,0.96);
+  transform: translateY(-1px);
+  background: rgba(28, 39, 74, 0.72);
+}
+.metis-zoom-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .metis-hero-kicker {
   font-family: 'Space Grotesk', sans-serif;
@@ -1965,6 +2259,13 @@ body {
 
   .metis-toast {
     top: 78px;
+  }
+
+  .metis-zoom-panel {
+    left: 20px;
+    right: 20px;
+    bottom: 88px;
+    width: auto;
   }
 
   .metis-build-section,
