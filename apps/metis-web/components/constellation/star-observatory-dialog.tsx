@@ -56,6 +56,7 @@ interface StarObservatoryDialogProps {
   onOpenChange: (open: boolean) => void;
   star: UserStar | null;
   entryMode: EntryMode;
+  closeLockedUntil?: number;
   availableIndexes: IndexSummary[];
   indexesLoading: boolean;
   onIndexBuilt: (result: IndexBuildResult) => void;
@@ -84,6 +85,7 @@ export function StarObservatoryDialog({
   onOpenChange,
   star,
   entryMode,
+  closeLockedUntil = 0,
   availableIndexes,
   indexesLoading,
   onIndexBuilt,
@@ -175,8 +177,11 @@ export function StarObservatoryDialog({
     if (!nextOpen && (building || uploading)) {
       return;
     }
+    if (!nextOpen && Date.now() < closeLockedUntil) {
+      return;
+    }
     onOpenChange(nextOpen);
-  }, [building, onOpenChange, uploading]);
+  }, [building, closeLockedUntil, onOpenChange, uploading]);
 
   if (!star) {
     return null;

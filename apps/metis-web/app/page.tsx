@@ -172,6 +172,7 @@ export default function Home() {
   const [starDialogMode, setStarDialogMode] = useState<"new" | "existing">("new");
   const [pendingDialogStar, setPendingDialogStar] = useState<UserStar | null>(null);
   const [queuedObservatoryMode, setQueuedObservatoryMode] = useState<"new" | "existing" | null>(null);
+  const [dialogCloseLockedUntil, setDialogCloseLockedUntil] = useState(0);
   const [availableIndexes, setAvailableIndexes] = useState<IndexSummary[]>([]);
   const [indexesLoading, setIndexesLoading] = useState(true);
   const [indexLoadError, setIndexLoadError] = useState<string | null>(null);
@@ -337,6 +338,7 @@ export default function Home() {
     setSelectedUserStarId(star.id);
     setStarDialogMode(mode);
     setQueuedObservatoryMode(mode);
+    setDialogCloseLockedUntil(Date.now() + 450);
   }, []);
 
   useEffect(() => {
@@ -959,7 +961,7 @@ export default function Home() {
 
     window.addEventListener("resize", onResize);
     document.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerdown", onCanvasPress);
+    canvas.addEventListener("pointerup", onCanvasPress);
     canvas.addEventListener("pointerleave", onPointerLeave);
     window.addEventListener("blur", onPointerLeave);
 
@@ -967,7 +969,7 @@ export default function Home() {
       cancelAnimationFrame(animFrame);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerdown", onCanvasPress);
+      canvas.removeEventListener("pointerup", onCanvasPress);
       canvas.removeEventListener("pointerleave", onPointerLeave);
       window.removeEventListener("blur", onPointerLeave);
     };
@@ -1175,6 +1177,7 @@ export default function Home() {
         onOpenChange={setStarDialogOpen}
         star={observatoryStar}
         entryMode={starDialogMode}
+        closeLockedUntil={dialogCloseLockedUntil}
         availableIndexes={availableIndexes}
         indexesLoading={indexesLoading}
         onIndexBuilt={handleIndexBuilt}
