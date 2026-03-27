@@ -47,6 +47,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev_check.ps1
 - Update docs (`README.md`, inline docstrings) when user-visible behavior changes.
 - Ensure CI passes before requesting review.
 
+## Contribution licensing terms
+
+By submitting a contribution, you agree that your contribution is governed by
+the project's contributor agreement and may be used in proprietary releases.
+The agreement workflow is handled privately by the maintainers.
+
 ## Code of Conduct
 
 Please follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

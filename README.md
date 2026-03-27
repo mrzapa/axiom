@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/mrzapa/metis/actions/workflows/ci.yml"><img src="https://github.com/mrzapa/metis/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Proprietary-red" alt="Proprietary License" /></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/status-alpha-orange" alt="Alpha" />
 </p>
@@ -268,4 +268,9 @@ Make sure linting and tests pass before opening a PR. See [CONTRIBUTING.md](CONT
 
 ## License
 
-[MIT](LICENSE)
+METIS is released under the proprietary license in [LICENSE](LICENSE).
+
+Licensing cutover:
+
+- Versions up to and including `v1.0.0` were released under MIT.
+- Versions after `v1.0.0` are proprietary unless covered by a separate written license agreement.
