@@ -93,6 +93,22 @@ describe("isAddableBackgroundStar", () => {
 
     expect(isAddableBackgroundStar(star, nodes, [], WIDTH, HEIGHT)).toBe(true);
   });
+
+  it("rejects stars when user has no content and hasUserContent is false", () => {
+    const star = makeStar({ nx: 0.9, ny: 0.15 });
+    const nodes: ConstellationNodePoint[] = [{ x: 560, y: 430 }];
+
+    expect(isAddableBackgroundStar(star, nodes, [], WIDTH, HEIGHT, false)).toBe(false);
+  });
+
+  it("allows stars when user has created stars even if hasUserContent is false", () => {
+    const star = makeStar({ nx: 0.9, ny: 0.15 });
+    const nodes: ConstellationNodePoint[] = [{ x: 560, y: 430 }];
+    const userStars = [makeUserStar({ x: 0.2, y: 0.2 })];
+
+    // Should still pass because there are existing user stars
+    expect(isAddableBackgroundStar(star, nodes, userStars, WIDTH, HEIGHT, false)).toBe(true);
+  });
 });
 
 describe("normalizeUserStar", () => {

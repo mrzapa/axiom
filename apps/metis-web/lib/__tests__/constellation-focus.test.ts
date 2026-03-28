@@ -95,6 +95,25 @@ describe("constellation focus helpers", () => {
     expect(nearTarget.y).not.toBeCloseTo(shiftedTarget.y, 4);
   });
 
+  it("applies parallax offset to user-star positions when mouse is provided", () => {
+    const camera = { x: 0, y: 0, zoomFactor: 1 };
+    const star = { id: "star-a", x: 0.62, y: 0.4, size: 1 };
+    const noMouseTarget = buildProjectedUserStarHitTarget(star, 1200, 800, camera);
+    const withMouseTarget = buildProjectedUserStarHitTarget(
+      star,
+      1200,
+      800,
+      camera,
+      0,
+      { x: 700, y: 500 }, // Mouse offset from center (600, 400)
+    );
+
+    // With mouse positioned right of center, x should shift right
+    // With mouse positioned below center, y should shift down
+    expect(withMouseTarget.x).toBeGreaterThan(noMouseTarget.x);
+    expect(withMouseTarget.y).toBeGreaterThan(noMouseTarget.y);
+  });
+
   it("finds the closest cached hit target from screen-space projections", () => {
     const candidateTarget = buildProjectedCandidateHitTarget(
       { id: "candidate-a", nx: 0.5, ny: 0.5, parallaxFactor: 0.02 },

@@ -116,6 +116,7 @@ export function buildProjectedUserStarHitTarget(
   viewportHeight: number,
   camera: BackgroundCameraState,
   hitRadiusBoost = 0,
+  mouse?: Point,
 ): ProjectedUserStarHitTarget {
   const projected = projectConstellationPoint(
     { x: star.x, y: star.y },
@@ -124,10 +125,15 @@ export function buildProjectedUserStarHitTarget(
     camera,
   );
 
+  // Apply parallax offset so user stars move with mouse like background stars do
+  const parallaxFactor = 0.02;
+  const parallaxX = mouse ? (mouse.x - viewportWidth / 2) * parallaxFactor : 0;
+  const parallaxY = mouse ? (mouse.y - viewportHeight / 2) * parallaxFactor : 0;
+
   return {
     id: star.id,
-    x: projected.x,
-    y: projected.y,
+    x: projected.x + parallaxX,
+    y: projected.y + parallaxY,
     hitRadius: Math.max(16, star.size * 10 + 8 + hitRadiusBoost),
     point: { x: star.x, y: star.y },
   };

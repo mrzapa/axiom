@@ -369,7 +369,13 @@ export function isAddableBackgroundStar(
   userStars: Array<Pick<UserStar, "x" | "y">>,
   width: number,
   height: number,
+  hasUserContent: boolean = true,
 ): boolean {
+  // Only allow adding new stars once the user has uploaded files or built an index
+  if (!hasUserContent && userStars.length === 0) {
+    return false;
+  }
+
   if (star.layer > 2 || star.baseSize < getMinimumAddableStarSize(star.layer)) {
     return false;
   }
@@ -416,12 +422,13 @@ export function findHoveredAddCandidate(
   width: number,
   height: number,
   hitRadius: number,
+  hasUserContent: boolean = true,
 ): ConstellationFieldStar | null {
   let candidate: ConstellationFieldStar | null = null;
   let candidateDistance = Infinity;
 
   stars.forEach((star) => {
-    if (!isAddableBackgroundStar(star, nodes, userStars, width, height)) {
+    if (!isAddableBackgroundStar(star, nodes, userStars, width, height, hasUserContent)) {
       return;
     }
 

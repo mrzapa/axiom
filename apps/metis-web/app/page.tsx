@@ -319,6 +319,19 @@ function getStarAttachmentCount(star: UserStar): number {
   return getStarManifestPaths(star).length;
 }
 
+function getStarTooltipDescription(
+  star: Pick<UserStar, "intent" | "notes">,
+  faculty: Pick<ConstellationFacultyMetadata, "description">,
+): string {
+  if (star.intent && star.intent.trim().length > 0) {
+    return star.intent;
+  }
+  if (star.notes && star.notes.trim().length > 0) {
+    return star.notes;
+  }
+  return faculty.description;
+}
+
 function getFacultyById(facultyId?: string): ConstellationFacultyMetadata | null {
   if (!facultyId) {
     return null;
@@ -451,6 +464,7 @@ export default function Home() {
   const [indexesLoading, setIndexesLoading] = useState(true);
   const [indexLoadError, setIndexLoadError] = useState<string | null>(null);
   const [hoveredAddCandidateId, setHoveredAddCandidateId] = useState<string | null>(null);
+  const [hoveredUserStarId, setHoveredUserStarId] = useState<string | null>(null);
   const [dragMessage, setDragMessage] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"default" | "error">("default");
@@ -458,9 +472,13 @@ export default function Home() {
   const [zoomInteracting, setZoomInteracting] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const conceptCardRef = useRef<HTMLDivElement>(null);
+  const starTooltipCardRef = useRef<HTMLDivElement>(null);
   const cLabelRef = useRef<HTMLDivElement>(null);
   const cTitleRef = useRef<HTMLDivElement>(null);
   const cDescRef = useRef<HTMLDivElement>(null);
+  const starTooltipDomainRef = useRef<HTMLDivElement>(null);
+  const starTooltipTitleRef = useRef<HTMLDivElement>(null);
+  const starTooltipDescRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef(-1);
   const hoveredNodeRef = useRef(-1);
   const hoverStartRef = useRef(0);
@@ -502,6 +520,7 @@ export default function Home() {
   const visibleStarsRef = useRef<StarData[]>([]);
   const optimisticIndexKeysRef = useRef<Set<string>>(new Set());
   const conceptHideTimeoutRef = useRef<number | null>(null);
+  const starTooltipHideTimeoutRef = useRef<number | null>(null);
   const zoomInteractionTimeoutRef = useRef<number | null>(null);
   const dragPreviewPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const starfieldRevisionRef = useRef(0);
@@ -539,6 +558,9 @@ export default function Home() {
   useEffect(() => () => {
     if (conceptHideTimeoutRef.current !== null) {
       window.clearTimeout(conceptHideTimeoutRef.current);
+    }
+    if (starTooltipHideTimeoutRef.current !== null) {
+      window.clearTimeout(starTooltipHideTimeoutRef.current);
     }
     if (zoomInteractionTimeoutRef.current !== null) {
       window.clearTimeout(zoomInteractionTimeoutRef.current);
@@ -652,14 +674,32 @@ export default function Home() {
     }
   }, []);
 
+  const closeStarTooltip = useCallback(() => {
+    if (starTooltipHideTimeoutRef.current !== null) {
+      window.clearTimeout(starTooltipHideTimeoutRef.current);
+      starTooltipHideTimeoutRef.current = null;
+    }
+
+    setHoveredUserStarId((current) => (current === null ? current : null));
+    const card = starTooltipCardRef.current;
+    if (card) {
+      card.classList.remove("active");
+      starTooltipHideTimeoutRef.current = window.setTimeout(() => {
+        card.style.display = "none";
+        starTooltipHideTimeoutRef.current = null;
+      }, 220);
+    }
+  }, []);
+
   const clearConstellationHoverState = useCallback(() => {
     hoveredAddCandidateRef.current = null;
     armedAddCandidateIdRef.current = null;
     hoveredNodeRef.current = -1;
     hoverExpandedRef.current = false;
     setHoveredAddCandidateId(null);
+    closeStarTooltip();
     closeConcept();
-  }, [closeConcept]);
+  }, [closeConcept, closeStarTooltip]);
 
   const registerZoomInteraction = useCallback(() => {
     setZoomInteracting(true);
@@ -882,6 +922,18 @@ export default function Home() {
     clearConstellationHoverState();
     setBackgroundZoomTarget(1);
   }, [clearConstellationHoverState, setBackgroundZoomTarget]);
+
+  const handleOpenHoveredStarDetails = useCallback(() => {
+    if (!hoveredUserStarId) {
+      return;
+    }
+    const hoveredStar = userStars.find((star) => star.id === hoveredUserStarId) ?? null;
+    if (!hoveredStar) {
+      return;
+    }
+    closeStarTooltip();
+    focusExistingStar(hoveredStar);
+  }, [closeStarTooltip, focusExistingStar, hoveredUserStarId, userStars]);
 
   const refreshAvailableIndexes = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -1362,7 +1414,8 @@ export default function Home() {
         star.twinklePhase = worldStar.twinklePhase;
         star.parallaxFactor = worldStar.parallaxFactor;
         star.hasDiffraction = worldStar.hasDiffraction;
-        star.isAddable = isAddableBackgroundStar(star, nodes, projectedUserStars, W, H);
+        const hasUserContent = userStarsRef.current.length > 0 || availableIndexesRef.current.length > 0;
+        star.isAddable = isAddableBackgroundStar(star, nodes, projectedUserStars, W, H, hasUserContent);
         nextVisibleStars[visibleStarCount] = star;
         visibleStarCount += 1;
       });
@@ -1605,6 +1658,7 @@ export default function Home() {
           H,
           backgroundCamera,
           coarsePointerRef.current ? 12 : 0,
+          mouse,
         );
         projectedUserStarTargets.push(projectedHitTarget);
         const px = projectedHitTarget.x;
@@ -1957,7 +2011,10 @@ export default function Home() {
       lastConstellationProjectionWidth = -1;
     }
 
-    function getHitStar(clientX: number, clientY: number): UserStar | null {
+    function getHoveredUserStar(clientX: number, clientY: number): {
+      star: UserStar;
+      target: ProjectedUserStarHitTarget;
+    } | null {
       const pointer = getCanvasPointer(clientX, clientY);
       const previewPositions = dragPreviewPositionsRef.current;
       const backgroundCamera = readBackgroundCamera();
@@ -1977,13 +2034,100 @@ export default function Home() {
               H,
               backgroundCamera,
               coarsePointerRef.current ? 12 : 0,
+              mouse,
             );
           });
       const target = findClosestProjectedTarget(availableTargets, pointer);
       if (!target) {
         return null;
       }
-      return userStarsRef.current.find((star) => star.id === target.id) ?? null;
+      const star = userStarsRef.current.find((entry) => entry.id === target.id) ?? null;
+      if (!star) {
+        return null;
+      }
+      return {
+        star,
+        target,
+      };
+    }
+
+    function getHitStar(clientX: number, clientY: number): UserStar | null {
+      return getHoveredUserStar(clientX, clientY)?.star ?? null;
+    }
+
+    function showStarTooltip(star: UserStar, target: ProjectedUserStarHitTarget) {
+      const card = starTooltipCardRef.current;
+      if (!card) {
+        return;
+      }
+
+      if (starTooltipHideTimeoutRef.current !== null) {
+        window.clearTimeout(starTooltipHideTimeoutRef.current);
+        starTooltipHideTimeoutRef.current = null;
+      }
+
+      const faculty = resolveStarFaculty(star);
+      const title = star.label?.trim() || "Untitled Star";
+      const description = getStarTooltipDescription(star, faculty);
+      const domainLabel = faculty.label;
+
+      if (starTooltipDomainRef.current) {
+        starTooltipDomainRef.current.textContent = `Domain: ${domainLabel}`;
+      }
+      if (starTooltipTitleRef.current) {
+        starTooltipTitleRef.current.textContent = title;
+      }
+      if (starTooltipDescRef.current) {
+        starTooltipDescRef.current.textContent = description;
+      }
+
+      const bounds = readCanvasBounds();
+      const anchorX = bounds.left + target.x;
+      const anchorY = bounds.top + target.y;
+
+      card.style.display = "block";
+      const cardWidth = card.offsetWidth || 280;
+      const cardHeight = card.offsetHeight || 178;
+      let cx = anchorX + 20;
+      let cy = anchorY - Math.min(38, cardHeight * 0.24);
+
+      if (cx + cardWidth + 16 > window.innerWidth) {
+        cx = anchorX - cardWidth - 20;
+      }
+      if (cx < 16) {
+        cx = 16;
+      }
+      if (cy + cardHeight + 16 > window.innerHeight) {
+        cy = window.innerHeight - cardHeight - 16;
+      }
+      if (cy < 16) {
+        cy = 16;
+      }
+
+      card.style.left = `${cx}px`;
+      card.style.top = `${cy}px`;
+      requestAnimationFrame(() => card.classList.add("active"));
+
+      setHoveredUserStarId((current) => (current === star.id ? current : star.id));
+    }
+
+    function hideStarTooltip() {
+      if (starTooltipHideTimeoutRef.current !== null) {
+        window.clearTimeout(starTooltipHideTimeoutRef.current);
+        starTooltipHideTimeoutRef.current = null;
+      }
+
+      setHoveredUserStarId((current) => (current === null ? current : null));
+      const card = starTooltipCardRef.current;
+      if (!card) {
+        return;
+      }
+
+      card.classList.remove("active");
+      starTooltipHideTimeoutRef.current = window.setTimeout(() => {
+        card.style.display = "none";
+        starTooltipHideTimeoutRef.current = null;
+      }, 180);
     }
 
     function getHoveredCandidate(clientX: number, clientY: number): StarData | null {
@@ -2050,6 +2194,7 @@ export default function Home() {
           ),
         );
         clearHoveredCandidate();
+        hideStarTooltip();
         closeConcept();
         return;
       }
@@ -2058,6 +2203,7 @@ export default function Home() {
         hoveredNodeRef.current = -1;
         hoverExpandedRef.current = false;
         clearHoveredCandidate();
+        hideStarTooltip();
         return;
       }
 
@@ -2065,15 +2211,25 @@ export default function Home() {
         hoveredNodeRef.current = -1;
         hoverExpandedRef.current = false;
         clearHoveredCandidate();
+        hideStarTooltip();
         return;
       }
 
       const targetElement = e.target instanceof Element ? e.target : null;
       const pointerOnCanvas = targetElement === canvas;
-      if (!pointerOnCanvas) {
+      const pointerOnStarTooltip = Boolean(targetElement?.closest("#starTooltipCard"));
+      if (!pointerOnCanvas && !pointerOnStarTooltip) {
         hoveredNodeRef.current = -1;
         hoverExpandedRef.current = false;
         clearHoveredCandidate();
+        hideStarTooltip();
+        return;
+      }
+      if (pointerOnStarTooltip) {
+        hoveredNodeRef.current = -1;
+        hoverExpandedRef.current = false;
+        clearHoveredCandidate();
+        closeConcept();
         return;
       }
 
@@ -2085,12 +2241,24 @@ export default function Home() {
         if (candidate) {
           hoveredNodeRef.current = -1;
           hoverExpandedRef.current = false;
+          hideStarTooltip();
           closeConcept();
           return;
         }
       } else {
         clearHoveredCandidate();
       }
+
+      const hoveredUserStar = getHoveredUserStar(e.clientX, e.clientY);
+      if (hoveredUserStar) {
+        hoveredNodeRef.current = -1;
+        hoverExpandedRef.current = false;
+        showStarTooltip(hoveredUserStar.star, hoveredUserStar.target);
+        closeConcept();
+        return;
+      }
+
+      hideStarTooltip();
 
       let hover = -1;
       nodes.forEach((n, i) => {
@@ -2136,6 +2304,7 @@ export default function Home() {
       setAddMessage(null);
       setDragMessage(null);
       clearHoveredCandidate();
+      hideStarTooltip();
       closeConcept();
       try {
         canvas!.setPointerCapture(e.pointerId);
@@ -2260,13 +2429,18 @@ export default function Home() {
       }
     }
 
-    function onPointerLeave() {
+    function onPointerLeave(e: PointerEvent) {
       if (dragStateRef.current) {
+        return;
+      }
+      const relatedTarget = e.relatedTarget instanceof Element ? e.relatedTarget : null;
+      if (relatedTarget?.closest("#starTooltipCard")) {
         return;
       }
       hoveredNodeRef.current = -1;
       hoverExpandedRef.current = false;
       clearHoveredCandidate();
+      hideStarTooltip();
       setDragMessage(null);
     }
 
@@ -2526,6 +2700,21 @@ export default function Home() {
         <div ref={cLabelRef} className="metis-c-label" />
         <div ref={cTitleRef} className="metis-c-title" />
         <div ref={cDescRef} className="metis-c-desc" />
+      </div>
+
+      {/* Star tooltip card */}
+      <div ref={starTooltipCardRef} className="metis-star-tooltip" id="starTooltipCard">
+        <div ref={starTooltipDomainRef} className="metis-star-tooltip-domain" />
+        <div ref={starTooltipTitleRef} className="metis-star-tooltip-title" />
+        <div ref={starTooltipDescRef} className="metis-star-tooltip-desc" />
+        <button
+          type="button"
+          className="metis-star-tooltip-action"
+          onClick={handleOpenHoveredStarDetails}
+          disabled={!hoveredUserStarId}
+        >
+          Open Star Details
+        </button>
       </div>
 
       {/* Chat bubble */}
@@ -3063,6 +3252,84 @@ body {
   color: var(--text-mid); font-size: 16px; font-family: 'Inter';
 }
 .metis-c-close:hover { opacity: 0.8; }
+
+.metis-star-tooltip {
+  position: fixed;
+  z-index: 205;
+  width: min(320px, calc(100vw - 32px));
+  background: rgba(8, 12, 24, 0.94);
+  border: 1px solid rgba(196,149,58,0.16);
+  border-radius: 14px;
+  padding: 16px 16px 14px;
+  box-shadow: 0 16px 38px rgba(2, 5, 12, 0.5);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  display: none;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+.metis-star-tooltip.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.metis-star-tooltip-domain {
+  color: rgba(232,184,74,0.92);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.metis-star-tooltip-title {
+  margin-top: 8px;
+  color: var(--text-bright);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.metis-star-tooltip-desc {
+  margin-top: 10px;
+  color: var(--text-mid);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.metis-star-tooltip-action {
+  margin-top: 12px;
+  border: 1px solid rgba(200,210,225,0.2);
+  background: rgba(22, 31, 58, 0.62);
+  color: rgba(236,241,250,0.96);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.metis-star-tooltip-action:hover:not(:disabled) {
+  border-color: rgba(232,184,74,0.36);
+  color: rgba(255,246,222,0.96);
+  transform: translateY(-1px);
+}
+
+.metis-star-tooltip-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metis-star-tooltip {
+    transition: none;
+  }
+}
 
 /* CHAT BUBBLE */
 .metis-chat-bubble {
