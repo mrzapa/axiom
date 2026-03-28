@@ -49,3 +49,5 @@ node_modules/
 
 # Test output / screenshots
 output/
+
+.metis_cache/
