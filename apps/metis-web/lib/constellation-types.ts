@@ -153,12 +153,36 @@ export function isUserStar(value: unknown): value is UserStar {
   );
 }
 
+function isParsableUserStar(value: unknown): value is Partial<UserStar> & { id: string } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.x === "number" &&
+    typeof candidate.y === "number" &&
+    typeof candidate.size === "number" &&
+    (candidate.createdAt === undefined || typeof candidate.createdAt === "number") &&
+    (candidate.label === undefined || typeof candidate.label === "string") &&
+    (candidate.primaryDomainId === undefined || typeof candidate.primaryDomainId === "string") &&
+    (candidate.relatedDomainIds === undefined || Array.isArray(candidate.relatedDomainIds)) &&
+    (candidate.stage === undefined || typeof candidate.stage === "string") &&
+    (candidate.intent === undefined || typeof candidate.intent === "string") &&
+    (candidate.notes === undefined || typeof candidate.notes === "string") &&
+    (candidate.connectedUserStarIds === undefined || Array.isArray(candidate.connectedUserStarIds)) &&
+    (candidate.linkedManifestPaths === undefined || Array.isArray(candidate.linkedManifestPaths)) &&
+    (candidate.activeManifestPath === undefined || typeof candidate.activeManifestPath === "string") &&
+    (candidate.linkedManifestPath === undefined || typeof candidate.linkedManifestPath === "string")
+  );
+}
+
 export function parseUserStars(value: unknown): UserStar[] {
   if (!Array.isArray(value)) {
     return [];
   }
   return value
-    .filter(isUserStar)
+    .filter(isParsableUserStar)
     .map((star) => normalizeUserStar(star));
 }
 
