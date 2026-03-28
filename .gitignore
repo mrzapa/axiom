@@ -53,3 +53,10 @@ output/
 .metis_cache/
 
 .metis_cache/
+
+.metis_cache/
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.safetensors
