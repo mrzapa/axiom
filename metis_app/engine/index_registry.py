@@ -26,6 +26,7 @@ def _serialize_manifest(manifest: IndexManifest) -> dict[str, Any]:
         "embedding_signature": str(manifest.embedding_signature or ""),
         "collection_name": str(manifest.collection_name or ""),
         "legacy_compat": bool(manifest.legacy_compat),
+        "brain_pass": dict((manifest.metadata or {}).get("brain_pass") or {}),
         "metadata": dict(manifest.metadata or {}),
     }
 

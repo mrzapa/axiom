@@ -10,12 +10,15 @@ import {
   getBackgroundCameraScale,
   getBackgroundViewportWorldBounds,
   getConstellationBridgeSuggestion,
+  getConstellationCameraScale,
   getFacultyColor,
   getInfluenceColors,
   getPreviewConnectionNodes,
   inferConstellationFaculty,
   isAddableBackgroundStar,
   mixConstellationColors,
+  projectConstellationPoint,
+  screenToConstellationPoint,
   screenToWorldPoint,
   type ConstellationFieldStar,
   type ConstellationNodePoint,
@@ -216,6 +219,25 @@ describe("findHoveredAddCandidate", () => {
     expect(
       findHoveredAddCandidate(stars, [{ x: 560, y: 430 }], [], pointer, pointer, WIDTH, HEIGHT, 20),
     ).toBeNull();
+  });
+});
+
+describe("constellation projection helpers", () => {
+  it("softens constellation scaling so faculties stay legible at deep zoom", () => {
+    expect(getConstellationCameraScale(1)).toBeCloseTo(1, 6);
+    expect(getConstellationCameraScale(200)).toBeGreaterThan(getBackgroundCameraScale(200));
+    expect(getConstellationCameraScale(200)).toBeCloseTo(0.145, 3);
+  });
+
+  it("round-trips constellation points through screen projection", () => {
+    const camera = { x: 180, y: -120, zoomFactor: 32 };
+    const point = { x: 0.82, y: 0.23 };
+    const parallax = { x: 12, y: -8 };
+    const projected = projectConstellationPoint(point, WIDTH, HEIGHT, camera, parallax);
+    const restored = screenToConstellationPoint(projected, WIDTH, HEIGHT, camera, parallax);
+
+    expect(restored.x).toBeCloseTo(point.x, 6);
+    expect(restored.y).toBeCloseTo(point.y, 6);
   });
 });
 

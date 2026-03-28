@@ -31,6 +31,11 @@ import {
   type IndexBuildResult,
   type IndexSummary,
 } from "@/lib/api";
+import {
+  buildBrainPlacementIntent,
+  buildFacultyAnchoredPlacement,
+  getConstellationPlacementDecision,
+} from "@/lib/constellation-brain";
 import { CONSTELLATION_FACULTIES } from "@/lib/constellation-home";
 import type { UserStar, UserStarStage } from "@/lib/constellation-types";
 import { cn } from "@/lib/utils";
@@ -62,6 +67,8 @@ type StarUpdatePayload = Partial<
     | "linkedManifestPaths"
     | "activeManifestPath"
     | "linkedManifestPath"
+    | "x"
+    | "y"
   >
 >;
 
@@ -337,26 +344,31 @@ export function StarObservatoryDialog({
     nextAttachedManifestPaths = attachedManifestPaths,
     nextActiveManifestPath = activeManifestPath,
     labelOverride?: string,
+    extraUpdates?: Partial<StarUpdatePayload>,
   ): StarUpdatePayload {
-    const label = (labelOverride ?? labelDraft.trim()) || activeStar.label || undefined;
-    const notes = notesDraft.trim() || undefined;
-    const relatedDomainIds = uniqueStrings(relatedDomainIdsDraft.split(/[\n,]/g));
+    const label = extraUpdates?.label ?? ((labelOverride ?? labelDraft.trim()) || activeStar.label || undefined);
+    const notes = extraUpdates?.notes ?? (notesDraft.trim() || undefined);
+    const relatedDomainIds = extraUpdates?.relatedDomainIds
+      ? uniqueStrings(extraUpdates.relatedDomainIds)
+      : uniqueStrings(relatedDomainIdsDraft.split(/[\n,]/g));
     const linkedManifestPaths = uniqueStrings([
       ...nextAttachedManifestPaths,
       nextActiveManifestPath,
     ]);
-    const activePath = nextActiveManifestPath || linkedManifestPaths[linkedManifestPaths.length - 1] || undefined;
+    const activePath = extraUpdates?.activeManifestPath ?? (nextActiveManifestPath || linkedManifestPaths[linkedManifestPaths.length - 1] || undefined);
 
     return {
       label,
-      primaryDomainId: primaryDomainIdDraft.trim() || undefined,
+      primaryDomainId: extraUpdates?.primaryDomainId ?? (primaryDomainIdDraft.trim() || undefined),
       relatedDomainIds: relatedDomainIds.length > 0 ? relatedDomainIds : undefined,
-      stage: manualStageOverride || undefined,
-      intent: intentDraft.trim() || undefined,
+      stage: extraUpdates?.stage ?? (manualStageOverride || undefined),
+      intent: extraUpdates?.intent ?? (intentDraft.trim() || undefined),
       notes,
       linkedManifestPaths: linkedManifestPaths.length > 0 ? linkedManifestPaths : undefined,
       activeManifestPath: activePath,
-      linkedManifestPath: activePath,
+      linkedManifestPath: extraUpdates?.linkedManifestPath ?? activePath,
+      x: extraUpdates?.x,
+      y: extraUpdates?.y,
     };
   }
 
@@ -364,12 +376,14 @@ export function StarObservatoryDialog({
     nextAttachedManifestPaths = attachedManifestPaths,
     nextActiveManifestPath = activeManifestPath,
     labelOverride,
+    extraUpdates,
     successMessage = "Star details updated.",
     showSavingState = true,
   }: {
     nextAttachedManifestPaths?: string[];
     nextActiveManifestPath?: string;
     labelOverride?: string;
+    extraUpdates?: Partial<StarUpdatePayload>;
     successMessage?: string;
     showSavingState?: boolean;
   } = {}) {
@@ -378,7 +392,12 @@ export function StarObservatoryDialog({
     }
 
     try {
-      const payload = buildStarUpdate(nextAttachedManifestPaths, nextActiveManifestPath, labelOverride);
+      const payload = buildStarUpdate(
+        nextAttachedManifestPaths,
+        nextActiveManifestPath,
+        labelOverride,
+        extraUpdates,
+      );
       const updated = await onUpdateStar(activeStar.id, payload as Parameters<typeof onUpdateStar>[1]);
       if (!updated) {
         throw new Error("This star is no longer available.");
@@ -525,11 +544,29 @@ export function StarObservatoryDialog({
         ...attachedManifestPaths.filter((manifestPath) => manifestPath !== result.manifest_path),
         result.manifest_path,
       ]);
+      const placement = getConstellationPlacementDecision(result);
+      const facultyLabel = CONSTELLATION_FACULTIES.find(
+        (faculty) => faculty.id === placement.facultyId,
+      )?.label ?? placement.facultyId;
+      const placementSeed = Math.abs(Math.trunc(activeStar.createdAt % 24));
+      const { x, y } = buildFacultyAnchoredPlacement(placement.facultyId, placementSeed);
+      const nextRelatedDomainIds = uniqueStrings([
+        ...relatedDomainIdsDraft.split(/[\n,]/g),
+        ...placement.secondaryFacultyIds,
+      ]);
       const updated = await commitStarUpdate({
         nextAttachedManifestPaths,
         nextActiveManifestPath: result.manifest_path,
         labelOverride: nextLabel,
-        successMessage: `Built ${result.index_id} and attached it to this star.`,
+        extraUpdates: {
+          primaryDomainId: placement.facultyId,
+          relatedDomainIds: nextRelatedDomainIds.length > 0 ? nextRelatedDomainIds : undefined,
+          intent: intentDraft.trim() || buildBrainPlacementIntent(placement.provider),
+          notes: notesDraft.trim() || placement.rationale || undefined,
+          x,
+          y,
+        },
+        successMessage: `Built ${result.index_id} and filed it near ${facultyLabel}.`,
         showSavingState: false,
       });
       if (!updated) {

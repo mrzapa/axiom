@@ -33,6 +33,7 @@ def test_build_index_uses_orchestrator(monkeypatch) -> None:
         chunk_count = 9
         embedding_signature = "sig-1"
         vector_backend = "json"
+        brain_pass = {"provider": "fallback", "placement": {"faculty_id": "knowledge"}}
 
     fake_orchestrator = MagicMock()
 
@@ -59,6 +60,7 @@ def test_build_index_uses_orchestrator(monkeypatch) -> None:
     payload = response.json()
     assert payload["index_id"] == "idx-new"
     assert payload["manifest_path"] == "/tmp/index/manifest.json"
+    assert payload["brain_pass"]["provider"] == "fallback"
     assert captured == {
         "document_paths": ["/tmp/doc-1.txt", "/tmp/doc-2.txt"],
         "settings": {"llm_provider": "mock"},
@@ -79,6 +81,7 @@ def test_stream_build_index_uses_orchestrator_and_progress_callback(monkeypatch)
         chunk_count = 12
         embedding_signature = "sig-stream"
         vector_backend = "json"
+        brain_pass = {"provider": "fallback", "placement": {"faculty_id": "knowledge"}}
 
     fake_orchestrator = MagicMock()
 
@@ -111,6 +114,7 @@ def test_stream_build_index_uses_orchestrator_and_progress_callback(monkeypatch)
         "progress",
         "build_complete",
     ]
+    assert frames[-1][1]["brain_pass"]["provider"] == "fallback"
     assert captured["document_paths"] == ["/tmp/doc-1.txt"]
     assert captured["settings"] == {"llm_provider": "mock"}
     assert captured["index_id"] == "idx-stream"

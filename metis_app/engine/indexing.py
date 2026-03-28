@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pathlib
 from typing import Any, Callable
 
@@ -27,6 +27,7 @@ class IndexBuildResult:
     chunk_count: int
     embedding_signature: str
     vector_backend: str
+    brain_pass: dict[str, Any] = field(default_factory=dict)
 
 
 def build_index(
@@ -63,4 +64,5 @@ def build_index(
         chunk_count=int(manifest.chunk_count),
         embedding_signature=str(manifest.embedding_signature or bundle.embedding_signature),
         vector_backend=str(manifest.backend or bundle.vector_backend),
+        brain_pass=dict(manifest.metadata.get("brain_pass") or {}),
     )

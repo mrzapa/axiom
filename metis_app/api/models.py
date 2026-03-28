@@ -49,6 +49,7 @@ class IndexBuildResultModel(BaseModel):
     chunk_count: int
     embedding_signature: str
     vector_backend: str
+    brain_pass: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_engine(cls, result: IndexBuildResult) -> "IndexBuildResultModel":
@@ -59,6 +60,7 @@ class IndexBuildResultModel(BaseModel):
             chunk_count=result.chunk_count,
             embedding_signature=result.embedding_signature,
             vector_backend=result.vector_backend,
+            brain_pass=dict(result.brain_pass or {}),
         )
 
 

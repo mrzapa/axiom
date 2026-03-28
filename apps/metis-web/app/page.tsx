@@ -7,7 +7,13 @@ import { StarObservatoryDialog } from "@/components/constellation/star-observato
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { fetchIndexes, type IndexBuildResult, type IndexSummary } from "@/lib/api";
 import {
+  buildBrainPlacementIntent,
+  buildFacultyAnchoredPlacement,
+  getConstellationPlacementDecision,
+} from "@/lib/constellation-brain";
+import {
   ADD_CANDIDATE_HIT_RADIUS_PX,
+  buildOutwardPlacement,
   clampBackgroundZoomFactor,
   CONSTELLATION_FACULTIES,
   CORE_CENTER_X,
@@ -15,10 +21,9 @@ import {
   CORE_EXCLUSION_RADIUS,
   getBackgroundCameraScale,
   getBackgroundViewportWorldBounds,
+  getConstellationCameraScale,
   getFacultyColor,
   getInfluenceColors,
-  buildOutwardPlacement,
-  findHoveredAddCandidate,
   getPreviewConnectionNodes,
   inferConstellationFaculty,
   isAddableBackgroundStar,
@@ -26,6 +31,9 @@ import {
   MIN_BACKGROUND_ZOOM_FACTOR,
   MOBILE_ADD_CANDIDATE_HIT_RADIUS_PX,
   mixConstellationColors,
+  projectBackgroundStar,
+  projectConstellationPoint,
+  screenToConstellationPoint,
   screenToWorldPoint,
   type ConstellationFacultyMetadata,
   type ConstellationFieldStar,
@@ -43,21 +51,29 @@ const FACULTY_CONCEPTS = CONSTELLATION_FACULTIES.map((faculty, index) => ({
   title: faculty.label,
   desc: faculty.description,
 }));
-const KNOWLEDGE_FACULTY = CONSTELLATION_FACULTIES.find((faculty) => faculty.id === "knowledge") ?? CONSTELLATION_FACULTIES[1];
 const BACKGROUND_BUTTON_ZOOM_STEP = 1.8;
 const BACKGROUND_TILE_PADDING_PX = 220;
 const BACKGROUND_TILE_SIZE = 960;
+const MAX_CACHED_WORLD_TILES = 4096;
 const WORLD_STAR_COUNT_BY_LAYER = [4, 7, 10] as const;
 const WORLD_STAR_REVEAL_STEPS = [1, 1.35, 1.8, 2.4, 3.2, 4.3, 5.8, 7.8, 10.5, 14.2, 19.2, 26, 35, 47, 64, 86, 116, 156, 200] as const;
 const HOVER_EXPAND_DELAY_MS = 600;
 const DRAG_DISTANCE_PX = 6;
+const ZOOM_UI_RESTORE_DELAY_MS = 240;
+const STARFIELD_CAMERA_REBUILD_EPSILON = 0.45;
 
 /* ────────────────────────────── helpers ──────────────────────────────── */
 
-type StarData = ConstellationFieldStar;
+interface VisibleStarData extends ConstellationFieldStar {
+  isAddable: boolean;
+}
+
+type StarData = VisibleStarData;
 type FacultyConcept = typeof FACULTY_CONCEPTS[number];
 
 interface NodeData extends ConstellationNodePoint {
+  anchorX: number;
+  anchorY: number;
   baseSize: number;
   brightness: number; targetBrightness: number;
   concept: FacultyConcept; connections: number[];
@@ -90,6 +106,19 @@ function nextDeterministicSeed(seed: number): number {
   return (Math.imul(seed, 1664525) + 1013904223) >>> 0;
 }
 
+function getWorldRevealBucket(zoomFactor: number): number {
+  let bucket = 0;
+
+  while (
+    bucket < WORLD_STAR_REVEAL_STEPS.length
+    && zoomFactor + 1e-6 >= WORLD_STAR_REVEAL_STEPS[bucket]
+  ) {
+    bucket += 1;
+  }
+
+  return bucket;
+}
+
 function createTileSeed(tileX: number, tileY: number, layer: number, index: number): number {
   let seed = 2166136261;
 
@@ -118,19 +147,6 @@ function formatBackgroundZoom(zoomFactor: number): string {
   return `${zoomFactor.toFixed(1)}x`;
 }
 
-function getBackgroundZoomNarrative(zoomFactor: number): string {
-  if (zoomFactor >= 80) {
-    return "The far field is opening. Countless micro-stars resolve beyond the faculty ring.";
-  }
-  if (zoomFactor >= 12) {
-    return "More distant stars are surfacing. Keep pulling back to reveal a deeper sky.";
-  }
-  if (zoomFactor < 1) {
-    return "You are drifting into a closer orbit. Individual influences glow harder against the dark.";
-  }
-  return "Scroll to zoom out up to 200x, or drift back in for a tighter orbit around your constellation.";
-}
-
 function buildStarInfluenceColors(star: Pick<UserStar, "primaryDomainId" | "relatedDomainIds">) {
   return getInfluenceColors(star.primaryDomainId, star.relatedDomainIds);
 }
@@ -144,6 +160,8 @@ function getWorldTileStars(
   const cacheKey = `${layer}:${tileX}:${tileY}`;
   const cached = tileCache.get(cacheKey);
   if (cached) {
+    tileCache.delete(cacheKey);
+    tileCache.set(cacheKey, cached);
     return cached;
   }
 
@@ -190,76 +208,45 @@ function getWorldTileStars(
   }
 
   tileCache.set(cacheKey, tileStars);
+  if (tileCache.size > MAX_CACHED_WORLD_TILES) {
+    const oldestCacheKey = tileCache.keys().next().value;
+    if (oldestCacheKey) {
+      tileCache.delete(oldestCacheKey);
+    }
+  }
   return tileStars;
 }
 
-function buildVisibleBackgroundStars(
+function findHoveredVisibleCandidate(
+  stars: readonly StarData[],
+  pointer: Point,
+  mouse: Point,
   width: number,
   height: number,
-  camera: BackgroundCameraState,
-  mouse: Point,
-  tileCache: Map<string, WorldStarData[]>,
-): StarData[] {
-  const visibleStars: StarData[] = [];
-  const scale = getBackgroundCameraScale(camera.zoomFactor);
-  const worldBounds = getBackgroundViewportWorldBounds(width, height, camera, BACKGROUND_TILE_PADDING_PX);
-  const minTileX = Math.floor(worldBounds.left / BACKGROUND_TILE_SIZE) - 1;
-  const maxTileX = Math.floor(worldBounds.right / BACKGROUND_TILE_SIZE) + 1;
-  const minTileY = Math.floor(worldBounds.top / BACKGROUND_TILE_SIZE) - 1;
-  const maxTileY = Math.floor(worldBounds.bottom / BACKGROUND_TILE_SIZE) + 1;
+  hitRadius: number,
+): StarData | null {
+  let candidate: StarData | null = null;
+  let candidateDistance = Infinity;
 
-  for (let layer = 2; layer >= 0; layer -= 1) {
-    for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
-      for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
-        const tileStars = getWorldTileStars(tileCache, layer, tileX, tileY);
-
-        tileStars.forEach((worldStar) => {
-          if (camera.zoomFactor + 1e-6 < worldStar.revealZoomFactor) {
-            return;
-          }
-
-          const projected = {
-            x:
-              (worldStar.worldX - camera.x) * scale
-              + width / 2
-              + (mouse.x - width / 2) * worldStar.parallaxFactor,
-            y:
-              (worldStar.worldY - camera.y) * scale
-              + height / 2
-              + (mouse.y - height / 2) * worldStar.parallaxFactor,
-          };
-
-          if (
-            projected.x < -BACKGROUND_TILE_PADDING_PX
-            || projected.x > width + BACKGROUND_TILE_PADDING_PX
-            || projected.y < -BACKGROUND_TILE_PADDING_PX
-            || projected.y > height + BACKGROUND_TILE_PADDING_PX
-          ) {
-            return;
-          }
-
-          const sizeMultiplier = layer === 0 ? 0.48 + scale * 0.98 : layer === 1 ? 0.42 + scale * 0.82 : 0.34 + scale * 0.68;
-          const projectedSize = Math.max(0.12, worldStar.baseSize * sizeMultiplier);
-
-          visibleStars.push({
-            id: worldStar.id,
-            nx: projected.x / width,
-            ny: projected.y / height,
-            layer: worldStar.layer,
-            baseSize: projectedSize,
-            brightness: Math.min(0.94, worldStar.brightness + Math.min(0.16, Math.log2(camera.zoomFactor + 1) * 0.03)),
-            twinkle: worldStar.twinkle,
-            twinkleSpeed: worldStar.twinkleSpeed,
-            twinklePhase: worldStar.twinklePhase,
-            parallaxFactor: worldStar.parallaxFactor,
-            hasDiffraction: worldStar.hasDiffraction,
-          });
-        });
-      }
+  stars.forEach((star) => {
+    if (!star.isAddable) {
+      return;
     }
-  }
 
-  return visibleStars;
+    const projected = projectBackgroundStar(star, width, height, mouse);
+    const distance = Math.hypot(projected.x - pointer.x, projected.y - pointer.y);
+
+    if (distance <= hitRadius && distance < candidateDistance) {
+      candidate = star;
+      candidateDistance = distance;
+    }
+  });
+
+  return candidate;
+}
+
+function getZoomResponsiveNodeScale(zoomFactor: number): number {
+  return Math.max(0.46, Math.pow(getConstellationCameraScale(zoomFactor), 0.62));
 }
 
 function makeDust(W: number, H: number): DustData {
@@ -279,6 +266,7 @@ function buildOptimisticIndexSummary(result: IndexBuildResult): IndexSummary {
     backend: result.vector_backend,
     created_at: new Date().toISOString(),
     embedding_signature: result.embedding_signature,
+    brain_pass: result.brain_pass,
   };
 }
 
@@ -338,6 +326,32 @@ function getFacultyById(facultyId?: string): ConstellationFacultyMetadata | null
   return CONSTELLATION_FACULTIES.find((faculty) => faculty.id === facultyId) ?? null;
 }
 
+function buildIndexStarDraft(index: IndexSummary, placementSeed: number): Omit<UserStar, "id" | "createdAt"> {
+  const placement = getConstellationPlacementDecision(index);
+  const { x, y } = buildFacultyAnchoredPlacement(placement.facultyId, placementSeed);
+
+  return {
+    x,
+    y,
+    size: 0.95,
+    label: index.index_id,
+    primaryDomainId: placement.facultyId,
+    relatedDomainIds:
+      placement.secondaryFacultyIds.length > 0 ? placement.secondaryFacultyIds : undefined,
+    stage: "seed",
+    intent: buildBrainPlacementIntent(placement.provider),
+    notes: placement.rationale || undefined,
+    linkedManifestPaths: [index.manifest_path],
+    activeManifestPath: index.manifest_path,
+    linkedManifestPath: index.manifest_path,
+  };
+}
+
+function describeIndexedFaculty(index: Pick<IndexSummary | IndexBuildResult, "brain_pass">): string {
+  const placement = getConstellationPlacementDecision(index);
+  return getFacultyById(placement.facultyId)?.label ?? "Knowledge";
+}
+
 function resolveStarFaculty(star: Pick<UserStar, "x" | "y" | "primaryDomainId">) {
   const inferred = inferConstellationFaculty({ x: star.x, y: star.y });
   return getFacultyById(star.primaryDomainId) ?? inferred.primary.faculty;
@@ -378,13 +392,16 @@ function describeFacultyDrop(faculty: ConstellationFacultyMetadata, bridgeFacult
   return `${faculty.label} now leads this star. Release to anchor it here.`;
 }
 
-function applyNodeLayout(nodes: NodeData[], W: number, H: number) {
-  FACULTY_CONCEPTS.forEach((concept, i) => {
-    if (!nodes[i]) {
-      return;
-    }
-    nodes[i].x = concept.faculty.x * W;
-    nodes[i].y = concept.faculty.y * H;
+function applyNodeLayout(nodes: NodeData[], W: number, H: number, camera: BackgroundCameraState) {
+  nodes.forEach((node) => {
+    const projected = projectConstellationPoint(
+      { x: node.anchorX, y: node.anchorY },
+      W,
+      H,
+      camera,
+    );
+    node.x = projected.x;
+    node.y = projected.y;
   });
 }
 
@@ -417,6 +434,7 @@ export default function Home() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"default" | "error">("default");
   const [backgroundZoomFactor, setBackgroundZoomFactor] = useState(1);
+  const [zoomInteracting, setZoomInteracting] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const conceptCardRef = useRef<HTMLDivElement>(null);
   const cLabelRef = useRef<HTMLDivElement>(null);
@@ -439,19 +457,20 @@ export default function Home() {
   const visibleStarsRef = useRef<StarData[]>([]);
   const optimisticIndexKeysRef = useRef<Set<string>>(new Set());
   const conceptHideTimeoutRef = useRef<number | null>(null);
+  const zoomInteractionTimeoutRef = useRef<number | null>(null);
   const dragPreviewPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const starfieldRevisionRef = useRef(0);
   const dragStateRef = useRef<{
     pointerId: number;
     starId: string;
     startClientX: number;
     startClientY: number;
-    startX: number;
-    startY: number;
     moved: boolean;
   } | null>(null);
 
   useEffect(() => {
     userStarsRef.current = userStars;
+    starfieldRevisionRef.current += 1;
   }, [userStars]);
 
   useEffect(() => {
@@ -475,6 +494,9 @@ export default function Home() {
   useEffect(() => () => {
     if (conceptHideTimeoutRef.current !== null) {
       window.clearTimeout(conceptHideTimeoutRef.current);
+    }
+    if (zoomInteractionTimeoutRef.current !== null) {
+      window.clearTimeout(zoomInteractionTimeoutRef.current);
     }
   }, []);
 
@@ -511,7 +533,7 @@ export default function Home() {
     [starLimit, userStars.length],
   );
   const detectedSourceCountLabel = useMemo(
-    () => getCountLabel(availableIndexes.length, "indexed source"),
+    () => `${getCountLabel(availableIndexes.length, "indexed source")} detected`,
     [availableIndexes.length],
   );
   const readyToMapCountLabel = useMemo(
@@ -519,7 +541,7 @@ export default function Home() {
     [unmappedIndexes.length],
   );
   const attachmentsCountLabel = useMemo(
-    () => getCountLabel(attachmentCount, "attachment"),
+    () => `${getCountLabel(attachmentCount, "attachment")} in orbit`,
     [attachmentCount],
   );
   const fieldGuideMessage = useMemo(() => {
@@ -543,7 +565,7 @@ export default function Home() {
     }
 
     if (!indexesLoading && unmappedIndexes.length > 0) {
-      return `${getCountLabel(unmappedIndexes.length, "indexed source")} ${unmappedIndexes.length === 1 ? "is" : "are"} ready to seed into Knowledge from the control rail below.`;
+      return `${getCountLabel(unmappedIndexes.length, "indexed source")} ${unmappedIndexes.length === 1 ? "is" : "are"} ready to file into the constellation from the control rail below.`;
     }
 
     return "Follow the faculty ring: claim a field star, drag it toward the faculty it should strengthen, and let the observatory deepen it.";
@@ -566,10 +588,6 @@ export default function Home() {
     () => formatBackgroundZoom(backgroundZoomFactor),
     [backgroundZoomFactor],
   );
-  const backgroundZoomNarrative = useMemo(
-    () => getBackgroundZoomNarrative(backgroundZoomFactor),
-    [backgroundZoomFactor],
-  );
 
   const openChatWithIndex = useCallback(
     (manifestPath: string, label: string) => {
@@ -581,6 +599,36 @@ export default function Home() {
     },
     [router],
   );
+
+  const handleRemoveSelectedStar = useCallback(async () => {
+    if (!selectedUserStar) {
+      return;
+    }
+
+    await removeUserStarById(selectedUserStar.id);
+    setSelectedUserStarId(null);
+    setPendingDialogStar(null);
+    setQueuedObservatoryMode(null);
+    setDragMessage(null);
+    setAddMessage(null);
+    setToastTone("default");
+    setToastMessage(`${selectedUserStar.label ?? "Star"} removed from the constellation.`);
+  }, [removeUserStarById, selectedUserStar]);
+
+  const handleResetOrbit = useCallback(async () => {
+    if (userStars.length === 0) {
+      return;
+    }
+
+    await resetUserStars();
+    setSelectedUserStarId(null);
+    setPendingDialogStar(null);
+    setQueuedObservatoryMode(null);
+    setDragMessage(null);
+    setAddMessage(null);
+    setToastTone("default");
+    setToastMessage("Constellation orbit reset.");
+  }, [resetUserStars, userStars.length]);
 
   const closeConcept = useCallback(() => {
     if (conceptHideTimeoutRef.current !== null) {
@@ -608,13 +656,25 @@ export default function Home() {
     closeConcept();
   }, [closeConcept]);
 
+  const registerZoomInteraction = useCallback(() => {
+    setZoomInteracting(true);
+    if (zoomInteractionTimeoutRef.current !== null) {
+      window.clearTimeout(zoomInteractionTimeoutRef.current);
+    }
+    zoomInteractionTimeoutRef.current = window.setTimeout(() => {
+      setZoomInteracting(false);
+      zoomInteractionTimeoutRef.current = null;
+    }, ZOOM_UI_RESTORE_DELAY_MS);
+  }, []);
+
   const setBackgroundZoomTarget = useCallback((nextZoomFactor: number) => {
     const clampedZoomFactor = clampBackgroundZoomFactor(nextZoomFactor);
+    registerZoomInteraction();
     backgroundZoomTargetRef.current = clampedZoomFactor;
     setBackgroundZoomFactor((current) => (
       Math.abs(current - clampedZoomFactor) < 0.001 ? current : clampedZoomFactor
     ));
-  }, []);
+  }, [registerZoomInteraction]);
 
   const nudgeBackgroundZoom = useCallback((direction: "in" | "out") => {
     const nextZoomFactor =
@@ -661,6 +721,7 @@ export default function Home() {
 
   const handleIndexBuilt = useCallback((result: IndexBuildResult) => {
     const optimisticIndex = buildOptimisticIndexSummary(result);
+    const facultyLabel = describeIndexedFaculty(result);
     optimisticIndexKeysRef.current.add(getIndexSummaryKey(optimisticIndex));
     setIndexLoadError(null);
     setAddMessage(null);
@@ -670,7 +731,7 @@ export default function Home() {
       return next;
     });
     setToastTone("default");
-    setToastMessage(`Index ready: ${result.index_id}. It is now available to map into orbit.`);
+    setToastMessage(`Index ready: ${result.index_id}. METIS filed it near ${facultyLabel} and it is now available to map into orbit.`);
     void refreshAvailableIndexes({ silent: true });
   }, [refreshAvailableIndexes]);
   const openStarObservatory = useCallback((star: UserStar, mode: "new" | "existing") => {
@@ -722,30 +783,9 @@ export default function Home() {
       return;
     }
 
-    const starsToAdd = candidateIndexes.slice(0, room).map((index, indexOffset) => {
-      const orbitIndex = userStars.length + indexOffset;
-      const shell = Math.floor(orbitIndex / 6) + 1;
-      const slot = orbitIndex % 6;
-      const sweep = -0.42 + (slot / 5) * 0.84;
-      const angle = KNOWLEDGE_FACULTY.angle + sweep;
-      const radius = CORE_EXCLUSION_RADIUS + 0.08 + shell * 0.055;
-      const targetX = CORE_CENTER_X + Math.cos(angle) * radius;
-      const targetY = CORE_CENTER_Y + Math.sin(angle) * radius * 0.82;
-      const [x, y] = buildOutwardPlacement(targetX, targetY, orbitIndex);
-
-      return {
-        x,
-        y,
-        size: 0.95,
-        label: index.index_id,
-        primaryDomainId: KNOWLEDGE_FACULTY.id,
-        stage: "seed" as const,
-        intent: "Seeded from indexed source",
-        linkedManifestPaths: [index.manifest_path],
-        activeManifestPath: index.manifest_path,
-        linkedManifestPath: index.manifest_path,
-      };
-    });
+    const starsToAdd = candidateIndexes.slice(0, room).map((index, indexOffset) => (
+      buildIndexStarDraft(index, userStars.length + indexOffset)
+    ));
 
     const addedCount = await addUserStars(starsToAdd);
     if (addedCount > 0) {
@@ -864,6 +904,8 @@ export default function Home() {
     /* nodes */
     const nodes: NodeData[] = FACULTY_CONCEPTS.map((concept) => ({
       x: 0, y: 0,
+      anchorX: concept.faculty.x,
+      anchorY: concept.faculty.y,
       baseSize: 1.5 + Math.random() * 1.5,
       brightness: 0.15, targetBrightness: 0.15,
       concept, connections: [],
@@ -873,9 +915,13 @@ export default function Home() {
       targetHoverBoost: 0,
       _sx: 0, _sy: 0,
     }));
-    applyNodeLayout(nodes, W, H);
+    applyNodeLayout(nodes, W, H, {
+      x: backgroundCameraOriginRef.current.x,
+      y: backgroundCameraOriginRef.current.y,
+      zoomFactor: backgroundZoomRef.current,
+    });
     nodes.forEach((n, i) => {
-      const dists = nodes.map((m, j) => ({ idx: j, d: Math.hypot(n.x - m.x, n.y - m.y) }))
+      const dists = nodes.map((m, j) => ({ idx: j, d: Math.hypot(n.anchorX - m.anchorX, n.anchorY - m.anchorY) }))
         .filter(d => d.idx !== i).sort((a, b) => a.d - b.d);
       n.connections = dists.slice(0, i === 0 ? 5 : 3).map(d => d.idx);
     });
@@ -888,6 +934,191 @@ export default function Home() {
     let awakened = false;
     let awakenStart = 0;
     let animFrame = 0;
+    let lastVisibleStarfieldWidth = -1;
+    let lastVisibleStarfieldHeight = -1;
+    let lastVisibleStarfieldRevision = -1;
+    let lastVisibleStarfieldZoom = Number.NaN;
+    let lastVisibleStarfieldX = Number.NaN;
+    let lastVisibleStarfieldY = Number.NaN;
+    let lastVisibleWorldMinTileX = Number.NaN;
+    let lastVisibleWorldMaxTileX = Number.NaN;
+    let lastVisibleWorldMinTileY = Number.NaN;
+    let lastVisibleWorldMaxTileY = Number.NaN;
+    let lastVisibleWorldRevealBucket = -1;
+    let visibleWorldStars: WorldStarData[] = [];
+    let lastConstellationProjectionWidth = -1;
+    let lastConstellationProjectionHeight = -1;
+    let lastConstellationProjectionZoom = Number.NaN;
+    let lastConstellationProjectionX = Number.NaN;
+    let lastConstellationProjectionY = Number.NaN;
+
+    function readBackgroundCamera(): BackgroundCameraState {
+      return {
+        x: backgroundCameraOriginRef.current.x,
+        y: backgroundCameraOriginRef.current.y,
+        zoomFactor: backgroundZoomRef.current,
+      };
+    }
+
+    function syncConstellationLayout(backgroundCamera: BackgroundCameraState) {
+      const shouldReproject =
+        lastConstellationProjectionWidth !== W
+        || lastConstellationProjectionHeight !== H
+        || Math.abs(lastConstellationProjectionZoom - backgroundCamera.zoomFactor) > 0.0005
+        || Math.abs(lastConstellationProjectionX - backgroundCamera.x) > STARFIELD_CAMERA_REBUILD_EPSILON
+        || Math.abs(lastConstellationProjectionY - backgroundCamera.y) > STARFIELD_CAMERA_REBUILD_EPSILON;
+
+      if (!shouldReproject) {
+        return;
+      }
+
+      applyNodeLayout(nodes, W, H, backgroundCamera);
+      lastConstellationProjectionWidth = W;
+      lastConstellationProjectionHeight = H;
+      lastConstellationProjectionZoom = backgroundCamera.zoomFactor;
+      lastConstellationProjectionX = backgroundCamera.x;
+      lastConstellationProjectionY = backgroundCamera.y;
+    }
+
+    function getCandidateConstellationPoint(
+      candidate: Pick<StarData, "nx" | "ny" | "parallaxFactor">,
+      backgroundCamera: BackgroundCameraState,
+    ): Point {
+      const projected = projectBackgroundStar(candidate, W, H, mouse);
+
+      return screenToConstellationPoint(projected, W, H, backgroundCamera);
+    }
+
+    function refreshVisibleStars(backgroundCamera: BackgroundCameraState) {
+      const worldBounds = getBackgroundViewportWorldBounds(
+        W,
+        H,
+        backgroundCamera,
+        BACKGROUND_TILE_PADDING_PX,
+      );
+      const minTileX = Math.floor(worldBounds.left / BACKGROUND_TILE_SIZE) - 1;
+      const maxTileX = Math.floor(worldBounds.right / BACKGROUND_TILE_SIZE) + 1;
+      const minTileY = Math.floor(worldBounds.top / BACKGROUND_TILE_SIZE) - 1;
+      const maxTileY = Math.floor(worldBounds.bottom / BACKGROUND_TILE_SIZE) + 1;
+      const revealBucket = getWorldRevealBucket(backgroundCamera.zoomFactor);
+      const shouldRebuildVisibleWorldStars =
+        lastVisibleStarfieldRevision !== starfieldRevisionRef.current
+        || minTileX !== lastVisibleWorldMinTileX
+        || maxTileX !== lastVisibleWorldMaxTileX
+        || minTileY !== lastVisibleWorldMinTileY
+        || maxTileY !== lastVisibleWorldMaxTileY
+        || revealBucket !== lastVisibleWorldRevealBucket;
+
+      if (shouldRebuildVisibleWorldStars) {
+        const nextVisibleWorldStars: WorldStarData[] = [];
+
+        for (let layer = 2; layer >= 0; layer -= 1) {
+          for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
+            for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
+              const tileStars = getWorldTileStars(tileCache, layer, tileX, tileY);
+
+              tileStars.forEach((worldStar) => {
+                if (backgroundCamera.zoomFactor + 1e-6 < worldStar.revealZoomFactor) {
+                  return;
+                }
+
+                nextVisibleWorldStars.push(worldStar);
+              });
+            }
+          }
+        }
+
+        visibleWorldStars = nextVisibleWorldStars;
+        lastVisibleWorldMinTileX = minTileX;
+        lastVisibleWorldMaxTileX = maxTileX;
+        lastVisibleWorldMinTileY = minTileY;
+        lastVisibleWorldMaxTileY = maxTileY;
+        lastVisibleWorldRevealBucket = revealBucket;
+      }
+
+      const projectedUserStars = userStarsRef.current.map((star) => {
+        const projected = projectConstellationPoint(
+          { x: star.x, y: star.y },
+          W,
+          H,
+          backgroundCamera,
+        );
+
+        return {
+          x: projected.x / W,
+          y: projected.y / H,
+        };
+      });
+
+      const scale = getBackgroundCameraScale(backgroundCamera.zoomFactor);
+      const nextVisibleStars = visibleStarsRef.current;
+      let visibleStarCount = 0;
+
+      visibleWorldStars.forEach((worldStar) => {
+        const screenX = (worldStar.worldX - backgroundCamera.x) * scale + W / 2;
+        const screenY = (worldStar.worldY - backgroundCamera.y) * scale + H / 2;
+
+        if (
+          screenX < -BACKGROUND_TILE_PADDING_PX
+          || screenX > W + BACKGROUND_TILE_PADDING_PX
+          || screenY < -BACKGROUND_TILE_PADDING_PX
+          || screenY > H + BACKGROUND_TILE_PADDING_PX
+        ) {
+          return;
+        }
+
+        const normalizedX = screenX / W;
+        const normalizedY = screenY / H;
+        const sizeMultiplier =
+          worldStar.layer === 0
+            ? 0.48 + scale * 0.98
+            : worldStar.layer === 1
+              ? 0.42 + scale * 0.82
+              : 0.34 + scale * 0.68;
+        const projectedSize = Math.max(0.12, worldStar.baseSize * sizeMultiplier);
+        const brightness = Math.min(
+          0.94,
+          worldStar.brightness + Math.min(0.16, Math.log2(backgroundCamera.zoomFactor + 1) * 0.03),
+        );
+        const star = nextVisibleStars[visibleStarCount] ?? {
+          id: worldStar.id,
+          nx: normalizedX,
+          ny: normalizedY,
+          layer: worldStar.layer,
+          baseSize: projectedSize,
+          brightness,
+          twinkle: worldStar.twinkle,
+          twinkleSpeed: worldStar.twinkleSpeed,
+          twinklePhase: worldStar.twinklePhase,
+          parallaxFactor: worldStar.parallaxFactor,
+          hasDiffraction: worldStar.hasDiffraction,
+          isAddable: false,
+        };
+
+        star.id = worldStar.id;
+        star.nx = normalizedX;
+        star.ny = normalizedY;
+        star.layer = worldStar.layer;
+        star.baseSize = projectedSize;
+        star.brightness = brightness;
+        star.twinkle = worldStar.twinkle;
+        star.twinkleSpeed = worldStar.twinkleSpeed;
+        star.twinklePhase = worldStar.twinklePhase;
+        star.parallaxFactor = worldStar.parallaxFactor;
+        star.hasDiffraction = worldStar.hasDiffraction;
+        star.isAddable = isAddableBackgroundStar(star, nodes, projectedUserStars, W, H);
+        nextVisibleStars[visibleStarCount] = star;
+        visibleStarCount += 1;
+      });
+
+      nextVisibleStars.length = visibleStarCount;
+      lastVisibleStarfieldWidth = W;
+      lastVisibleStarfieldHeight = H;
+      lastVisibleStarfieldRevision = starfieldRevisionRef.current;
+      lastVisibleStarfieldZoom = backgroundCamera.zoomFactor;
+      lastVisibleStarfieldX = backgroundCamera.x;
+      lastVisibleStarfieldY = backgroundCamera.y;
+    }
 
     function drawNebulae() {
       nebulae.forEach(n => {
@@ -910,9 +1141,10 @@ export default function Home() {
     }
 
     function drawStar(s: StarData, t: number) {
-      const px = s.nx * W;
-      const py = s.ny * H;
-      const addable = isAddableBackgroundStar(s, nodes, userStarsRef.current, W, H);
+      const projected = projectBackgroundStar(s, W, H, mouse);
+      const px = projected.x;
+      const py = projected.y;
+      const addable = s.isAddable;
       const hoveredCandidate = hoveredAddCandidateRef.current?.id === s.id;
       let b = s.brightness;
       if (s.twinkle) b += Math.sin(t * s.twinkleSpeed + s.twinklePhase) * 0.15;
@@ -976,6 +1208,9 @@ export default function Home() {
       const currentUserStars = userStarsRef.current;
       const currentSelectedStarId = selectedUserStarIdRef.current;
       const previewPositions = dragPreviewPositionsRef.current;
+      const backgroundCamera = readBackgroundCamera();
+      const constellationScale = getConstellationCameraScale(backgroundCamera.zoomFactor);
+      const userStarScale = Math.max(0.58, 0.36 + Math.pow(constellationScale, 0.72) * 0.64);
 
       currentUserStars.forEach((s, i) => {
         const previewPosition = previewPositions.get(s.id);
@@ -987,14 +1222,20 @@ export default function Home() {
           relatedDomainIds: s.relatedDomainIds,
         });
         const [r, g, b] = mixConstellationColors(influenceColors);
-        const px = starX * W + (mouse.x - W / 2) * 0.006;
-        const py = starY * H + (mouse.y - H / 2) * 0.006;
+        const projected = projectConstellationPoint(
+          { x: starX, y: starY },
+          W,
+          H,
+          backgroundCamera,
+        );
+        const px = projected.x;
+        const py = projected.y;
         const twinkle = 0.75 + Math.sin(t * 0.003 + i * 1.7) * 0.15;
         const selected = currentSelectedStarId === s.id;
         const attachmentCount = getStarAttachmentCount(s);
         const ringCount = getStageRingCount(s.stage);
         const dragging = dragStateRef.current?.starId === s.id && dragStateRef.current.moved;
-        const sz = s.size * 1.4 + (selected ? 1.2 : 0) + (dragging ? 0.8 : 0);
+        const sz = (s.size * 1.5 + (selected ? 1.2 : 0) + (dragging ? 0.8 : 0)) * userStarScale;
         const halo = ctx!.createRadialGradient(px, py, 0, px, py, sz * 5.2);
         halo.addColorStop(0, `rgba(${r},${g},${b},${selected ? 0.22 : 0.12})`);
         halo.addColorStop(1, "rgba(0,0,0,0)");
@@ -1070,6 +1311,9 @@ export default function Home() {
     function drawNodes(t: number) {
       const aNode = activeNodeRef.current;
       const hasAddCandidate = hoveredAddCandidateRef.current !== null;
+      const nodeGalaxyScale = getZoomResponsiveNodeScale(backgroundZoomRef.current);
+      const lineWidth = 0.38 + nodeGalaxyScale * 0.34;
+      const labelFontSize = 10 + nodeGalaxyScale * 3.4;
       nodes.forEach((n, i) => {
         const [r, g, bl] = getFacultyColor(n.concept.faculty.id);
         const px = n.x + (mouse.x - W / 2) * n.parallax;
@@ -1087,7 +1331,7 @@ export default function Home() {
         n.hoverBoost += (n.targetHoverBoost - n.hoverBoost) * (enhancedHoverMotion ? 0.12 : 0.25);
         const b = n.brightness;
         const hoverScale = enhancedHoverMotion ? n.hoverBoost * 2.6 : 0;
-        const s = n.baseSize + proximity * 2 + (i === aNode ? 1 : 0) + hoverScale;
+        const s = (n.baseSize * 2.9 + proximity * 2.6 + (i === aNode ? 1.35 : 0) + hoverScale) * nodeGalaxyScale;
 
         if (proximity > 0.05 || i === aNode || nodeAwakenProg > 0.5) {
           const lineAlpha = Math.max(proximity * 0.25, nodeAwakenProg * 0.06, i === aNode ? 0.2 : 0);
@@ -1096,7 +1340,9 @@ export default function Home() {
             const cpx = cn.x + (mouse.x - W / 2) * cn.parallax;
             const cpy = cn.y + (mouse.y - H / 2) * cn.parallax;
             ctx!.beginPath(); ctx!.moveTo(px, py); ctx!.lineTo(cpx, cpy);
-            ctx!.strokeStyle = `rgba(160,175,210,${lineAlpha})`; ctx!.lineWidth = 0.5; ctx!.stroke();
+            ctx!.strokeStyle = `rgba(${r},${g},${bl},${lineAlpha * 0.68})`;
+            ctx!.lineWidth = lineWidth;
+            ctx!.stroke();
           });
         }
         if (b > 0.25 || n.hoverBoost > 0.1) {
@@ -1107,16 +1353,20 @@ export default function Home() {
           ctx!.arc(px, py, s * 12, 0, Math.PI * 2); ctx!.fill();
         }
         ctx!.beginPath(); ctx!.arc(px, py, s, 0, Math.PI * 2);
-        ctx!.fillStyle = b > 0.36 ? `rgba(${r},${g},${bl},${Math.max(0.42, b)})` : `rgba(200,210,230,${b})`;
+        ctx!.fillStyle = `rgba(${r},${g},${bl},${Math.max(0.72, b + 0.06)})`;
+        ctx!.fill();
+        ctx!.beginPath();
+        ctx!.arc(px, py, Math.max(1.25, s * 0.38), 0, Math.PI * 2);
+        ctx!.fillStyle = `rgba(255,255,255,${0.9 + Math.min(0.08, proximity * 0.08)})`;
         ctx!.fill();
         if (proximity > 0.2) {
           ctx!.beginPath(); ctx!.arc(px, py, s + 4 + proximity * 4, 0, Math.PI * 2);
           ctx!.strokeStyle = `rgba(${r},${g},${bl},${proximity * 0.22})`; ctx!.lineWidth = 0.5; ctx!.stroke();
         }
-        ctx!.font = '11px "Space Grotesk", sans-serif';
+        ctx!.font = `${labelFontSize}px "Space Grotesk", sans-serif`;
         ctx!.textAlign = "center";
-        ctx!.fillStyle = `rgba(${r},${g},${bl},${0.36 + b * 0.22})`;
-        ctx!.fillText(n.concept.title, px, py + s + 18);
+        ctx!.fillStyle = `rgba(${r},${g},${bl},${0.48 + b * 0.24})`;
+        ctx!.fillText(n.concept.title, px, py + s + 18 * nodeGalaxyScale);
         n._sx = px; n._sy = py;
       });
     }
@@ -1127,16 +1377,20 @@ export default function Home() {
         return;
       }
 
+      const backgroundCamera = readBackgroundCamera();
       const previewNodes = getPreviewConnectionNodes(candidate, nodes, W, H);
-      const previewInfluence = inferConstellationFaculty({ x: candidate.nx, y: candidate.ny });
+      const previewInfluence = inferConstellationFaculty(
+        getCandidateConstellationPoint(candidate, backgroundCamera),
+      );
       const previewColors = getInfluenceColors(
         previewInfluence.primary.faculty.id,
         previewInfluence.bridgeSuggestion ? [previewInfluence.bridgeSuggestion.faculty.id] : undefined,
       );
       const [primaryPreviewR, primaryPreviewG, primaryPreviewB] = previewColors[0];
       const [mixedPreviewR, mixedPreviewG, mixedPreviewB] = mixConstellationColors(previewColors);
-      const px = candidate.nx * W;
-      const py = candidate.ny * H;
+      const projected = projectBackgroundStar(candidate, W, H, mouse);
+      const px = projected.x;
+      const py = projected.y;
       const pulse = reducedMotion ? 0.72 : 0.7 + Math.sin(ts * 0.008) * 0.18;
 
       ctx!.save();
@@ -1206,8 +1460,18 @@ export default function Home() {
         y: backgroundCameraOriginRef.current.y,
         zoomFactor: backgroundZoomRef.current,
       };
-      const visibleStars = buildVisibleBackgroundStars(W, H, backgroundCamera, mouse, tileCache);
-      visibleStarsRef.current = visibleStars;
+      syncConstellationLayout(backgroundCamera);
+      const shouldRefreshVisibleStars =
+        lastVisibleStarfieldWidth !== W
+        || lastVisibleStarfieldHeight !== H
+        || lastVisibleStarfieldRevision !== starfieldRevisionRef.current
+        || Math.abs(lastVisibleStarfieldZoom - backgroundCamera.zoomFactor) > 0.0005
+        || Math.abs(lastVisibleStarfieldX - backgroundCamera.x) > STARFIELD_CAMERA_REBUILD_EPSILON
+        || Math.abs(lastVisibleStarfieldY - backgroundCamera.y) > STARFIELD_CAMERA_REBUILD_EPSILON;
+      if (shouldRefreshVisibleStars) {
+        refreshVisibleStars(backgroundCamera);
+      }
+      const visibleStars = visibleStarsRef.current;
 
       ctx!.fillStyle = "rgba(6,8,14,1)";
       ctx!.fillRect(0, 0, W, H);
@@ -1226,10 +1490,16 @@ export default function Home() {
 
     function onResize() {
       resize();
-      applyNodeLayout(nodes, W, H);
+      applyNodeLayout(nodes, W, H, {
+        x: backgroundCameraOriginRef.current.x,
+        y: backgroundCameraOriginRef.current.y,
+        zoomFactor: backgroundZoomRef.current,
+      });
       nebulae[0].x = W * 0.72; nebulae[0].y = H * 0.35;
       nebulae[1].x = W * 0.25; nebulae[1].y = H * 0.65;
       nebulae[2].x = W * 0.55; nebulae[2].y = H * 0.2;
+      lastVisibleStarfieldWidth = -1;
+      lastConstellationProjectionWidth = -1;
     }
 
     function getHitStar(clientX: number, clientY: number): UserStar | null {
@@ -1237,15 +1507,25 @@ export default function Home() {
       const cx = clientX - rect.left;
       const cy = clientY - rect.top;
       const previewPositions = dragPreviewPositionsRef.current;
+      const backgroundCamera = readBackgroundCamera();
       const hitRadiusBoost = coarsePointerRef.current ? 12 : 0;
       let selectedStar: UserStar | null = null;
       let hitDistance = Infinity;
 
       userStarsRef.current.forEach((star) => {
         const previewPosition = previewPositions.get(star.id);
-        const px = (previewPosition?.x ?? star.x) * rect.width;
-        const py = (previewPosition?.y ?? star.y) * rect.height;
-        const hitRadius = star.size * 10 + 8 + hitRadiusBoost;
+        const projected = projectConstellationPoint(
+          {
+            x: previewPosition?.x ?? star.x,
+            y: previewPosition?.y ?? star.y,
+          },
+          rect.width,
+          rect.height,
+          backgroundCamera,
+        );
+        const px = projected.x;
+        const py = projected.y;
+        const hitRadius = Math.max(16, star.size * 10 + 8 + hitRadiusBoost);
         const distance = Math.hypot(px - cx, py - cy);
         if (distance < hitRadius && distance < hitDistance) {
           selectedStar = star;
@@ -1274,8 +1554,15 @@ export default function Home() {
       const dragState = dragStateRef.current;
       if (dragState && dragState.pointerId === e.pointerId) {
         const rect = canvas!.getBoundingClientRect();
-        const nx = (e.clientX - rect.left) / rect.width;
-        const ny = (e.clientY - rect.top) / rect.height;
+        const constellationPoint = screenToConstellationPoint(
+          {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+          },
+          rect.width,
+          rect.height,
+          readBackgroundCamera(),
+        );
         const travelDistance = Math.hypot(e.clientX - dragState.startClientX, e.clientY - dragState.startClientY);
         if (!dragState.moved && travelDistance >= DRAG_DISTANCE_PX) {
           dragState.moved = true;
@@ -1283,7 +1570,7 @@ export default function Home() {
         if (!dragState.moved) {
           return;
         }
-        const [nextX, nextY] = clampPointToOrbit(nx, ny);
+        const [nextX, nextY] = clampPointToOrbit(constellationPoint.x, constellationPoint.y);
         dragPreviewPositionsRef.current.set(dragState.starId, { x: nextX, y: nextY });
         const inference = inferConstellationFaculty({ x: nextX, y: nextY });
         setDragMessage(
@@ -1308,10 +1595,8 @@ export default function Home() {
 
       const canAddMoreStars = starLimit === null || userStarsRef.current.length < starLimit;
       if (canAddMoreStars) {
-        const candidate = findHoveredAddCandidate(
+        const candidate = findHoveredVisibleCandidate(
           visibleStarsRef.current,
-          nodes,
-          userStarsRef.current,
           { x: e.clientX, y: e.clientY },
           mouse,
           W,
@@ -1363,8 +1648,6 @@ export default function Home() {
         starId: hitStar.id,
         startClientX: e.clientX,
         startClientY: e.clientY,
-        startX: hitStar.x,
-        startY: hitStar.y,
         moved: false,
       };
       setSelectedUserStarId(hitStar.id);
@@ -1419,10 +1702,8 @@ export default function Home() {
       const currentUserStars = userStarsRef.current;
       const currentSelectedStarId = selectedUserStarIdRef.current;
       const candidate = (starLimit === null || currentUserStars.length < starLimit)
-        ? findHoveredAddCandidate(
+        ? findHoveredVisibleCandidate(
             visibleStarsRef.current,
-            nodes,
-            currentUserStars,
             { x: e.clientX, y: e.clientY },
             mouse,
             W,
@@ -1432,6 +1713,8 @@ export default function Home() {
         : null;
 
       if (candidate) {
+        const backgroundCamera = readBackgroundCamera();
+        const candidatePoint = getCandidateConstellationPoint(candidate, backgroundCamera);
         if (coarsePointerRef.current && armedAddCandidateIdRef.current !== candidate.id) {
           armedAddCandidateIdRef.current = candidate.id;
           hoveredAddCandidateRef.current = candidate;
@@ -1441,10 +1724,10 @@ export default function Home() {
           return;
         }
 
-        const inference = inferConstellationFaculty({ x: candidate.nx, y: candidate.ny });
+        const inference = inferConstellationFaculty(candidatePoint);
         addUserStar({
-          x: candidate.nx,
-          y: candidate.ny,
+          x: candidatePoint.x,
+          y: candidatePoint.y,
           size: 0.82 + Math.random() * 0.55,
           primaryDomainId: inference.primary.faculty.id,
           relatedDomainIds: inference.bridgeSuggestion ? [inference.bridgeSuggestion.faculty.id] : undefined,
@@ -1509,7 +1792,9 @@ export default function Home() {
       }
 
       const topElement = document.elementFromPoint(e.clientX, e.clientY);
-      if (topElement !== canvas) {
+      const targetElement = topElement instanceof Element ? topElement : null;
+      const wheelInsideZoomUi = Boolean(targetElement?.closest(".metis-zoom-pill"));
+      if (targetElement !== canvas && !wheelInsideZoomUi) {
         return;
       }
 
@@ -1530,6 +1815,7 @@ export default function Home() {
       const nextZoomFactor = clampBackgroundZoomFactor(currentCamera.zoomFactor * zoomMultiplier);
 
       if (Math.abs(nextZoomFactor - currentCamera.zoomFactor) < 0.0005) {
+        registerZoomInteraction();
         return;
       }
 
@@ -1553,7 +1839,7 @@ export default function Home() {
     document.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onCanvasPress);
     canvas.addEventListener("pointerleave", onPointerLeave);
-    canvas.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("blur", onBlur);
 
     return () => {
@@ -1563,10 +1849,10 @@ export default function Home() {
       document.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onCanvasPress);
       canvas.removeEventListener("pointerleave", onPointerLeave);
-      canvas.removeEventListener("wheel", onWheel);
+      window.removeEventListener("wheel", onWheel);
       window.removeEventListener("blur", onBlur);
     };
-  }, [addUserStar, clearConstellationHoverState, closeConcept, openStarObservatory, setBackgroundZoomTarget, starLimit, updateUserStarById]);
+  }, [addUserStar, clearConstellationHoverState, closeConcept, openStarObservatory, registerZoomInteraction, setBackgroundZoomTarget, starLimit, updateUserStarById]);
 
   /* card scroll animation */
   useEffect(() => {
@@ -1601,49 +1887,104 @@ export default function Home() {
       <canvas ref={canvasRef} id="universe" className="metis-universe" />
 
       <div className="metis-hero-overlay">
-        <div className="metis-hero-shell">
-          <h1 className="metis-hero-headline">Give the night sky a mind.</h1>
+        <div className={`metis-hero-shell ${zoomInteracting ? "is-muted" : ""}`}>
+          <h1 className="metis-hero-headline">Discover everything</h1>
         </div>
       </div>
 
-      <div className="metis-zoom-panel" aria-live="polite">
-        <div className="metis-zoom-panel-label">Starfield depth</div>
-        <div className="metis-zoom-panel-value">{backgroundZoomLabel}</div>
-        <p className="metis-zoom-panel-copy">{backgroundZoomNarrative}</p>
-        <div className="metis-zoom-panel-actions">
+      <div className={`metis-zoom-pill ${zoomInteracting ? "is-muted" : ""}`} aria-live="polite">
+        <div className="metis-zoom-pill-value">{backgroundZoomLabel}</div>
+        <div className="metis-zoom-pill-actions">
           <button
             type="button"
-            className="metis-zoom-btn"
+            className="metis-zoom-pill-btn"
             onClick={() => nudgeBackgroundZoom("in")}
             disabled={backgroundZoomFactor <= MIN_BACKGROUND_ZOOM_FACTOR + 0.01}
+            aria-label="Zoom closer"
           >
-            Closer
+            -
           </button>
           <button
             type="button"
-            className="metis-zoom-btn"
+            className="metis-zoom-pill-btn metis-zoom-pill-btn-reset"
             onClick={resetBackgroundZoom}
             disabled={Math.abs(backgroundZoomFactor - 1) < 0.01}
+            aria-label="Reset zoom"
           >
-            Reset
+            1x
           </button>
           <button
             type="button"
-            className="metis-zoom-btn"
+            className="metis-zoom-pill-btn"
             onClick={() => nudgeBackgroundZoom("out")}
             disabled={backgroundZoomFactor >= MAX_BACKGROUND_ZOOM_FACTOR - 0.5}
+            aria-label="Zoom farther"
           >
-            Farther
+            +
           </button>
         </div>
       </div>
 
       <section id="build-map" className="metis-build-section">
         <div className="metis-build-intro">
-
+          <div className="metis-section-kicker">Build map</div>
+          <h2 className="metis-section-title">Turn uploads into stars with a METIS brain pass.</h2>
+          <p className="metis-section-copy">
+            Seed indexed sources directly into orbit, then open any star&apos;s observatory to add
+            more files, notes, and grounded chat. <span className="metis-inline-accent">Each star opens its own observatory</span>,
+            so every attached source stays filed near the faculty it should strengthen.
+          </p>
         </div>
 
+        <div className="metis-build-toolbar">
+          <div className="metis-build-stats" aria-live="polite">
+            <div className="metis-build-stat">{starCountLabel}</div>
+            <div className="metis-build-stat">{detectedSourceCountLabel}</div>
+            <div className="metis-build-stat">{readyToMapCountLabel}</div>
+            <div className="metis-build-stat">{attachmentsCountLabel}</div>
+          </div>
 
+          <div className="metis-star-controls-actions">
+            <button
+              type="button"
+              className="metis-star-btn"
+              onClick={() => void mapIndexedSources()}
+              disabled={indexesLoading || unmappedIndexes.length === 0}
+            >
+              Seed indexed sources
+            </button>
+            <button
+              type="button"
+              className="metis-star-btn danger"
+              onClick={() => void handleRemoveSelectedStar()}
+              disabled={!selectedUserStar}
+            >
+              Remove selected
+            </button>
+            <button
+              type="button"
+              className="metis-star-btn"
+              onClick={() => void handleResetOrbit()}
+              disabled={userStars.length === 0}
+            >
+              Reset orbit
+            </button>
+          </div>
+        </div>
+
+        <div className="metis-build-studio-shell">
+          <div className={`metis-build-note ${buildNoteTone}`}>{buildNoteMessage}</div>
+
+          <div className="metis-star-editor">
+            <div className="metis-star-editor-head">Observatory discipline</div>
+            <p className="metis-star-editor-copy">{selectedStarSummary}</p>
+            <p className="metis-star-editor-copy">
+              Follow the faculty ring when you drag or seed stars. Claimed stars keep their own
+              observatories, so uploads, attachments, and grounded chat remain aligned to the same
+              manifest path.
+            </p>
+          </div>
+        </div>
       </section>
 
 
@@ -1812,73 +2153,96 @@ body {
   pointer-events: none;
 }
 .metis-hero-shell {
-  max-width: 620px;
+  max-width: 560px;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 220ms ease,
+    transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
 }
-.metis-zoom-panel {
+.metis-hero-shell.is-muted {
+  opacity: 0;
+  transform: translateY(14px);
+}
+.metis-zoom-pill {
   position: fixed;
-  left: 32px;
+  left: 50%;
   bottom: 28px;
+  transform: translateX(-50%);
   z-index: 140;
-  width: min(360px, calc(100vw - 104px));
-  padding: 16px 18px 18px;
-  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  max-width: calc(100vw - 120px);
+  padding: 9px 10px 9px 16px;
+  border-radius: 999px;
   border: 1px solid rgba(200,210,225,0.12);
   background:
-    linear-gradient(180deg, rgba(17,22,36,0.86), rgba(8,12,22,0.92)),
-    radial-gradient(circle at top left, rgba(199,218,121,0.12), rgba(199,218,121,0) 38%),
-    radial-gradient(circle at top right, rgba(148,153,239,0.14), rgba(148,153,239,0) 42%);
-  box-shadow: 0 22px 60px rgba(0,0,0,0.32);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+    linear-gradient(180deg, rgba(17,22,36,0.82), rgba(8,12,22,0.9)),
+    radial-gradient(circle at left center, rgba(232,184,74,0.14), rgba(232,184,74,0) 38%),
+    radial-gradient(circle at right center, rgba(148,153,239,0.14), rgba(148,153,239,0) 48%);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.26);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  opacity: 1;
+  transition:
+    opacity 180ms ease,
+    transform 340ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  will-change: opacity, transform;
 }
-.metis-zoom-panel-label {
-  color: rgba(232,184,74,0.82);
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
+.metis-zoom-pill.is-muted {
+  opacity: 0;
+  transform: translateX(-50%) translateY(12px) scale(0.97);
+  pointer-events: none;
 }
-.metis-zoom-panel-value {
-  margin-top: 10px;
+.metis-zoom-pill-value {
   font-family: 'Outfit', sans-serif;
-  font-size: clamp(28px, 3vw, 42px);
+  font-size: clamp(18px, 2vw, 24px);
   line-height: 1;
   color: rgba(240,244,255,0.96);
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
+  white-space: nowrap;
 }
-.metis-zoom-panel-copy {
-  margin-top: 10px;
-  color: rgba(206,214,230,0.74);
-  font-size: 12px;
-  line-height: 1.65;
-}
-.metis-zoom-panel-actions {
+.metis-zoom-pill-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
+  align-items: center;
+  gap: 6px;
 }
-.metis-zoom-btn {
+.metis-zoom-pill-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(200,210,225,0.14);
   background: rgba(19, 28, 54, 0.58);
   color: rgba(236,241,250,0.92);
   border-radius: 999px;
-  padding: 9px 14px;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   cursor: pointer;
+  pointer-events: auto;
   transition: border-color 0.24s ease, color 0.24s ease, transform 0.24s ease, background 0.24s ease;
 }
-.metis-zoom-btn:hover:not(:disabled) {
+.metis-zoom-pill-btn:hover:not(:disabled) {
   border-color: rgba(232,184,74,0.34);
   color: rgba(255,246,222,0.96);
   transform: translateY(-1px);
   background: rgba(28, 39, 74, 0.72);
 }
-.metis-zoom-btn:disabled {
+.metis-zoom-pill-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.metis-zoom-pill-btn-reset {
+  width: auto;
+  min-width: 44px;
+  padding: 0 11px;
 }
 .metis-hero-kicker {
   font-family: 'Space Grotesk', sans-serif;
@@ -1896,9 +2260,9 @@ body {
   font-size: clamp(42px, 5.5vw, 72px);
   line-height: 1.1; color: var(--text-bright);
   opacity: 0; transform: translateY(20px);
-  animation: metis-fadeUp 1.8s ease 2.8s forwards;
+  animation: metis-fadeUp 1.2s ease 0.6s forwards;
   max-width: 560px; letter-spacing: -0.5px;
-  margin-top: 12px;
+  margin-top: 0;
 }
 .metis-hero-copy {
   margin-top: 20px;
@@ -2261,11 +2625,9 @@ body {
     top: 78px;
   }
 
-  .metis-zoom-panel {
-    left: 20px;
-    right: 20px;
-    bottom: 88px;
-    width: auto;
+  .metis-zoom-pill {
+    bottom: 84px;
+    max-width: calc(100vw - 40px);
   }
 
   .metis-build-section,

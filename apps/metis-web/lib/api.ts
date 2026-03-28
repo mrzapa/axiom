@@ -77,6 +77,37 @@ export interface IndexSummary {
   backend: string;
   created_at: string;
   embedding_signature: string;
+  brain_pass?: BrainPassMetadata;
+}
+
+export interface BrainPassPlacement {
+  faculty_id: string;
+  confidence: number;
+  rationale: string;
+  provenance: string;
+  secondary_faculty_id?: string;
+  evidence?: string[];
+}
+
+export interface BrainPassNormalizedSource {
+  source_path: string;
+  source_name: string;
+  source_modality: string;
+  tribev2_input_modality: string;
+  normalized_path?: string;
+  extraction_method?: string;
+  text_preview?: string;
+  text_length?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BrainPassMetadata {
+  provider: string;
+  native_available?: boolean;
+  source_modalities?: string[];
+  normalized_sources?: BrainPassNormalizedSource[];
+  placement?: BrainPassPlacement;
+  analysis?: Record<string, unknown>;
 }
 
 export interface RagQueryResult {
@@ -1037,6 +1068,7 @@ export interface IndexBuildResult {
   chunk_count: number;
   embedding_signature: string;
   vector_backend: string;
+  brain_pass?: BrainPassMetadata;
 }
 
 export async function uploadFiles(files: File[]): Promise<{ paths: string[] }> {

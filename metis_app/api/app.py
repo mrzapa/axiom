@@ -227,7 +227,7 @@ def create_app() -> FastAPI:
                 yield f"event: message\ndata: {json.dumps(event)}\n\n"
             try:
                 result = future.result()
-                yield f"event: message\ndata: {json.dumps({'type': 'build_complete', 'index_id': result.index_id, 'manifest_path': str(result.manifest_path), 'document_count': result.document_count, 'chunk_count': result.chunk_count, 'embedding_signature': result.embedding_signature, 'vector_backend': result.vector_backend})}\n\n"
+                yield f"event: message\ndata: {json.dumps({'type': 'build_complete', 'index_id': result.index_id, 'manifest_path': str(result.manifest_path), 'document_count': result.document_count, 'chunk_count': result.chunk_count, 'embedding_signature': result.embedding_signature, 'vector_backend': result.vector_backend, 'brain_pass': result.brain_pass})}\n\n"
             except (ValueError, RuntimeError) as exc:
                 yield f"event: message\ndata: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
 

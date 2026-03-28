@@ -188,6 +188,10 @@ export function getBackgroundCameraScale(zoomFactor: number): number {
   return 1 / Math.sqrt(clampBackgroundZoomFactor(zoomFactor));
 }
 
+export function getConstellationCameraScale(zoomFactor: number): number {
+  return 0.08 + getBackgroundCameraScale(zoomFactor) * 0.92;
+}
+
 export function worldToScreenPoint(
   point: Point,
   width: number,
@@ -202,6 +206,65 @@ export function worldToScreenPoint(
     x: (point.x - camera.x) * scale + width / 2 + offset.x,
     y: (point.y - camera.y) * scale + height / 2 + offset.y,
   };
+}
+
+export function constellationPointToWorldPoint(
+  point: Point,
+  width: number,
+  height: number,
+): Point {
+  return {
+    x: (point.x - 0.5) * width,
+    y: (point.y - 0.5) * height,
+  };
+}
+
+export function worldPointToConstellationPoint(
+  point: Point,
+  width: number,
+  height: number,
+): Point {
+  return {
+    x: point.x / width + 0.5,
+    y: point.y / height + 0.5,
+  };
+}
+
+export function projectConstellationPoint(
+  point: Point,
+  width: number,
+  height: number,
+  camera: BackgroundCameraState,
+  parallaxOffset?: Point,
+): Point {
+  const scale = getConstellationCameraScale(camera.zoomFactor);
+  const offset = parallaxOffset ?? { x: 0, y: 0 };
+  const worldPoint = constellationPointToWorldPoint(point, width, height);
+
+  return {
+    x: (worldPoint.x - camera.x) * scale + width / 2 + offset.x,
+    y: (worldPoint.y - camera.y) * scale + height / 2 + offset.y,
+  };
+}
+
+export function screenToConstellationPoint(
+  point: Point,
+  width: number,
+  height: number,
+  camera: BackgroundCameraState,
+  parallaxOffset?: Point,
+): Point {
+  const scale = getConstellationCameraScale(camera.zoomFactor);
+  const offset = parallaxOffset ?? { x: 0, y: 0 };
+
+  return worldPointToConstellationPoint(
+    {
+      x: (point.x - width / 2 - offset.x) / scale + camera.x,
+      y: (point.y - height / 2 - offset.y) / scale + camera.y,
+    },
+    width,
+    height,
+  );
 }
 
 export function screenToWorldPoint(
@@ -303,7 +366,7 @@ export function projectBackgroundStar(
 export function isAddableBackgroundStar(
   star: Pick<ConstellationFieldStar, "layer" | "baseSize" | "nx" | "ny">,
   nodes: Array<Pick<ConstellationNodePoint, "x" | "y">>,
-  userStars: UserStar[],
+  userStars: Array<Pick<UserStar, "x" | "y">>,
   width: number,
   height: number,
 ): boolean {
@@ -347,7 +410,7 @@ export function isAddableBackgroundStar(
 export function findHoveredAddCandidate(
   stars: ConstellationFieldStar[],
   nodes: Array<Pick<ConstellationNodePoint, "x" | "y">>,
-  userStars: UserStar[],
+  userStars: Array<Pick<UserStar, "x" | "y">>,
   pointer: Point,
   mouse: Point,
   width: number,

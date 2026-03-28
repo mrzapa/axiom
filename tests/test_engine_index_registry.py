@@ -43,6 +43,7 @@ def test_registry_lists_built_indexes_and_reads_metadata(tmp_path, monkeypatch) 
         "embedding_signature",
         "collection_name",
         "legacy_compat",
+        "brain_pass",
         "metadata",
     }
     assert listed_index["index_id"] == "notes-index"
@@ -53,6 +54,7 @@ def test_registry_lists_built_indexes_and_reads_metadata(tmp_path, monkeypatch) 
     assert listed_index["embedding_signature"] == "mock"
     assert listed_index["collection_name"] == "notes-index"
     assert listed_index["legacy_compat"] is False
+    assert listed_index["brain_pass"]["provider"] == "fallback"
     assert isinstance(listed_index["metadata"], dict)
     assert listed_index["metadata"]["document_title"] == "notes.txt"
 

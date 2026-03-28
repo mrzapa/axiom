@@ -35,6 +35,7 @@ def test_build_index_persists_manifest_and_returns_summary(tmp_path, monkeypatch
     assert result.chunk_count >= 1
     assert result.embedding_signature == "mock"
     assert result.vector_backend == "json"
+    assert result.brain_pass["provider"] == "fallback"
     assert any(event.get("type") == "status" for event in events)
 
 

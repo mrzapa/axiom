@@ -25,6 +25,7 @@ from typing import Any, Callable
 
 from metis_app.models.parity_types import IndexManifest
 from metis_app.models.session_types import EvidenceSource
+from metis_app.services.brain_pass import run_brain_pass
 from metis_app.services.reranker import rerank_hits
 from metis_app.services.semantic_chunker import chunk_text_semantic
 from metis_app.utils.document_loader import load_document
@@ -936,6 +937,13 @@ def build_index_bundle(
     chunk_size = int(settings.get("chunk_size", 800))
     overlap = int(settings.get("chunk_overlap", 100))
     use_kreuzberg = str(settings.get("document_loader", "auto") or "auto") != "plain"
+    brain_pass = run_brain_pass(documents, settings, post_message=post_message)
+    brain_pass_metadata = brain_pass.to_metadata()
+    source_brain_metadata = {
+        str(item.get("source_path") or ""): dict(item)
+        for item in brain_pass_metadata.get("normalized_sources") or []
+        if str(item.get("source_path") or "").strip()
+    }
 
     try:
         emb = create_embeddings(settings)
@@ -969,13 +977,18 @@ def build_index_bundle(
         source = pathlib.Path(path).name
         if callable(post_message):
             post_message({"type": "status", "text": f"Reading {source}…"})
-        text = load_document(path, use_kreuzberg=use_kreuzberg)
+        text = brain_pass.index_text_by_source.get(str(path))
+        if text is None:
+            text = load_document(path, use_kreuzberg=use_kreuzberg)
         outline_nodes = _extract_outline_nodes(text, str(path))
         all_outline_nodes.extend(outline_nodes)
         all_events.extend(_extract_events(text, source))
         raw_chunks = chunk_text_semantic(text, chunk_size, overlap, strategy=chunk_strategy)
         per_doc_chunks.append((source, str(path), list(raw_chunks)))
         doc_child_chunks: list[dict[str, Any]] = []
+        brain_source = source_brain_metadata.get(str(path), {})
+        source_modality = str(brain_source.get("source_modality") or "text")
+        extraction_method = str(brain_source.get("extraction_method") or "")
         search_cursor = 0
         for idx, chunk in enumerate(raw_chunks):
             char_start = text.find(chunk, search_cursor)
@@ -1013,6 +1026,9 @@ def build_index_bundle(
                         "char_span": [char_start, char_end],
                         "header_path": header_path,
                         "content_type": "child_chunk",
+                        "source_modality": source_modality,
+                        "brain_pass_provider": brain_pass.provider,
+                        "brain_pass_extraction_method": extraction_method,
                     },
                 }
             )
@@ -1064,6 +1080,9 @@ def build_index_bundle(
                         "child_chunk_ids": child_ids,
                         "child_count": len(child_ids),
                         "content_type": "parent_chunk",
+                        "source_modality": source_modality,
+                        "brain_pass_provider": brain_pass.provider,
+                        "brain_pass_extraction_method": extraction_method,
                     },
                 }
             )
@@ -1148,6 +1167,13 @@ def build_index_bundle(
             "parent_child_enabled": True,
             "parent_chunk_size": parent_chunk_size,
             "parent_chunk_overlap": parent_chunk_overlap,
+            "brain_pass": brain_pass_metadata,
+            "brain_pass_provider": brain_pass.provider,
+            "source_modality_map": {
+                str(item.get("source_path") or ""): str(item.get("source_modality") or "unknown")
+                for item in brain_pass_metadata.get("normalized_sources") or []
+                if str(item.get("source_path") or "").strip()
+            },
         },
     )
 

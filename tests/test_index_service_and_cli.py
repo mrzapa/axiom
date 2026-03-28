@@ -7,6 +7,7 @@ import pytest
 
 from metis_app.cli import main as cli_main
 import metis_app.models.app_model as app_model_module
+from metis_app.engine.index_registry import list_indexes as list_engine_indexes
 from metis_app.services.index_service import (
     build_index_bundle,
     load_index_manifest,
@@ -59,6 +60,44 @@ def test_index_service_persists_manifest_and_lists_indexes(tmp_path) -> None:
     assert manifest.document_count == 1
     assert loaded.index_path.endswith("manifest.json")
     assert listed and listed[0].index_id == bundle.index_id
+
+
+def test_index_service_embeds_brain_pass_metadata(tmp_path) -> None:
+    src = tmp_path / "guide.pdf"
+    src.write_text(
+        "Implementation guide with evidence and analysis.\n"
+        "Step by step instructions should be easy to retrieve.\n",
+        encoding="utf-8",
+    )
+
+    settings = {"embedding_provider": "mock", "document_loader": "plain"}
+    bundle = build_index_bundle([str(src)], settings)
+    manifest_path = save_index_bundle(bundle, index_dir=tmp_path / "indexes")
+    listed = list_engine_indexes(tmp_path / "indexes")
+
+    brain_pass = dict(bundle.metadata.get("brain_pass") or {})
+    assert brain_pass
+    assert brain_pass["provider"] == "fallback"
+    assert brain_pass["placement"]["faculty_id"] in {"knowledge", "reasoning", "skills"}
+    assert bundle.chunks
+    assert bundle.chunks[0]["metadata"]["source_modality"] == "document"
+    assert bundle.chunks[0]["metadata"]["brain_pass_provider"] == "fallback"
+    assert listed and listed[0]["brain_pass"]["placement"]["faculty_id"] == brain_pass["placement"]["faculty_id"]
+    assert manifest_path.name == "manifest.json"
+
+
+def test_index_service_builds_audio_placeholder_bundle(tmp_path) -> None:
+    src = tmp_path / "meeting.mp3"
+    src.write_bytes(b"not-real-audio-bytes")
+
+    settings = {"embedding_provider": "mock", "document_loader": "plain"}
+    bundle = build_index_bundle([str(src)], settings)
+
+    assert bundle.chunks
+    assert bundle.metadata["brain_pass"]["provider"] == "fallback"
+    assert bundle.metadata["source_modality_map"][str(src)] == "audio"
+    assert bundle.chunks[0]["metadata"]["source_modality"] == "audio"
+    assert "Uploaded audio source" in bundle.chunks[0]["text"]
 
 
 def test_chroma_adapter_round_trips_queries_natively(tmp_path) -> None:

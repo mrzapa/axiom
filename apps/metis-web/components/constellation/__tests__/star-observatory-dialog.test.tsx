@@ -99,6 +99,16 @@ describe("StarObservatoryDialog", () => {
       chunk_count: 12,
       embedding_signature: "embed-orbit",
       vector_backend: "faiss",
+      brain_pass: {
+        provider: "fallback",
+        placement: {
+          faculty_id: "reasoning",
+          confidence: 0.68,
+          rationale: "Filed near Reasoning because the upload emphasized argument and evidence.",
+          provenance: "fallback-heuristic",
+          secondary_faculty_id: "knowledge",
+        },
+      },
     };
     vi.mocked(buildIndexStream).mockImplementation(async (_paths, _settings, onEvent) => {
       onEvent({ type: "status", text: "embedding" });
@@ -132,16 +142,22 @@ describe("StarObservatoryDialog", () => {
         "star-1",
         expect.objectContaining({
           label: "Orbit dossier",
+          primaryDomainId: "reasoning",
+          relatedDomainIds: ["knowledge"],
+          intent: "Filed by METIS brain pass",
+          notes: "Filed near Reasoning because the upload emphasized argument and evidence.",
           linkedManifestPaths: ["/tmp/orbit-dossier.json"],
           activeManifestPath: "/tmp/orbit-dossier.json",
           linkedManifestPath: "/tmp/orbit-dossier.json",
+          x: expect.any(Number),
+          y: expect.any(Number),
         }),
       );
     });
 
     const payload = vi.mocked(onUpdateStar).mock.calls[0]?.[1];
     expect(payload?.stage).toBeUndefined();
-    expect(await screen.findByText(/Built Orbit dossier and attached it/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Built Orbit dossier and filed it near Reasoning/i)).toBeInTheDocument();
   });
 
   it("saves meaning, switches the active index, and opens chat from the active orbit", async () => {
