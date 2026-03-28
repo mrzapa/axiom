@@ -34,6 +34,16 @@ function readLocal(): UserStar[] {
   }
 }
 
+function normalizeStarCollection(stars: ReadonlyArray<UserStar>): UserStar[] {
+  return stars.map((star) =>
+    normalizeUserStar({
+      ...star,
+      id: star.id,
+      createdAt: star.createdAt,
+    }),
+  );
+}
+
 export function useConstellationStars() {
   const [userStars, setUserStars] = useState<UserStar[]>(() => capUserStars(readLocal()));
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -67,8 +77,8 @@ export function useConstellationStars() {
       });
   }, []);
 
-  const saveBoth = useCallback(async (nextStars: UserStar[]) => {
-    const capped = capUserStars(nextStars);
+  const saveBoth = useCallback(async (nextStars: ReadonlyArray<UserStar>) => {
+    const capped = capUserStars(normalizeStarCollection(nextStars));
     setUserStars(capped);
     userStarsRef.current = capped;
     persistLocal(capped);
@@ -167,6 +177,10 @@ export function useConstellationStars() {
     await saveBoth([]);
   }, [saveBoth]);
 
+  const replaceUserStars = useCallback(async (nextStars: ReadonlyArray<UserStar>) => {
+    await saveBoth(nextStars);
+  }, [saveBoth]);
+
   const updateUserStarById = useCallback(
     async (
       starId: string,
@@ -220,6 +234,7 @@ export function useConstellationStars() {
     removeLastUserStar,
     removeUserStarById,
     resetUserStars,
+    replaceUserStars,
     updateUserStarById,
     starLimit: CONSTELLATION_USER_STAR_LIMIT,
   };

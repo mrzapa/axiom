@@ -6,11 +6,13 @@ import {
   buildCameraForConstellationPoint,
   buildStarFocusCamera,
   cloneCameraSnapshot,
+  createUserStarVisualProfile,
   DESKTOP_STAR_FOCUS_LAYOUT,
   findClosestProjectedTarget,
   getStarFocusLayout,
   isCameraSettled,
   MOBILE_STAR_FOCUS_LAYOUT,
+  projectUserStarScreenPoint,
   projectFocusedStar,
 } from "@/lib/constellation-focus";
 
@@ -112,6 +114,28 @@ describe("constellation focus helpers", () => {
     // With mouse positioned below center, y should shift down
     expect(withMouseTarget.x).toBeGreaterThan(noMouseTarget.x);
     expect(withMouseTarget.y).toBeGreaterThan(noMouseTarget.y);
+  });
+
+  it("creates deterministic visual profiles for seeded user stars", () => {
+    const firstProfile = createUserStarVisualProfile("star-seeded");
+    const secondProfile = createUserStarVisualProfile("star-seeded");
+    const differentProfile = createUserStarVisualProfile("star-other");
+
+    expect(secondProfile).toEqual(firstProfile);
+    expect(differentProfile).not.toEqual(firstProfile);
+    expect(firstProfile.coreIntensity).toBeGreaterThan(0.88);
+    expect(firstProfile.coreIntensity).toBeLessThan(1.22);
+  });
+
+  it("projects screen-space user-star positions through the shared helper used by hit targets", () => {
+    const camera = { x: 120, y: -40, zoomFactor: 1.8 };
+    const mouse = { x: 700, y: 500 };
+    const star = { id: "star-a", x: 0.62, y: 0.4, size: 1 };
+    const projectedPoint = projectUserStarScreenPoint(star, 1200, 800, camera, mouse);
+    const projectedTarget = buildProjectedUserStarHitTarget(star, 1200, 800, camera, 0, mouse);
+
+    expect(projectedTarget.x).toBeCloseTo(projectedPoint.x, 6);
+    expect(projectedTarget.y).toBeCloseTo(projectedPoint.y, 6);
   });
 
   it("finds the closest cached hit target from screen-space projections", () => {

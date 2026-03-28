@@ -51,6 +51,7 @@ import {
   buildProjectedUserStarHitTarget,
   buildStarFocusCamera,
   cloneCameraSnapshot,
+  createUserStarVisualProfile,
   findClosestProjectedTarget,
   isCameraSettled,
   type ConstellationCameraSnapshot,
@@ -142,6 +143,28 @@ interface HomeRagPulseState {
   manifestPaths: Set<string>;
   facultyIds: Set<string>;
   starIds: Set<string>;
+}
+
+interface HomeToastState {
+  actionLabel?: string;
+  dismissMs?: number | null;
+  id: number;
+  message: string;
+  onAction?: (() => void) | null;
+  tone: "default" | "error";
+}
+
+interface ProjectedUserStarRenderState {
+  attachmentCount: number;
+  dragging: boolean;
+  fadeIn: number;
+  influenceColors: ReturnType<typeof buildStarInfluenceColors>;
+  mixed: [number, number, number];
+  profile: ReturnType<typeof createUserStarVisualProfile>;
+  ringCount: number;
+  selected: boolean;
+  star: UserStar;
+  target: ProjectedUserStarHitTarget;
 }
 
 function nextDeterministicSeed(seed: number): number {
@@ -447,6 +470,32 @@ function getStarFadeProgress(star: Pick<UserStar, "createdAt">, nowMs: number): 
   return Math.max(0, Math.min(1, (nowMs - star.createdAt) / USER_STAR_FADE_IN_DURATION_MS));
 }
 
+function cloneUserStarSnapshot(stars: readonly UserStar[]): UserStar[] {
+  return stars.map((star) => ({
+    ...star,
+    connectedUserStarIds: star.connectedUserStarIds ? [...star.connectedUserStarIds] : undefined,
+    linkedManifestPaths: star.linkedManifestPaths ? [...star.linkedManifestPaths] : undefined,
+    relatedDomainIds: star.relatedDomainIds ? [...star.relatedDomainIds] : undefined,
+  }));
+}
+
+function clampColorChannel(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function applyTintBias(
+  color: readonly [number, number, number],
+  tintBias: number,
+): [number, number, number] {
+  const [red, green, blue] = color;
+
+  return [
+    clampColorChannel(red + tintBias * 16),
+    clampColorChannel(green + tintBias * 6),
+    clampColorChannel(blue - tintBias * 14),
+  ];
+}
+
 function getRenderEpochMs(frameTimestampMs: number): number {
   const timeOrigin = typeof performance !== "undefined" ? performance.timeOrigin : Number.NaN;
   return Number.isFinite(timeOrigin) ? timeOrigin + frameTimestampMs : Date.now();
@@ -500,6 +549,7 @@ export default function Home() {
     addUserStars,
     removeUserStarById,
     resetUserStars,
+    replaceUserStars,
     updateUserStarById,
     starLimit,
   } = useConstellationStars();
@@ -516,8 +566,7 @@ export default function Home() {
   const [hoveredAddCandidateId, setHoveredAddCandidateId] = useState<string | null>(null);
   const [hoveredUserStarId, setHoveredUserStarId] = useState<string | null>(null);
   const [dragMessage, setDragMessage] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [toastTone, setToastTone] = useState<"default" | "error">("default");
+  const [toastState, setToastState] = useState<HomeToastState | null>(null);
   const [backgroundZoomFactor, setBackgroundZoomFactor] = useState(1);
   const [zoomInteracting, setZoomInteracting] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -571,6 +620,7 @@ export default function Home() {
   const optimisticIndexKeysRef = useRef<Set<string>>(new Set());
   const conceptHideTimeoutRef = useRef<number | null>(null);
   const starTooltipHideTimeoutRef = useRef<number | null>(null);
+  const toastDismissTimeoutRef = useRef<number | null>(null);
   const zoomInteractionTimeoutRef = useRef<number | null>(null);
   const dragPreviewPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const ragPulseStateRef = useRef<HomeRagPulseState | null>(null);
@@ -596,6 +646,40 @@ export default function Home() {
     selectedUserStarIdRef.current = selectedUserStarId;
   }, [selectedUserStarId]);
 
+  const clearToast = useCallback(() => {
+    if (toastDismissTimeoutRef.current !== null) {
+      window.clearTimeout(toastDismissTimeoutRef.current);
+      toastDismissTimeoutRef.current = null;
+    }
+
+    setToastState(null);
+  }, []);
+
+  const showToast = useCallback((
+    options: Omit<HomeToastState, "id">,
+  ) => {
+    if (toastDismissTimeoutRef.current !== null) {
+      window.clearTimeout(toastDismissTimeoutRef.current);
+      toastDismissTimeoutRef.current = null;
+    }
+
+    const nextToast: HomeToastState = {
+      dismissMs: 2400,
+      onAction: null,
+      ...options,
+      id: Date.now(),
+    };
+
+    setToastState(nextToast);
+
+    if (nextToast.dismissMs !== null) {
+      toastDismissTimeoutRef.current = window.setTimeout(() => {
+        setToastState((current) => (current?.id === nextToast.id ? null : current));
+        toastDismissTimeoutRef.current = null;
+      }, nextToast.dismissMs);
+    }
+  }, []);
+
   useEffect(() => {
     const previewPositions = dragPreviewPositionsRef.current;
     const validIds = new Set(userStars.map((star) => star.id));
@@ -612,6 +696,9 @@ export default function Home() {
     }
     if (starTooltipHideTimeoutRef.current !== null) {
       window.clearTimeout(starTooltipHideTimeoutRef.current);
+    }
+    if (toastDismissTimeoutRef.current !== null) {
+      window.clearTimeout(toastDismissTimeoutRef.current);
     }
     if (zoomInteractionTimeoutRef.current !== null) {
       window.clearTimeout(zoomInteractionTimeoutRef.current);
@@ -647,6 +734,54 @@ export default function Home() {
     () => (selectedUserStar ? resolveStarFaculty(selectedUserStar) : null),
     [selectedUserStar],
   );
+  const removeStarWithUndo = useCallback(async (
+    starId: string,
+    options?: {
+      afterRemove?: () => void;
+      removedMessage?: string;
+      restoredMessage?: string;
+    },
+  ) => {
+    const snapshot = cloneUserStarSnapshot(userStarsRef.current);
+    const removedStar = snapshot.find((star) => star.id === starId) ?? null;
+    if (!removedStar) {
+      return false;
+    }
+
+    await removeUserStarById(starId);
+    options?.afterRemove?.();
+    setAddMessage(null);
+    setDragMessage(null);
+
+    const removedLabel = removedStar.label ?? "Star";
+    showToast({
+      actionLabel: "Undo",
+      dismissMs: 4200,
+      message: options?.removedMessage ?? `${removedLabel} removed from the constellation.`,
+      onAction: () => {
+        void (async () => {
+          try {
+            await replaceUserStars(snapshot);
+            showToast({
+              dismissMs: 2400,
+              message: options?.restoredMessage ?? `${removedLabel} restored to the constellation.`,
+              tone: "default",
+            });
+          } catch (error) {
+            console.error("Failed to restore constellation stars", error);
+            showToast({
+              dismissMs: 4200,
+              message: "Unable to restore the removed star right now.",
+              tone: "error",
+            });
+          }
+        })();
+      },
+      tone: "default",
+    });
+
+    return true;
+  }, [removeUserStarById, replaceUserStars, showToast]);
   const starCountLabel = useMemo(
     () => (starLimit === null ? `${userStars.length} added stars` : `${userStars.length}/${starLimit} added stars`),
     [starLimit, userStars.length],
@@ -937,13 +1072,23 @@ export default function Home() {
       return;
     }
 
-    await removeUserStarById(selectedUserStar.id);
-    closeStarDetails({ clearSelection: true, restoreCamera: "jump" });
-    setDragMessage(null);
-    setAddMessage(null);
-    setToastTone("default");
-    setToastMessage(`${selectedUserStar.label ?? "Star"} removed from the constellation.`);
-  }, [closeStarDetails, removeUserStarById, selectedUserStar]);
+    await removeStarWithUndo(selectedUserStar.id, {
+      afterRemove: () => closeStarDetails({ clearSelection: true, restoreCamera: "jump" }),
+    });
+  }, [closeStarDetails, removeStarWithUndo, selectedUserStar]);
+
+  const handleRemoveHoveredStar = useCallback(async () => {
+    if (!hoveredUserStarId) {
+      return;
+    }
+
+    await removeStarWithUndo(hoveredUserStarId, {
+      afterRemove: () => {
+        closeStarTooltip();
+        closeConcept();
+      },
+    });
+  }, [closeConcept, closeStarTooltip, hoveredUserStarId, removeStarWithUndo]);
 
   const handleResetOrbit = useCallback(async () => {
     if (userStars.length === 0) {
@@ -954,9 +1099,12 @@ export default function Home() {
     closeStarDetails({ clearSelection: true, restoreCamera: "jump" });
     setDragMessage(null);
     setAddMessage(null);
-    setToastTone("default");
-    setToastMessage("Constellation orbit reset.");
-  }, [closeStarDetails, resetUserStars, userStars.length]);
+    showToast({
+      dismissMs: 2400,
+      message: "Constellation orbit reset.",
+      tone: "default",
+    });
+  }, [closeStarDetails, resetUserStars, showToast, userStars.length]);
 
   const nudgeBackgroundZoom = useCallback((direction: "in" | "out") => {
     const nextZoomFactor =
@@ -1025,10 +1173,13 @@ export default function Home() {
       availableIndexesRef.current = next;
       return next;
     });
-    setToastTone("default");
-    setToastMessage(`Index ready: ${result.index_id}. METIS filed it near ${facultyLabel} and it is now available to map into orbit.`);
+    showToast({
+      dismissMs: 2400,
+      message: `Index ready: ${result.index_id}. METIS filed it near ${facultyLabel} and it is now available to map into orbit.`,
+      tone: "default",
+    });
     void refreshAvailableIndexes({ silent: true });
-  }, [refreshAvailableIndexes]);
+  }, [refreshAvailableIndexes, showToast]);
 
   const mapIndexedSources = useCallback(async () => {
     let indexesForMapping = availableIndexes;
@@ -1064,10 +1215,13 @@ export default function Home() {
     const addedCount = await addUserStars(starsToAdd);
     if (addedCount > 0) {
       setAddMessage(null);
-      setToastTone("default");
-      setToastMessage(`Seeded ${addedCount} indexed source${addedCount === 1 ? "" : "s"} into the constellation.`);
+      showToast({
+        dismissMs: 2400,
+        message: `Seeded ${addedCount} indexed source${addedCount === 1 ? "" : "s"} into the constellation.`,
+        tone: "default",
+      });
     }
-  }, [addUserStars, availableIndexes, refreshAvailableIndexes, starLimit, userStars]);
+  }, [addUserStars, availableIndexes, refreshAvailableIndexes, showToast, starLimit, userStars]);
 
   useEffect(() => {
     void refreshAvailableIndexes();
@@ -1099,13 +1253,12 @@ export default function Home() {
     if (!message) {
       return;
     }
-    setToastMessage(message);
-    setToastTone(syncError ? "error" : "default");
-    const timeoutId = window.setTimeout(() => {
-      setToastMessage((current) => (current === message ? null : current));
-    }, syncError ? 4200 : 2400);
-    return () => window.clearTimeout(timeoutId);
-  }, [addMessage, syncError]);
+    showToast({
+      dismissMs: syncError ? 4200 : 2400,
+      message,
+      tone: syncError ? "error" : "default",
+    });
+  }, [addMessage, showToast, syncError]);
 
   useEffect(() => {
     if (starLimit !== null && userStars.length >= starLimit) {
@@ -1180,6 +1333,7 @@ export default function Home() {
     let W = window.innerWidth;
     let H = window.innerHeight;
     const projectedUserStarTargets: ProjectedUserStarHitTarget[] = [];
+    let projectedUserStarRenderState = new Map<string, ProjectedUserStarRenderState>();
     const projectedCandidateTargets: ProjectedHitTarget[] = [];
     const projectedCandidateById = new Map<string, StarData>();
 
@@ -1630,20 +1784,63 @@ export default function Home() {
       }
     }
 
+    function rebuildProjectedUserStarRenderState(
+      backgroundCamera: BackgroundCameraState,
+      renderTimeMs: number,
+    ) {
+      const currentSelectedStarId = selectedUserStarIdRef.current;
+      const previewPositions = dragPreviewPositionsRef.current;
+      projectedUserStarTargets.length = 0;
+      projectedUserStarRenderState = new Map();
+
+      userStarsRef.current.forEach((star) => {
+        const resolvedPoint = getResolvedStarPoint(star, previewPositions, star.id);
+        const faculty = resolveStarFaculty({
+          x: resolvedPoint.x,
+          y: resolvedPoint.y,
+          primaryDomainId: star.primaryDomainId,
+        });
+        const influenceColors = buildStarInfluenceColors({
+          primaryDomainId: faculty.id,
+          relatedDomainIds: star.relatedDomainIds,
+        });
+        const mixed = mixConstellationColors(influenceColors);
+        const target = buildProjectedUserStarHitTarget(
+          {
+            id: star.id,
+            x: resolvedPoint.x,
+            y: resolvedPoint.y,
+            size: star.size,
+          },
+          W,
+          H,
+          backgroundCamera,
+          coarsePointerRef.current ? 12 : 0,
+          mouse,
+        );
+
+        projectedUserStarTargets.push(target);
+        projectedUserStarRenderState.set(star.id, {
+          attachmentCount: getStarAttachmentCount(star),
+          dragging: dragStateRef.current?.starId === star.id && dragStateRef.current.moved,
+          fadeIn: getStarFadeProgress(star, renderTimeMs),
+          influenceColors,
+          mixed,
+          profile: createUserStarVisualProfile(star.id),
+          ringCount: getStageRingCount(star.stage),
+          selected: currentSelectedStarId === star.id,
+          star,
+          target,
+        });
+      });
+    }
+
     function drawUserStarEdges(ts: number) {
       const currentUserStars = userStarsRef.current;
-      if (currentUserStars.length === 0) {
+      if (currentUserStars.length === 0 || projectedUserStarRenderState.size === 0) {
         return;
       }
 
-      const previewPositions = dragPreviewPositionsRef.current;
-      const backgroundCamera = readBackgroundCamera();
-      const projectedStars = new Map<string, {
-        px: number;
-        py: number;
-        mixed: [number, number, number];
-        fadeIn: number;
-      }>();
       const renderTimeMs = getRenderEpochMs(ts);
       const ragPulseState = ragPulseStateRef.current;
       const ragPulseStrength = getHomeRagPulseStrength(ragPulseState, renderTimeMs);
@@ -1651,31 +1848,15 @@ export default function Home() {
         ? 1
         : 1 + USER_STAR_EDGE_BREATH_AMPLITUDE * Math.sin((Math.PI * 2 * ts) / USER_STAR_EDGE_BREATH_PERIOD_MS);
 
-      currentUserStars.forEach((s) => {
-        const resolvedPoint = getResolvedStarPoint(s, previewPositions, s.id);
-        const starX = resolvedPoint.x;
-        const starY = resolvedPoint.y;
-        const faculty = resolveStarFaculty({ x: starX, y: starY, primaryDomainId: s.primaryDomainId });
-        const influenceColors = buildStarInfluenceColors({
-          primaryDomainId: faculty.id,
-          relatedDomainIds: s.relatedDomainIds,
-        });
-        const [mixedR, mixedG, mixedB] = mixConstellationColors(influenceColors);
-        const projected = projectConstellationPoint(
-          { x: starX, y: starY },
-          W,
-          H,
-          backgroundCamera,
-        );
-        const px = projected.x;
-        const py = projected.y;
-        const fadeIn = getStarFadeProgress(s, renderTimeMs);
-        projectedStars.set(s.id, {
-          px,
-          py,
-          mixed: [mixedR, mixedG, mixedB],
-          fadeIn,
-        });
+      currentUserStars.forEach((star) => {
+        const projectedState = projectedUserStarRenderState.get(star.id);
+        if (!projectedState) {
+          return;
+        }
+
+        const { fadeIn, mixed, target } = projectedState;
+        const px = target.x;
+        const py = target.y;
         const edgeNodes = getPreviewConnectionNodes(
           {
             nx: px / W,
@@ -1688,13 +1869,13 @@ export default function Home() {
 
         edgeNodes.forEach((node, index) => {
           const ragHighlighted = ragPulseStrength > 0
-            && (ragPulseState?.starIds.has(s.id) || ragPulseState?.facultyIds.has(node.concept.faculty.id));
+            && (ragPulseState?.starIds.has(star.id) || ragPulseState?.facultyIds.has(node.concept.faculty.id));
           const ragBoost = ragHighlighted ? ragPulseStrength : 0;
           const alphaMultiplier = Math.max(0, Math.min(1, fadeIn * edgeBreath));
           const [facultyR, facultyG, facultyB] = getFacultyColor(node.concept.faculty.id);
           const grad = ctx!.createLinearGradient(node._sx, node._sy, px, py);
           grad.addColorStop(0, `rgba(${facultyR},${facultyG},${facultyB},${(0.19 + ragBoost * 0.32) * alphaMultiplier})`);
-          grad.addColorStop(1, `rgba(${mixedR},${mixedG},${mixedB},${(0.25 + ragBoost * 0.36) * alphaMultiplier})`);
+          grad.addColorStop(1, `rgba(${mixed[0]},${mixed[1]},${mixed[2]},${(0.25 + ragBoost * 0.36) * alphaMultiplier})`);
           ctx!.strokeStyle = grad;
           ctx!.lineWidth = (index === 0 ? 1.05 : 0.7) + ragBoost * (index === 0 ? 1.6 : 1.1);
           ctx!.beginPath();
@@ -1706,13 +1887,13 @@ export default function Home() {
 
       const renderedLinks = new Set<string>();
       currentUserStars.forEach((star) => {
-        const from = projectedStars.get(star.id);
+        const from = projectedUserStarRenderState.get(star.id);
         if (!from || !star.connectedUserStarIds || star.connectedUserStarIds.length === 0) {
           return;
         }
 
         star.connectedUserStarIds.forEach((linkedStarId) => {
-          const to = projectedStars.get(linkedStarId);
+          const to = projectedUserStarRenderState.get(linkedStarId);
           if (!to) {
             return;
           }
@@ -1729,85 +1910,135 @@ export default function Home() {
           const ragHighlighted = ragPulseStrength > 0
             && (ragPulseState?.starIds.has(star.id) || ragPulseState?.starIds.has(linkedStarId));
           const ragBoost = ragHighlighted ? ragPulseStrength : 0;
-          const gradient = ctx!.createLinearGradient(from.px, from.py, to.px, to.py);
+          const gradient = ctx!.createLinearGradient(from.target.x, from.target.y, to.target.x, to.target.y);
           gradient.addColorStop(0, `rgba(${from.mixed[0]},${from.mixed[1]},${from.mixed[2]},${(0.21 + ragBoost * 0.34) * alphaMultiplier})`);
           gradient.addColorStop(1, `rgba(${to.mixed[0]},${to.mixed[1]},${to.mixed[2]},${(0.21 + ragBoost * 0.34) * alphaMultiplier})`);
           ctx!.strokeStyle = gradient;
           ctx!.lineWidth = 0.95 + ragBoost * 1.35;
           ctx!.beginPath();
-          ctx!.moveTo(from.px, from.py);
-          ctx!.lineTo(to.px, to.py);
+          ctx!.moveTo(from.target.x, from.target.y);
+          ctx!.lineTo(to.target.x, to.target.y);
           ctx!.stroke();
         });
       });
     }
 
     function drawUserStars(t: number) {
-      const currentUserStars = userStarsRef.current;
-      const currentSelectedStarId = selectedUserStarIdRef.current;
-      const previewPositions = dragPreviewPositionsRef.current;
-      const backgroundCamera = readBackgroundCamera();
+      if (projectedUserStarRenderState.size === 0) {
+        return;
+      }
+
       const renderTimeMs = getRenderEpochMs(t);
       const ragPulseState = ragPulseStateRef.current;
       const ragPulseStrength = getHomeRagPulseStrength(ragPulseState, renderTimeMs);
-      const constellationScale = getConstellationCameraScale(backgroundCamera.zoomFactor);
+      const constellationScale = getConstellationCameraScale(backgroundZoomRef.current);
       const userStarScale = Math.max(0.58, 0.36 + Math.pow(constellationScale, 0.72) * 0.64);
-      projectedUserStarTargets.length = 0;
 
-      currentUserStars.forEach((s, i) => {
-        const previewPosition = previewPositions.get(s.id);
-        const starX = previewPosition?.x ?? s.x;
-        const starY = previewPosition?.y ?? s.y;
-        const faculty = resolveStarFaculty({ x: starX, y: starY, primaryDomainId: s.primaryDomainId });
-        const influenceColors = buildStarInfluenceColors({
-          primaryDomainId: faculty.id,
-          relatedDomainIds: s.relatedDomainIds,
-        });
-        const [r, g, b] = mixConstellationColors(influenceColors);
-        const projectedHitTarget = buildProjectedUserStarHitTarget(
-          {
-            id: s.id,
-            x: starX,
-            y: starY,
-            size: s.size,
-          },
-          W,
-          H,
-          backgroundCamera,
-          coarsePointerRef.current ? 12 : 0,
-          mouse,
+      projectedUserStarRenderState.forEach((projectedState) => {
+        const {
+          attachmentCount,
+          dragging,
+          fadeIn,
+          influenceColors,
+          mixed,
+          profile,
+          ringCount,
+          selected,
+          star,
+          target,
+        } = projectedState;
+        const ragHighlighted = ragPulseStrength > 0 && Boolean(ragPulseState?.starIds.has(star.id));
+        const richness = 1 + Math.max(0, influenceColors.length - 1) * 0.18;
+        const haloColor = applyTintBias(mixed, profile.tintBias * 1.05);
+        const fillColor = applyTintBias(mixed, profile.tintBias * 0.48);
+        const shadowColor = applyTintBias(
+          [
+            Math.max(20, fillColor[0] - 82),
+            Math.max(20, fillColor[1] - 82),
+            Math.max(28, fillColor[2] - 82),
+          ],
+          profile.tintBias * 0.18,
         );
-        projectedUserStarTargets.push(projectedHitTarget);
-        const px = projectedHitTarget.x;
-        const py = projectedHitTarget.y;
-        const twinkle = 0.75 + Math.sin(t * 0.003 + i * 1.7) * 0.15;
-        const selected = currentSelectedStarId === s.id;
-        const ragHighlighted = ragPulseStrength > 0 && Boolean(ragPulseState?.starIds.has(s.id));
-        const attachmentCount = getStarAttachmentCount(s);
-        const ringCount = getStageRingCount(s.stage);
-        const dragging = dragStateRef.current?.starId === s.id && dragStateRef.current.moved;
-        const sz = (s.size * 1.5 + (selected ? 1.2 : 0) + (dragging ? 0.8 : 0)) * userStarScale;
-        const fadeIn = getStarFadeProgress(s, renderTimeMs);
-        const halo = ctx!.createRadialGradient(px, py, 0, px, py, sz * 5.2);
-        halo.addColorStop(0, `rgba(${r},${g},${b},${(selected ? 0.22 : 0.12 + (ragHighlighted ? ragPulseStrength * 0.2 : 0)) * fadeIn})`);
+        const px = target.x;
+        const py = target.y;
+        const sz = (star.size * 1.5 + (selected ? 1.2 : 0) + (dragging ? 0.8 : 0)) * userStarScale;
+        const twinkle = 0.84
+          + Math.sin(t * 0.003 + profile.twinklePhase) * 0.1
+          + Math.cos(t * 0.0016 + profile.twinklePhase * 0.72) * 0.05;
+        const haloRadius = sz * (4.7 + profile.haloFalloff * 2.4 + ringCount * 0.16) * richness;
+        const haloCenterX = px + profile.asymmetryOffset.x * sz * 2.1;
+        const haloCenterY = py + profile.asymmetryOffset.y * sz * 1.8;
+        const auraRadius = sz * (2.8 + profile.coreIntensity * 0.72 + ringCount * 0.14);
+
+        const halo = ctx!.createRadialGradient(haloCenterX, haloCenterY, sz * 0.22, px, py, haloRadius);
+        halo.addColorStop(0, `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${(0.14 + profile.coreIntensity * 0.04 + (selected ? 0.08 : 0) + (ragHighlighted ? ragPulseStrength * 0.12 : 0)) * fadeIn})`);
+        halo.addColorStop(Math.min(0.76, 0.48 + profile.haloFalloff * 0.18), `rgba(${fillColor[0]},${fillColor[1]},${fillColor[2]},${(0.05 + richness * 0.02) * fadeIn})`);
         halo.addColorStop(1, "rgba(0,0,0,0)");
         ctx!.fillStyle = halo;
         ctx!.beginPath();
-        ctx!.arc(px, py, sz * 5.2, 0, Math.PI * 2);
+        ctx!.arc(px, py, haloRadius, 0, Math.PI * 2);
+        ctx!.fill();
+
+        if (influenceColors.length > 1) {
+          influenceColors.slice(1, 3).forEach(([sr, sg, sb], influenceIndex) => {
+            const drift = influenceIndex % 2 === 0 ? 1 : -1;
+            const accentX = px - profile.asymmetryOffset.x * sz * (1.8 + influenceIndex * 0.5) + drift * sz * 0.42;
+            const accentY = py + profile.asymmetryOffset.y * sz * (1.5 + influenceIndex * 0.45);
+            const accentRadius = haloRadius * (0.64 + influenceIndex * 0.12);
+            const accentGlow = ctx!.createRadialGradient(accentX, accentY, sz * 0.14, px, py, accentRadius);
+            accentGlow.addColorStop(0, `rgba(${sr},${sg},${sb},${(0.07 + (selected ? 0.03 : 0)) * fadeIn})`);
+            accentGlow.addColorStop(1, "rgba(0,0,0,0)");
+            ctx!.fillStyle = accentGlow;
+            ctx!.beginPath();
+            ctx!.arc(px, py, accentRadius, 0, Math.PI * 2);
+            ctx!.fill();
+          });
+        }
+
+        const aura = ctx!.createRadialGradient(px, py, sz * 0.2, px, py, auraRadius);
+        aura.addColorStop(0, `rgba(${fillColor[0]},${fillColor[1]},${fillColor[2]},${(0.14 + profile.coreIntensity * 0.05 + (ragHighlighted ? ragPulseStrength * 0.12 : 0)) * fadeIn})`);
+        aura.addColorStop(1, "rgba(0,0,0,0)");
+        ctx!.fillStyle = aura;
+        ctx!.beginPath();
+        ctx!.arc(px, py, auraRadius, 0, Math.PI * 2);
         ctx!.fill();
 
         if (ragHighlighted) {
           ctx!.beginPath();
           ctx!.arc(px, py, sz * (4.1 + ragPulseStrength * 1.1), 0, Math.PI * 2);
-          ctx!.strokeStyle = `rgba(${r},${g},${b},${0.26 + ragPulseStrength * 0.34})`;
+          ctx!.strokeStyle = `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${0.26 + ragPulseStrength * 0.34})`;
           ctx!.lineWidth = 1.15 + ragPulseStrength * 0.7;
           ctx!.stroke();
         }
 
-        const fill = ctx!.createRadialGradient(px - sz * 0.35, py - sz * 0.35, sz * 0.15, px, py, sz * 1.3);
-        fill.addColorStop(0, `rgba(255,255,255,${0.96 * fadeIn})`);
-        fill.addColorStop(0.28, `rgba(${r},${g},${b},${0.92 * fadeIn})`);
-        fill.addColorStop(1, `rgba(${Math.max(20, r - 78)},${Math.max(20, g - 78)},${Math.max(28, b - 78)},${0.98 * fadeIn})`);
+        if (profile.hasDiffraction) {
+          const spikeLength = sz * (4.2 + profile.coreIntensity * 1.8 + ringCount * 0.28);
+          ctx!.save();
+          ctx!.translate(px, py);
+          ctx!.rotate(profile.spikeAngle);
+          ctx!.strokeStyle = `rgba(${fillColor[0]},${fillColor[1]},${fillColor[2]},${(selected ? 0.22 : 0.12) * fadeIn})`;
+          ctx!.lineWidth = selected ? 0.95 : 0.7;
+          ctx!.beginPath();
+          ctx!.moveTo(-spikeLength, 0);
+          ctx!.lineTo(spikeLength, 0);
+          ctx!.moveTo(0, -spikeLength * 0.72);
+          ctx!.lineTo(0, spikeLength * 0.72);
+          ctx!.stroke();
+          ctx!.restore();
+        }
+
+        const fill = ctx!.createRadialGradient(
+          px - sz * (0.36 + profile.asymmetryOffset.x * 0.18),
+          py - sz * (0.38 - profile.asymmetryOffset.y * 0.18),
+          sz * (0.14 + profile.coreIntensity * 0.08),
+          px,
+          py,
+          sz * 1.42,
+        );
+        fill.addColorStop(0, `rgba(255,255,255,${Math.min(1, (0.95 + profile.coreIntensity * 0.08) * fadeIn)})`);
+        fill.addColorStop(0.24, `rgba(${fillColor[0]},${fillColor[1]},${fillColor[2]},${0.94 * fadeIn})`);
+        fill.addColorStop(0.68, `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${0.88 * fadeIn})`);
+        fill.addColorStop(1, `rgba(${shadowColor[0]},${shadowColor[1]},${shadowColor[2]},${0.98 * fadeIn})`);
         ctx!.fillStyle = fill;
         ctx!.beginPath();
         ctx!.arc(px, py, sz, 0, Math.PI * 2);
@@ -1815,35 +2046,19 @@ export default function Home() {
 
         const satelliteCount = Math.min(attachmentCount, 3);
         for (let satelliteIndex = 0; satelliteIndex < satelliteCount; satelliteIndex += 1) {
-          const angle = t * 0.001 + (Math.PI * 2 * satelliteIndex) / Math.max(1, satelliteCount);
+          const angle = t * 0.001 + profile.twinklePhase * 0.2 + (Math.PI * 2 * satelliteIndex) / Math.max(1, satelliteCount);
           const orbitRadius = sz + 11 + satelliteIndex * 2;
           const satelliteX = px + Math.cos(angle) * orbitRadius;
           const satelliteY = py + Math.sin(angle) * orbitRadius * 0.8;
           ctx!.beginPath();
           ctx!.arc(satelliteX, satelliteY, 1.3 + satelliteIndex * 0.25, 0, Math.PI * 2);
-          ctx!.fillStyle = `rgba(${r},${g},${b},${0.85 * fadeIn})`;
+          ctx!.fillStyle = `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${0.85 * fadeIn})`;
           ctx!.fill();
-        }
-
-        if (influenceColors.length > 1) {
-          const segmentRadius = sz + 9 + ringCount * 4.2;
-          const segmentSweep = (Math.PI * 2) / influenceColors.length;
-
-          influenceColors.forEach(([sr, sg, sb], influenceIndex) => {
-            const startAngle = -Math.PI / 2 + influenceIndex * segmentSweep + t * 0.00018;
-            const endAngle = startAngle + segmentSweep * 0.72;
-
-            ctx!.beginPath();
-            ctx!.arc(px, py, segmentRadius, startAngle, endAngle);
-            ctx!.strokeStyle = `rgba(${sr},${sg},${sb},${(selected ? 0.9 : 0.72) * fadeIn})`;
-            ctx!.lineWidth = selected ? 2.2 : 1.6;
-            ctx!.stroke();
-          });
         }
 
         ctx!.beginPath();
         ctx!.arc(px, py, sz * 0.34, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(255,255,255,${(0.88 + twinkle * 0.08) * fadeIn})`;
+        ctx!.fillStyle = `rgba(255,255,255,${Math.min(1, (0.9 + twinkle * 0.09) * fadeIn)})`;
         ctx!.fill();
       });
     }
@@ -1983,12 +2198,20 @@ export default function Home() {
           dragPreviewPositionsRef.current,
           selectedAnchor.id,
         );
-        const anchorProjected = projectConstellationPoint(
-          anchorPoint,
-          W,
-          H,
-          backgroundCamera,
-        );
+        const anchorProjected = projectedUserStarRenderState.get(selectedAnchor.id)?.target
+          ?? buildProjectedUserStarHitTarget(
+            {
+              id: selectedAnchor.id,
+              size: selectedAnchor.size,
+              x: anchorPoint.x,
+              y: anchorPoint.y,
+            },
+            W,
+            H,
+            backgroundCamera,
+            coarsePointerRef.current ? 12 : 0,
+            mouse,
+          );
         const anchorFaculty = resolveStarFaculty({
           x: anchorPoint.x,
           y: anchorPoint.y,
@@ -2118,6 +2341,7 @@ export default function Home() {
       const visibleStars = visibleStarsRef.current;
       projectedCandidateTargets.length = 0;
       projectedCandidateById.clear();
+      rebuildProjectedUserStarRenderState(backgroundCamera, getRenderEpochMs(ts));
 
       ctx!.fillStyle = "rgba(6,8,14,1)";
       ctx!.fillRect(0, 0, W, H);
@@ -2473,10 +2697,11 @@ export default function Home() {
             primaryDomainId: inference.primary.faculty.id,
             relatedDomainIds: inference.bridgeSuggestion ? [inference.bridgeSuggestion.faculty.id] : undefined,
           });
-          setToastTone("default");
-          setToastMessage(
-            `${selectedStar.label ?? "Star"} settled into ${inference.primary.faculty.label}.`,
-          );
+          showToast({
+            dismissMs: 2400,
+            message: `${selectedStar.label ?? "Star"} settled into ${inference.primary.faculty.label}.`,
+            tone: "default",
+          });
           setAddMessage(null);
           clearDragState(true);
           return;
@@ -2537,14 +2762,17 @@ export default function Home() {
           }
 
           setAddMessage(null);
-          setToastTone("default");
+          let message = "Star added to the constellation. Its details are open.";
           if (selectedStarId && !selectedAnchor) {
-            setToastMessage("Star added to the constellation. The selected anchor was too far to link.");
+            message = "Star added to the constellation. The selected anchor was too far to link.";
           } else if (selectedAnchor) {
-            setToastMessage("Star added and linked into the selected constellation branch.");
-          } else {
-            setToastMessage("Star added to the constellation. Its details are open.");
+            message = "Star added and linked into the selected constellation branch.";
           }
+          showToast({
+            dismissMs: 2400,
+            message,
+            tone: "default",
+          });
           openStarDetails(createdStar, "new");
           clearHoveredCandidate();
         });
@@ -2669,6 +2897,7 @@ export default function Home() {
     registerZoomInteraction,
     setBackgroundZoomTarget,
     setStarFocusPhaseValue,
+    showToast,
     starLimit,
     updateUserStarById,
   ]);
@@ -2811,12 +3040,26 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-
-
-      {toastMessage ? (
-        <div className={`metis-toast ${toastTone === "error" ? "error" : ""}`} aria-live="polite">
-          {toastMessage}
+      {toastState ? (
+        <div
+          className={`metis-toast ${toastState.tone === "error" ? "error" : ""}`}
+          aria-live="polite"
+          role="status"
+        >
+          <span className="metis-toast__message">{toastState.message}</span>
+          {toastState.onAction ? (
+            <button
+              type="button"
+              className="metis-toast__action"
+              onClick={() => {
+                const action = toastState.onAction;
+                clearToast();
+                action?.();
+              }}
+            >
+              {toastState.actionLabel ?? "Undo"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -2831,10 +3074,9 @@ export default function Home() {
         onIndexBuilt={handleIndexBuilt}
         onUpdateStar={updateUserStarById}
         onRemoveStar={async (starId) => {
-          await removeUserStarById(starId);
-          closeStarDetails({ clearSelection: true, restoreCamera: "jump" });
-          setToastTone("default");
-          setToastMessage("Star removed from the constellation.");
+          await removeStarWithUndo(starId, {
+            afterRemove: () => closeStarDetails({ clearSelection: true, restoreCamera: "jump" }),
+          });
         }}
         onOpenChat={openChatWithIndex}
       />
@@ -2852,14 +3094,24 @@ export default function Home() {
         <div ref={starTooltipDomainRef} className="metis-star-tooltip-domain" />
         <div ref={starTooltipTitleRef} className="metis-star-tooltip-title" />
         <div ref={starTooltipDescRef} className="metis-star-tooltip-desc" />
-        <button
-          type="button"
-          className="metis-star-tooltip-action"
-          onClick={handleOpenHoveredStarDetails}
-          disabled={!hoveredUserStarId}
-        >
-          Open Star Details
-        </button>
+        <div className="metis-star-tooltip-actions">
+          <button
+            type="button"
+            className="metis-star-tooltip-action"
+            onClick={handleOpenHoveredStarDetails}
+            disabled={!hoveredUserStarId}
+          >
+            Open Star Details
+          </button>
+          <button
+            type="button"
+            className="metis-star-tooltip-action danger"
+            onClick={handleRemoveHoveredStar}
+            disabled={!hoveredUserStarId}
+          >
+            Remove star
+          </button>
+        </div>
       </div>
 
       {/* Chat bubble */}
@@ -2973,12 +3225,40 @@ body {
   -webkit-backdrop-filter: blur(16px);
   font-size: 12px;
   line-height: 1.45;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  text-align: left;
 }
 
 .metis-toast.error {
   border-color: rgba(255,120,120,0.35);
   color: rgba(255,214,214,0.98);
+}
+
+.metis-toast__message {
+  flex: 1;
+}
+
+.metis-toast__action {
+  flex-shrink: 0;
+  border: 1px solid rgba(232,184,74,0.24);
+  background: rgba(28, 40, 72, 0.76);
+  color: rgba(255,245,221,0.96);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.metis-toast__action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(232,184,74,0.38);
+  background: rgba(34, 49, 88, 0.88);
 }
 
 /* HERO OVERLAY */
@@ -3445,8 +3725,14 @@ body {
   line-height: 1.65;
 }
 
-.metis-star-tooltip-action {
+.metis-star-tooltip-actions {
   margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.metis-star-tooltip-action {
   border: 1px solid rgba(200,210,225,0.2);
   background: rgba(22, 31, 58, 0.62);
   color: rgba(236,241,250,0.96);
@@ -3463,6 +3749,17 @@ body {
   border-color: rgba(232,184,74,0.36);
   color: rgba(255,246,222,0.96);
   transform: translateY(-1px);
+}
+
+.metis-star-tooltip-action.danger {
+  border-color: rgba(255,128,128,0.18);
+  color: rgba(255,222,222,0.92);
+  background: rgba(62, 24, 34, 0.56);
+}
+
+.metis-star-tooltip-action.danger:hover:not(:disabled) {
+  border-color: rgba(255,128,128,0.34);
+  color: rgba(255,238,238,0.98);
 }
 
 .metis-star-tooltip-action:disabled {
@@ -3539,6 +3836,8 @@ body {
 
   .metis-toast {
     top: 78px;
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .metis-zoom-pill {

@@ -347,4 +347,61 @@ describe("Home page", () => {
     expect(document.querySelector(".metis-zoom-pill-value")?.textContent).toBe(zoomValue);
     expect(canvas).toHaveAttribute("data-focus-phase", "details-open");
   });
+
+  it("removes a hovered star from the tooltip and restores it with undo", async () => {
+    const originalStars: UserStar[] = [
+      {
+        id: "star-anchor",
+        createdAt: 1,
+        label: "Anchor star",
+        x: 0.25,
+        y: 0.3,
+        size: 1,
+        primaryDomainId: "knowledge",
+        stage: "seed",
+      },
+      {
+        id: "star-linked",
+        createdAt: 2,
+        label: "Linked star",
+        x: 0.36,
+        y: 0.4,
+        size: 1.05,
+        primaryDomainId: "memory",
+        connectedUserStarIds: ["star-anchor"],
+        stage: "seed",
+      },
+    ];
+    seedStoredStars(originalStars);
+
+    await renderHomePage();
+    const canvas = await prepareCanvas();
+
+    fireEvent.pointerMove(canvas, {
+      clientX: 250,
+      clientY: 240,
+      pointerId: 1,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Remove star" })).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove star" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Anchor star removed from the constellation.")).toBeInTheDocument();
+      const stored = JSON.parse(window.localStorage.getItem("metis_constellation_user_stars") ?? "[]");
+      expect(stored).toHaveLength(1);
+      expect(stored[0]?.id).toBe("star-linked");
+      expect(stored[0]?.connectedUserStarIds).toBeUndefined();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Anchor star restored to the constellation.")).toBeInTheDocument();
+      expect(JSON.parse(window.localStorage.getItem("metis_constellation_user_stars") ?? "[]")).toEqual(originalStars);
+    });
+  });
 });

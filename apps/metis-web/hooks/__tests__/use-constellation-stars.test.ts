@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { fetchSettings, updateSettings } from "@/lib/api";
-import type { UserStar } from "@/lib/constellation-types";
+import { normalizeUserStar, type UserStar } from "@/lib/constellation-types";
 
 vi.mock("@/lib/api", () => ({
   fetchSettings: vi.fn(),
@@ -88,5 +88,49 @@ describe("useConstellationStars", () => {
 
     expect(result.current.userStars).toHaveLength(2);
     expect(result.current.userStars.map((star) => star.id)).toEqual(["a", "b"]);
+  });
+
+  it("replaceUserStars restores an exact saved snapshot including user-star links", async () => {
+    const originalSnapshot: UserStar[] = [
+      {
+        id: "a",
+        createdAt: 1,
+        x: 0.1,
+        y: 0.2,
+        size: 1,
+        label: "Alpha",
+        connectedUserStarIds: ["b"],
+        linkedManifestPaths: ["/tmp/alpha.json"],
+        relatedDomainIds: ["memory"],
+      },
+      {
+        id: "b",
+        createdAt: 2,
+        x: 0.2,
+        y: 0.3,
+        size: 1.1,
+        label: "Beta",
+        connectedUserStarIds: ["a"],
+      },
+    ];
+    const normalizedSnapshot = originalSnapshot.map((star) => normalizeUserStar(star));
+    seedLocalStars(originalSnapshot);
+
+    const { result } = renderHook(() => useConstellationStars());
+
+    await act(async () => {
+      await result.current.removeUserStarById("a");
+    });
+
+    expect(result.current.userStars.map((star) => star.id)).toEqual(["b"]);
+    expect(result.current.userStars[0]?.connectedUserStarIds).toBeUndefined();
+
+    await act(async () => {
+      await result.current.replaceUserStars(originalSnapshot);
+    });
+
+    expect(result.current.userStars).toEqual(normalizedSnapshot);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]")).toEqual(normalizedSnapshot);
+    expect(vi.mocked(updateSettings)).toHaveBeenLastCalledWith({ [SETTINGS_KEY]: normalizedSnapshot });
   });
 });
