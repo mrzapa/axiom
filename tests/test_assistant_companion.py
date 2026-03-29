@@ -350,3 +350,21 @@ def test_assistant_api_routes_return_snapshot_and_reflection(monkeypatch) -> Non
     assert reflect_response.status_code == 200
     assert reflect_response.json()["status"]["state"] == "reflected"
     assert captured == {"trigger": "completed_run", "session_id": "sess-1", "run_id": "run-1", "force": True}
+
+
+def test_assistant_policy_autonomous_fields_default_to_false():
+    from metis_app.models.assistant_types import AssistantPolicy
+    policy = AssistantPolicy()
+    assert policy.autonomous_research_enabled is False
+    assert policy.autonomous_research_provider == "tavily"
+
+
+def test_assistant_policy_roundtrip_autonomous_fields():
+    from metis_app.models.assistant_types import AssistantPolicy
+    policy = AssistantPolicy(
+        autonomous_research_enabled=True,
+        autonomous_research_provider="duckduckgo",
+    )
+    restored = AssistantPolicy.from_payload(policy.to_payload())
+    assert restored.autonomous_research_enabled is True
+    assert restored.autonomous_research_provider == "duckduckgo"
