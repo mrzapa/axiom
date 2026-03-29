@@ -370,3 +370,46 @@ def test_assistant_policy_roundtrip_autonomous_fields():
     restored = AssistantPolicy.from_payload(policy.to_payload())
     assert restored.autonomous_research_enabled is True
     assert restored.autonomous_research_provider == "duckduckgo"
+
+
+def test_reflect_triggers_autonomous_research_when_enabled(tmp_path):
+    """After reflect(), autonomous research runs in background when policy enables it."""
+    import time
+    from metis_app.services.assistant_companion import AssistantCompanionService
+    from metis_app.services.assistant_repository import AssistantRepository
+
+    research_calls = []
+
+    class MockOrchestrator:
+        def run_autonomous_research(self, settings):
+            research_calls.append(True)
+            return {
+                "faculty_id": "emergence",
+                "index_id": "auto_emergence_abc",
+                "title": "Emergence Research",
+                "sources": ["http://example.com"],
+            }
+
+    settings = {
+        "assistant_identity": {"companion_enabled": True},
+        "assistant_policy": {
+            "reflection_enabled": True,
+            "autonomous_research_enabled": True,
+            "allow_automatic_writes": True,
+        },
+        "llm_provider": "mock",
+    }
+
+    svc = AssistantCompanionService(
+        repository=AssistantRepository(tmp_path / "state.json")
+    )
+    svc.reflect(
+        trigger="manual",
+        settings=settings,
+        force=True,
+        _orchestrator=MockOrchestrator(),
+    )
+
+    # Give the background daemon thread time to complete
+    time.sleep(0.5)
+    assert len(research_calls) == 1
