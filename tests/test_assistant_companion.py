@@ -374,15 +374,15 @@ def test_assistant_policy_roundtrip_autonomous_fields():
 
 def test_reflect_triggers_autonomous_research_when_enabled(tmp_path):
     """After reflect(), autonomous research runs in background when policy enables it."""
-    import time
+    import threading
     from metis_app.services.assistant_companion import AssistantCompanionService
     from metis_app.services.assistant_repository import AssistantRepository
 
-    research_calls = []
+    research_called = threading.Event()
 
     class MockOrchestrator:
         def run_autonomous_research(self, settings):
-            research_calls.append(True)
+            research_called.set()
             return {
                 "faculty_id": "emergence",
                 "index_id": "auto_emergence_abc",
@@ -410,6 +410,6 @@ def test_reflect_triggers_autonomous_research_when_enabled(tmp_path):
         _orchestrator=MockOrchestrator(),
     )
 
-    # Give the background daemon thread time to complete
-    time.sleep(0.5)
-    assert len(research_calls) == 1
+    # Wait for the daemon thread to call the orchestrator (up to 5s timeout)
+    fired = research_called.wait(timeout=5.0)
+    assert fired, "autonomous research daemon thread did not fire within 5 seconds"
