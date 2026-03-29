@@ -36,7 +36,7 @@ FACULTY_DESCRIPTIONS = {
     "emergence":   "Novel capability, adaptation, and new structure from existing parts",
 }
 
-# Minimum stars per faculty before it's no longer considered sparse
+# Minimum auto-generated indexes (stars) per faculty before it's no longer considered sparse
 _MIN_STARS_PER_FACULTY = 3
 
 
@@ -69,29 +69,48 @@ class AutonomousResearchService:
             return None
 
         faculty_desc = FACULTY_DESCRIPTIONS.get(faculty_id, faculty_id)
-        llm = create_llm(settings)
 
-        query = self.formulate_query(faculty_id, faculty_desc, llm)
+        try:
+            llm = create_llm(settings)
+            query = self.formulate_query(faculty_id, faculty_desc, llm)
+        except Exception as exc:
+            _log.warning("autonomous_research: LLM query formulation failed: %s", exc)
+            return None
+
+        if not query:
+            _log.warning("autonomous_research: empty query for faculty %s, skipping", faculty_id)
+            return None
+
         _log.info("autonomous_research: researching %s with query: %s", faculty_id, query)
-
         search_results = self._web_search(query, n_results=5)
         if not search_results:
             _log.warning("autonomous_research: no search results for %s", faculty_id)
             return None
 
-        document_content = self.synthesize_document(faculty_id, query, search_results, llm)
-        doc_path = self.save_temp_document(document_content, faculty_id)
+        try:
+            document_content = self.synthesize_document(faculty_id, query, search_results, llm)
+        except Exception as exc:
+            _log.warning("autonomous_research: synthesis failed: %s", exc)
+            return None
+
+        try:
+            doc_path = self.save_temp_document(document_content, faculty_id)
+        except OSError as exc:
+            _log.error("autonomous_research: failed to write temp document: %s", exc)
+            return None
 
         index_id = f"auto_{faculty_id}_{uuid.uuid4().hex[:8]}"
         try:
-            orchestrator.build_index(
-                [str(doc_path)],
-                settings,
-                index_id=index_id,
-            )
+            orchestrator.build_index([str(doc_path)], settings, index_id=index_id)
         except Exception as exc:
             _log.error("autonomous_research: index build failed: %s", exc)
             return None
+        finally:
+            # Clean up temp file whether build succeeded or failed
+            try:
+                doc_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
         sources = [r.url for r in search_results if r.url]
         return {
@@ -119,7 +138,7 @@ class AutonomousResearchService:
             if len(parts) >= 2:
                 faculty = parts[1]
                 if faculty in faculty_counts:
-                    faculty_counts[faculty] += idx.get("document_count", 1)
+                    faculty_counts[faculty] += 1  # count indexes (stars), not documents
 
         # Faculties that have at least one auto-star but are below the threshold
         sparse_represented = [
