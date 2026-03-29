@@ -51,6 +51,13 @@ from metis_app.models.session_types import (
     SessionSummary,
 )
 from metis_app.services.assistant_companion import AssistantCompanionService
+from metis_app.services.nyx_catalog import (
+    NyxCatalogBroker,
+    NyxCatalogComponentDetail,
+    NyxCatalogSearchResult,
+    get_default_nyx_catalog_broker,
+)
+from metis_app.services.nyx_runtime import augment_settings_with_nyx, build_nyx_install_actions
 from metis_app.services.session_repository import SessionRepository
 from metis_app.services.skill_repository import SkillRepository
 from metis_app.services.trace_store import TraceStore
@@ -84,6 +91,7 @@ class WorkspaceOrchestrator:
         skill_repo: SkillRepository | None = None,
         index_dir: pathlib.Path | str | None = None,
         assistant_service: AssistantCompanionService | None = None,
+        nyx_catalog: NyxCatalogBroker | None = None,
     ) -> None:
         self._session_repo: SessionRepository = session_repo or _make_session_repo()
         self._skill_repo: SkillRepository = skill_repo or SkillRepository()
@@ -93,6 +101,7 @@ class WorkspaceOrchestrator:
             session_repo=self._session_repo,
             trace_store=self._trace_store,
         )
+        self._nyx_catalog = nyx_catalog or get_default_nyx_catalog_broker()
 
     # ------------------------------------------------------------------
     # Ingestion / Organisation
@@ -159,7 +168,7 @@ class WorkspaceOrchestrator:
         session_id: str = "",
     ) -> RagQueryResult:
         """Execute a batch RAG query via the engine."""
-        resolved_settings = self._resolve_query_settings(req.settings)
+        resolved_settings = self._resolve_query_settings(req.settings, query=req.question)
         normalized = RagQueryRequest(
             manifest_path=req.manifest_path,
             question=req.question,
@@ -171,6 +180,13 @@ class WorkspaceOrchestrator:
             self._prepare_session_for_query(session_id, req.question, resolved_settings, manifest_path=req.manifest_path)
             self.append_message(session_id, role="user", content=req.question, run_id="")
         result = query_rag(normalized)
+        result.actions = self._resolve_nyx_install_actions(
+            result.run_id,
+            resolved_settings,
+            getattr(result, "artifacts", None),
+        ) or None
+        result_artifacts = list(getattr(result, "artifacts", None) or []) if isinstance(getattr(result, "artifacts", None), list) else []
+        result_actions = list(getattr(result, "actions", None) or []) if isinstance(getattr(result, "actions", None), list) else []
         for stage in list(result.retrieval_plan.get("stages") or []):
             stage_type = str(stage.get("stage_type") or "").strip()
             payload = dict(stage.get("payload") or {})
@@ -200,6 +216,8 @@ class WorkspaceOrchestrator:
                 "answer_text": result.answer_text,
                 "sources": result.sources,
                 "fallback": result.fallback,
+                **({"artifacts": result_artifacts} if result_artifacts else {}),
+                **({"actions": result_actions} if result_actions else {}),
             },
         )
         if session_id:
@@ -209,6 +227,8 @@ class WorkspaceOrchestrator:
                 content=result.answer_text,
                 run_id=result.run_id,
                 sources=[EvidenceSource.from_dict(item) for item in result.sources],
+                artifacts=result_artifacts,
+                actions=result_actions,
             )
             self._assistant_service.reflect(
                 trigger="completed_run",
@@ -225,7 +245,7 @@ class WorkspaceOrchestrator:
         session_id: str = "",
     ) -> DirectQueryResult:
         """Execute a direct (no-retrieval) LLM query via the engine."""
-        resolved_settings = self._resolve_query_settings(req.settings)
+        resolved_settings = self._resolve_query_settings(req.settings, query=req.prompt)
         normalized = DirectQueryRequest(
             prompt=req.prompt,
             settings=resolved_settings,
@@ -235,6 +255,13 @@ class WorkspaceOrchestrator:
             self._prepare_session_for_query(session_id, req.prompt, resolved_settings)
             self.append_message(session_id, role="user", content=req.prompt, run_id="")
         result = query_direct(normalized)
+        result.actions = self._resolve_nyx_install_actions(
+            result.run_id,
+            resolved_settings,
+            getattr(result, "artifacts", None),
+        ) or None
+        result_artifacts = list(getattr(result, "artifacts", None) or []) if isinstance(getattr(result, "artifacts", None), list) else []
+        result_actions = list(getattr(result, "actions", None) or []) if isinstance(getattr(result, "actions", None), list) else []
         self._record_trace_event(
             result.run_id,
             {
@@ -242,6 +269,8 @@ class WorkspaceOrchestrator:
                 "run_id": result.run_id,
                 "answer_text": result.answer_text,
                 "sources": [],
+                **({"artifacts": result_artifacts} if result_artifacts else {}),
+                **({"actions": result_actions} if result_actions else {}),
             },
         )
         if session_id:
@@ -251,6 +280,8 @@ class WorkspaceOrchestrator:
                 content=result.answer_text,
                 run_id=result.run_id,
                 sources=[],
+                artifacts=result_artifacts,
+                actions=result_actions,
             )
             self._assistant_service.reflect(
                 trigger="completed_run",
@@ -337,7 +368,7 @@ class WorkspaceOrchestrator:
 
         Delegates to :func:`metis_app.engine.stream_rag_answer`.
         """
-        resolved_settings = self._resolve_query_settings(req.settings)
+        resolved_settings = self._resolve_query_settings(req.settings, query=req.question)
         normalized = RagQueryRequest(
             manifest_path=req.manifest_path,
             question=req.question,
@@ -357,10 +388,19 @@ class WorkspaceOrchestrator:
         def _wrapped() -> Iterator[dict[str, Any]]:
             pending_sources: list[EvidenceSource] = []
             final_run_id = str(normalized.run_id or "")
-            for event in stream_rag_answer(normalized, cancel_token=cancel_token):
+            for raw_event in stream_rag_answer(normalized, cancel_token=cancel_token):
+                event = dict(raw_event)
                 event_run_id = str(event.get("run_id") or final_run_id or "").strip()
                 if event_run_id:
                     final_run_id = event_run_id
+                if event.get("type") == "final":
+                    nyx_actions = self._resolve_nyx_install_actions(
+                        final_run_id,
+                        resolved_settings,
+                        event.get("artifacts"),
+                    )
+                    if nyx_actions:
+                        event["actions"] = nyx_actions
                 self._record_trace_event(final_run_id, event)
                 if event.get("type") in {"retrieval_complete", "retrieval_augmented"}:
                     pending_sources = [
@@ -372,12 +412,24 @@ class WorkspaceOrchestrator:
                         item if isinstance(item, EvidenceSource) else EvidenceSource.from_dict(item)
                         for item in list(event.get("sources") or pending_sources)
                     ]
+                    final_artifacts = [
+                        dict(item)
+                        for item in list(event.get("artifacts") or [])
+                        if isinstance(item, dict)
+                    ]
+                    final_actions = [
+                        dict(item)
+                        for item in list(event.get("actions") or [])
+                        if isinstance(item, dict)
+                    ]
                     self.append_message(
                         session_id,
                         role="assistant",
                         content=str(event.get("answer_text") or ""),
                         run_id=final_run_id,
                         sources=final_sources,
+                        artifacts=final_artifacts,
+                        actions=final_actions,
                     )
                     self._assistant_service.reflect(
                         trigger="completed_run",
@@ -472,6 +524,8 @@ class WorkspaceOrchestrator:
         content: str,
         run_id: str = "",
         sources: list[dict[str, Any]] | None = None,
+        artifacts: list[dict[str, Any]] | None = None,
+        actions: list[dict[str, Any]] | None = None,
     ) -> None:
         """Append a message to *session_id*."""
         self._session_repo.append_message(
@@ -480,6 +534,8 @@ class WorkspaceOrchestrator:
             content=content,
             run_id=run_id,
             sources=sources or [],
+            artifacts=artifacts or [],
+            actions=actions or [],
         )
 
     def save_feedback(
@@ -513,6 +569,23 @@ class WorkspaceOrchestrator:
     def get_skill(self, skill_id: str) -> SkillDefinition | None:
         """Return a single skill definition by *skill_id*, or ``None``."""
         return self._skill_repo.get_skill(skill_id)
+
+    # ------------------------------------------------------------------
+    # Nyx catalog
+    # ------------------------------------------------------------------
+
+    def search_nyx_catalog(
+        self,
+        *,
+        query: str = "",
+        limit: int | None = None,
+    ) -> NyxCatalogSearchResult:
+        """Return the curated Nyx catalog with optional local search filtering."""
+        return self._nyx_catalog.search_catalog(query=query, limit=limit)
+
+    def get_nyx_component_detail(self, component_name: str) -> NyxCatalogComponentDetail:
+        """Return normalized detail for one allowlisted Nyx component."""
+        return self._nyx_catalog.get_component_detail(component_name)
 
     # ------------------------------------------------------------------
     # Assistant / companion
@@ -577,14 +650,39 @@ class WorkspaceOrchestrator:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _resolve_query_settings(self, incoming: dict[str, Any]) -> dict[str, Any]:
+    def _resolve_query_settings(self, incoming: dict[str, Any], *, query: str = "") -> dict[str, Any]:
         base = _settings_store.load_settings()
         merged = dict(base)
         merged.update(dict(incoming or {}))
         merged["assistant_identity"] = base.get("assistant_identity", {})
         merged["assistant_runtime"] = base.get("assistant_runtime", {})
         merged["assistant_policy"] = base.get("assistant_policy", {})
+        if str(query or "").strip():
+            try:
+                merged = augment_settings_with_nyx(
+                    merged,
+                    query=query,
+                    broker=self._nyx_catalog,
+                )
+            except RuntimeError:
+                pass
         return merged
+
+    def _resolve_nyx_install_actions(
+        self,
+        run_id: str,
+        settings: dict[str, Any],
+        artifacts: Any = None,
+    ) -> list[dict[str, Any]]:
+        try:
+            return build_nyx_install_actions(
+                run_id=run_id,
+                settings=settings,
+                broker=self._nyx_catalog,
+                artifacts=artifacts,
+            )
+        except (RuntimeError, ValueError):
+            return []
 
     def _prepare_session_for_query(
         self,

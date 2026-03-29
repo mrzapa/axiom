@@ -1,0 +1,542 @@
+{
+  "schema_version": "1.1",
+  "source": "nyx_registry",
+  "source_repo": "https://github.com/MihirJaiswal/nyxui",
+  "registry_url_template": "https://nyxui.com/r/{name}.json",
+  "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+  "install_target_policy": {
+    "policy_name": "metis_nyx_targets_v1",
+    "allowed_target_prefixes": [
+      "components/",
+      "hooks/",
+      "lib/"
+    ],
+    "allowed_targetless_types": [
+      "registry:lib"
+    ]
+  },
+  "reviewed_component_count": 12,
+  "previewable_component_count": 12,
+  "installable_component_count": 11,
+  "components": {
+    "animated-grainy-bg": {
+      "component_name": "animated-grainy-bg",
+      "title": "Animated Grainy Background",
+      "description": "A dynamic animated gradient background component that supports various gradient patterns and animations.",
+      "curated_description": "Animated gradient background surface.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/animated-grainy-bg",
+      "registry_url": "https://nyxui.com/r/animated-grainy-bg.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "clsx",
+        "motion",
+        "tailwind-merge"
+      ],
+      "dependencies": [
+        "motion",
+        "clsx",
+        "tailwind-merge"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 2,
+      "targets": [
+        "components/ui/animated-grainy-bg.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/animated-grainy-bg.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/animated-grainy-bg.tsx",
+          "content_bytes": 16080
+        },
+        {
+          "path": "lib/utils.ts",
+          "file_type": "registry:lib",
+          "target": "",
+          "content_bytes": 2373
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "animated-text": {
+      "component_name": "animated-text",
+      "title": "Animated Text",
+      "description": "A versatile text animation component that offers multiple animation types. Perfect for adding dynamic text effects to your UI.",
+      "curated_description": "Motion-driven text transitions and reveals.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/animated-text",
+      "registry_url": "https://nyxui.com/r/animated-text.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "motion"
+      ],
+      "dependencies": [
+        "motion"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 1,
+      "targets": [
+        "components/ui/animated-text.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/animated-text.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/animated-text.tsx",
+          "content_bytes": 5981
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "apple-glass-effect": {
+      "component_name": "apple-glass-effect",
+      "title": "Apple Glass Effect",
+      "description": "A apple glass effect that that provide several effects.",
+      "curated_description": "Glassmorphism container with motion-based depth.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/apple-glass-effect",
+      "registry_url": "https://nyxui.com/r/apple-glass-effect.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "motion"
+      ],
+      "dependencies": [
+        "motion"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 1,
+      "targets": [
+        "components/ui/apple-glass-effect.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/apple-glass-effect.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/apple-glass-effect.tsx",
+          "content_bytes": 5947
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "custom-cursor": {
+      "component_name": "custom-cursor",
+      "title": "Custom Cursor",
+      "description": "A custom cursor that that provide several effects.",
+      "curated_description": "Cursor effects for guided or immersive surfaces.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/custom-cursor",
+      "registry_url": "https://nyxui.com/r/custom-cursor.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "clsx",
+        "motion",
+        "tailwind-merge"
+      ],
+      "dependencies": [
+        "motion",
+        "clsx",
+        "tailwind-merge"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 2,
+      "targets": [
+        "components/ui/custom-cursor.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/custom-cursor.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/custom-cursor.tsx",
+          "content_bytes": 4633
+        },
+        {
+          "path": "lib/utils.ts",
+          "file_type": "registry:lib",
+          "target": "",
+          "content_bytes": 2373
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "github-repo-card": {
+      "component_name": "github-repo-card",
+      "title": "Github Repo Card",
+      "description": "A card component that displays information about a GitHub repository. It includes the repository name, description, stars, forks, and a link to the repository.",
+      "curated_description": "Repository card with metadata and status chrome.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/github-repo-card",
+      "registry_url": "https://nyxui.com/r/github-repo-card.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "clsx",
+        "lucide-react",
+        "tailwind-merge"
+      ],
+      "dependencies": [
+        "lucide-react",
+        "clsx",
+        "tailwind-merge"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 2,
+      "targets": [
+        "components/ui/github-repo-card.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/github-repo-card.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/github-repo-card.tsx",
+          "content_bytes": 18921
+        },
+        {
+          "path": "lib/utils.ts",
+          "file_type": "registry:lib",
+          "target": "",
+          "content_bytes": 2373
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "glow-card": {
+      "component_name": "glow-card",
+      "title": "Glow Card",
+      "description": "A glow card that that provide several effects.",
+      "curated_description": "Interactive card with glow-based accent effects.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/glow-card",
+      "registry_url": "https://nyxui.com/r/glow-card.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "clsx",
+        "tailwind-merge"
+      ],
+      "dependencies": [
+        "clsx",
+        "tailwind-merge"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 2,
+      "targets": [
+        "components/ui/glow-card.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/glow-card.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/glow-card.tsx",
+          "content_bytes": 23388
+        },
+        {
+          "path": "lib/utils.ts",
+          "file_type": "registry:lib",
+          "target": "",
+          "content_bytes": 2373
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "image-scanner": {
+      "component_name": "image-scanner",
+      "title": "Image Scanner",
+      "description": "A image scanner component that allows users to scan images.",
+      "curated_description": "Animated scanline treatment for media blocks.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/image-scanner",
+      "registry_url": "https://nyxui.com/r/image-scanner.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "clsx",
+        "lucide-react",
+        "motion",
+        "tailwind-merge"
+      ],
+      "dependencies": [
+        "motion",
+        "clsx",
+        "tailwind-merge",
+        "lucide-react"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 2,
+      "targets": [
+        "components/ui/image-scanner.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/image-scanner.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/image-scanner.tsx",
+          "content_bytes": 27667
+        },
+        {
+          "path": "lib/utils.ts",
+          "file_type": "registry:lib",
+          "target": "",
+          "content_bytes": 2373
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "keyboard": {
+      "component_name": "keyboard",
+      "title": "Keyboard",
+      "description": "A keyboard component that simulates a physical keyboard.",
+      "curated_description": "Interactive keyboard display component.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/keyboard",
+      "registry_url": "https://nyxui.com/r/keyboard.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "lucide-react"
+      ],
+      "dependencies": [
+        "lucide-react"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 1,
+      "targets": [
+        "components/ui/keyboard.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/keyboard.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/keyboard.tsx",
+          "content_bytes": 63728
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "marquee": {
+      "component_name": "marquee",
+      "title": "Marquee",
+      "description": "A customizable, interactive scrolling marquee component.",
+      "curated_description": "Looping marquee strip for logos, tags, or callouts.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/marquee",
+      "registry_url": "https://nyxui.com/r/marquee.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "preview",
+      "previewable": true,
+      "installable": false,
+      "required_dependencies": [],
+      "dependencies": [
+        "motion",
+        ".."
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 1,
+      "targets": [
+        "components/ui/marquee.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/marquee.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/marquee.tsx",
+          "content_bytes": 6137
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": [
+        "marquee: dependencies contains invalid package specifiers: .."
+      ]
+    },
+    "music-player": {
+      "component_name": "music-player",
+      "title": "Music Player",
+      "description": "A music player that that provide several effects.",
+      "curated_description": "Compact music player interface.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/music-player",
+      "registry_url": "https://nyxui.com/r/music-player.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "lucide-react"
+      ],
+      "dependencies": [
+        "lucide-react"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 1,
+      "targets": [
+        "components/ui/music-player.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/music-player.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/music-player.tsx",
+          "content_bytes": 22738
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "reveal-card": {
+      "component_name": "reveal-card",
+      "title": "Reveal Card",
+      "description": "A reveal card that that provide several effects.",
+      "curated_description": "Layered reveal card for media-heavy presentation.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/reveal-card",
+      "registry_url": "https://nyxui.com/r/reveal-card.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "lucide-react"
+      ],
+      "dependencies": [
+        "lucide-react"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 1,
+      "targets": [
+        "components/ui/reveal-card.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/reveal-card.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/reveal-card.tsx",
+          "content_bytes": 6014
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    },
+    "water-ripple-effect": {
+      "component_name": "water-ripple-effect",
+      "title": "Water Ripple Effect",
+      "description": "A water ripple effect that that provide several effects.",
+      "curated_description": "Shader-style water ripple canvas effect.",
+      "component_type": "registry:ui",
+      "install_target": "@nyx/water-ripple-effect",
+      "registry_url": "https://nyxui.com/r/water-ripple-effect.json",
+      "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+      "source": "nyx_registry",
+      "source_repo": "https://github.com/MihirJaiswal/nyxui",
+      "review_status": "installable",
+      "previewable": true,
+      "installable": true,
+      "required_dependencies": [
+        "three"
+      ],
+      "dependencies": [
+        "three"
+      ],
+      "dev_dependencies": [],
+      "registry_dependencies": [],
+      "file_count": 1,
+      "targets": [
+        "components/ui/water-ripple-effect.tsx"
+      ],
+      "files": [
+        {
+          "path": "registry/ui/water-ripple-effect.tsx",
+          "file_type": "registry:ui",
+          "target": "components/ui/water-ripple-effect.tsx",
+          "content_bytes": 10069
+        }
+      ],
+      "install_path_policy": "metis_nyx_targets_v1",
+      "install_path_safe": true,
+      "install_path_issues": [],
+      "audit_issues": []
+    }
+  }
+}

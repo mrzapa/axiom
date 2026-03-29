@@ -203,6 +203,200 @@ describe("parseUserStars", () => {
     expect(parsed).toHaveLength(1);
     expect(parsed[0].connectedUserStarIds).toEqual(["peer", "peer-2"]);
   });
+
+  it("leaves explicit ids untouched", () => {
+    const stars = parseUserStars([
+      {
+        id: "  explicit-star  ",
+        label: "Explicit",
+        x: 0.4,
+        y: 0.7,
+      },
+    ]);
+
+    expect(stars).toHaveLength(1);
+    expect(stars[0].id).toBe("  explicit-star  ");
+  });
+
+  it("treats blank ids as absent when meaningful star content exists", () => {
+    const [blankIdStar] = parseUserStars([
+      {
+        id: "   ",
+        label: "Bridge",
+        primaryDomainId: "knowledge",
+        relatedDomainIds: ["memory", "strategy"],
+        x: 0.28,
+      },
+    ]);
+    const [idlessStar] = parseUserStars([
+      {
+        label: "Bridge",
+        primaryDomainId: "knowledge",
+        relatedDomainIds: ["memory", "strategy"],
+        x: 0.28,
+      },
+    ]);
+
+    expect(blankIdStar.id).toBe(idlessStar.id);
+    expect(blankIdStar.id).toMatch(/^default-star-/);
+    expect(blankIdStar.label).toBe("Bridge");
+    expect(blankIdStar.primaryDomainId).toBe("knowledge");
+    expect(blankIdStar.relatedDomainIds).toEqual(["memory", "strategy"]);
+  });
+
+  it("filters sparse payloads with blank explicit ids", () => {
+    const stars = parseUserStars([
+      {
+        id: "",
+        x: 0.4,
+      },
+      {
+        id: "   ",
+        label: "   ",
+        y: 0.7,
+      },
+      {
+        id: "\n\t",
+        size: 1.2,
+      },
+    ]);
+
+    expect(stars).toHaveLength(0);
+  });
+
+  it("filters sparse payloads but keeps meaningful default-star seeds", () => {
+    const stars = parseUserStars([
+      {
+        x: 0.4,
+      },
+      {
+        y: 0.7,
+        size: 1.2,
+      },
+      {
+        label: "   ",
+        x: 0.45,
+        y: 0.55,
+      },
+      {
+        label: "Bridge",
+        primaryDomainId: "knowledge",
+        relatedDomainIds: ["memory", "strategy"],
+        x: 0.28,
+      },
+    ]);
+
+    expect(stars).toHaveLength(1);
+    expect(stars[0].id).toMatch(/^default-star-/);
+    expect(stars[0].label).toBe("Bridge");
+    expect(stars[0].primaryDomainId).toBe("knowledge");
+    expect(stars[0].relatedDomainIds).toEqual(["memory", "strategy"]);
+    expect(stars[0].x).toBe(0.28);
+    expect(stars[0].y).toBe(0.5);
+  });
+
+  it("canonicalizes legacy and multi-link manifest metadata into the same fallback id", () => {
+    const [legacyStar] = parseUserStars([
+      {
+        label: "Manifest bridge",
+        primaryDomainId: "knowledge",
+        linkedManifestPath: "/indexes/atlas.json",
+        x: 0.42,
+        y: 0.66,
+      },
+    ]);
+    const [multiLinkStar] = parseUserStars([
+      {
+        label: "Manifest bridge",
+        primaryDomainId: "knowledge",
+        linkedManifestPaths: ["/indexes/atlas.json"],
+        activeManifestPath: "/indexes/atlas.json",
+        x: 0.42,
+        y: 0.66,
+      },
+    ]);
+
+    expect(legacyStar.id).toBe(multiLinkStar.id);
+  });
+
+  it("treats related domains and connected stars as order-insensitive for fallback ids", () => {
+    const [left] = parseUserStars([
+      {
+        label: "Bridge",
+        primaryDomainId: "knowledge",
+        relatedDomainIds: ["memory", "strategy", "memory"],
+        connectedUserStarIds: ["star-b", "star-a", "star-b"],
+        x: 0.28,
+        y: 0.58,
+      },
+    ]);
+    const [right] = parseUserStars([
+      {
+        label: "Bridge",
+        primaryDomainId: "knowledge",
+        relatedDomainIds: ["strategy", "memory"],
+        connectedUserStarIds: ["star-a", "star-b"],
+        x: 0.28,
+        y: 0.58,
+      },
+    ]);
+
+    expect(left.id).toBe(right.id);
+  });
+
+  it("ignores secondary manifest attachment order when the resolved primary manifest is the same", () => {
+    const [left] = parseUserStars([
+      {
+        label: "Atlas cluster",
+        activeManifestPath: "/indexes/primary.json",
+        linkedManifestPaths: [
+          "/indexes/primary.json",
+          "/indexes/support-b.json",
+          "/indexes/support-a.json",
+        ],
+        x: 0.36,
+        y: 0.52,
+      },
+    ]);
+    const [right] = parseUserStars([
+      {
+        label: "Atlas cluster",
+        activeManifestPath: "/indexes/primary.json",
+        linkedManifestPaths: [
+          "/indexes/support-a.json",
+          "/indexes/support-b.json",
+          "/indexes/primary.json",
+        ],
+        x: 0.36,
+        y: 0.52,
+      },
+    ]);
+
+    expect(left.id).toBe(right.id);
+  });
+
+  it("keeps different resolved primary manifests distinct", () => {
+    const [left] = parseUserStars([
+      {
+        label: "Atlas cluster",
+        activeManifestPath: "/indexes/primary-a.json",
+        linkedManifestPaths: ["/indexes/primary-a.json", "/indexes/support.json"],
+        x: 0.36,
+        y: 0.52,
+      },
+    ]);
+    const [right] = parseUserStars([
+      {
+        label: "Atlas cluster",
+        activeManifestPath: "/indexes/primary-b.json",
+        linkedManifestPaths: ["/indexes/primary-a.json", "/indexes/support.json"],
+        x: 0.36,
+        y: 0.52,
+      },
+    ]);
+
+    expect(left.id).not.toBe(right.id);
+  });
 });
 
 describe("findHoveredAddCandidate", () => {

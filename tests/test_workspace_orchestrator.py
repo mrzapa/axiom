@@ -17,6 +17,14 @@ from metis_app.engine.querying import DirectQueryRequest, RagQueryRequest
 from metis_app.models.brain_graph import BrainGraph
 from metis_app.models.parity_types import SkillDefinition
 from metis_app.models.session_types import SessionDetail, SessionSummary
+from metis_app.services.nyx_catalog import (
+    CuratedNyxComponent,
+    NyxCatalogBroker,
+    NyxCatalogComponentDetail,
+    NyxCatalogComponentSummary,
+    NyxCatalogFileSummary,
+    NyxCatalogSearchResult,
+)
 from metis_app.services.workspace_orchestrator import WorkspaceOrchestrator
 
 
@@ -61,6 +69,7 @@ def _make_orchestrator(
     session_repo: Any | None = None,
     skill_repo: Any | None = None,
     assistant_service: Any | None = None,
+    nyx_catalog: Any | None = None,
 ) -> WorkspaceOrchestrator:
     """Return a WorkspaceOrchestrator with stub dependencies injected."""
     if session_repo is None:
@@ -84,7 +93,99 @@ def _make_orchestrator(
         session_repo=session_repo,
         skill_repo=skill_repo,
         assistant_service=assistant_service,
+        nyx_catalog=nyx_catalog,
         index_dir="/tmp/fake_indexes",
+    )
+
+
+def _make_nyx_broker() -> NyxCatalogBroker:
+    registry_items = {
+        "apple-glass-effect": {
+            "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+            "name": "apple-glass-effect",
+            "type": "registry:ui",
+            "title": "Apple Glass Effect",
+            "description": "Glassmorphism container with motion-based depth.",
+            "dependencies": ["motion"],
+            "files": [
+                {
+                    "path": "registry/ui/apple-glass-effect.tsx",
+                    "type": "registry:ui",
+                    "target": "components/ui/apple-glass-effect.tsx",
+                    "content": "export function AppleGlassEffect() {}",
+                }
+            ],
+        },
+        "glow-card": {
+            "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+            "name": "glow-card",
+            "type": "registry:ui",
+            "title": "Glow Card",
+            "description": "Interactive card with glow-based accent effects.",
+            "dependencies": ["clsx", "tailwind-merge"],
+            "files": [
+                {
+                    "path": "registry/ui/glow-card.tsx",
+                    "type": "registry:ui",
+                    "target": "components/ui/glow-card.tsx",
+                    "content": "export function GlowCard() {}",
+                }
+            ],
+        },
+    }
+
+    def fake_fetch_json(url: str) -> dict[str, object]:
+        component_name = url.rsplit("/", 1)[-1].replace(".json", "")
+        return registry_items[component_name]
+
+    return NyxCatalogBroker(
+        curated_components={
+            "apple-glass-effect": CuratedNyxComponent(
+                description="Glassmorphism container with motion-based depth.",
+                required_dependencies=("motion",),
+            ),
+            "glow-card": CuratedNyxComponent(
+                description="Interactive card with glow-based accent effects.",
+                required_dependencies=("clsx", "tailwind-merge"),
+            ),
+        },
+        fetch_json=fake_fetch_json,
+    )
+
+
+def _make_preview_only_detail(component_name: str) -> NyxCatalogComponentDetail:
+    return NyxCatalogComponentDetail(
+        component_name=component_name,
+        title="Marquee",
+        description="Preview only marquee.",
+        curated_description="Preview only marquee.",
+        component_type="registry:ui",
+        install_target=f"@nyx/{component_name}",
+        registry_url=f"https://nyxui.com/r/{component_name}.json",
+        schema_url="https://ui.shadcn.com/schema/registry-item.json",
+        source="nyx_registry",
+        source_repo="https://github.com/MihirJaiswal/nyxui",
+        required_dependencies=(),
+        dependencies=("motion",),
+        dev_dependencies=(),
+        registry_dependencies=(),
+        file_count=1,
+        targets=("components/ui/marquee.tsx",),
+        files=(
+            NyxCatalogFileSummary(
+                path="registry/ui/marquee.tsx",
+                file_type="registry:ui",
+                target="components/ui/marquee.tsx",
+                content_bytes=84,
+            ),
+        ),
+        review_status="preview",
+        previewable=True,
+        installable=False,
+        install_path_policy="metis_nyx_targets_v1",
+        install_path_safe=True,
+        install_path_issues=(),
+        audit_issues=("marquee: preview only",),
     )
 
 
@@ -384,6 +485,84 @@ class TestGetIndex:
         assert orch.get_index("idx-unknown") is None
 
 
+class TestNyxCatalog:
+    def test_search_catalog_delegates_to_broker(self) -> None:
+        nyx_catalog = MagicMock()
+        expected = NyxCatalogSearchResult(
+            query="glow",
+            total=2,
+            matched=1,
+            curated_only=True,
+            source="nyx_registry",
+            items=(
+                NyxCatalogComponentSummary(
+                    component_name="glow-card",
+                    title="Glow Card",
+                    description="A glow card.",
+                    curated_description="Interactive card with glow-based accent effects.",
+                    component_type="registry:ui",
+                    install_target="@nyx/glow-card",
+                    registry_url="https://nyxui.com/r/glow-card.json",
+                    schema_url="https://ui.shadcn.com/schema/registry-item.json",
+                    source="nyx_registry",
+                    source_repo="https://github.com/MihirJaiswal/nyxui",
+                    required_dependencies=("clsx",),
+                    dependencies=("clsx",),
+                    dev_dependencies=(),
+                    registry_dependencies=(),
+                    file_count=1,
+                    targets=("components/ui/glow-card.tsx",),
+                ),
+            ),
+        )
+        nyx_catalog.search_catalog.return_value = expected
+
+        result = _make_orchestrator(nyx_catalog=nyx_catalog).search_nyx_catalog(
+            query="glow",
+            limit=5,
+        )
+
+        assert result is expected
+        nyx_catalog.search_catalog.assert_called_once_with(query="glow", limit=5)
+
+    def test_get_component_detail_delegates_to_broker(self) -> None:
+        nyx_catalog = MagicMock()
+        expected = NyxCatalogComponentDetail(
+            component_name="glow-card",
+            title="Glow Card",
+            description="A glow card.",
+            curated_description="Interactive card with glow-based accent effects.",
+            component_type="registry:ui",
+            install_target="@nyx/glow-card",
+            registry_url="https://nyxui.com/r/glow-card.json",
+            schema_url="https://ui.shadcn.com/schema/registry-item.json",
+            source="nyx_registry",
+            source_repo="https://github.com/MihirJaiswal/nyxui",
+            required_dependencies=("clsx", "tailwind-merge"),
+            dependencies=("clsx", "tailwind-merge"),
+            dev_dependencies=(),
+            registry_dependencies=(),
+            file_count=1,
+            targets=("components/ui/glow-card.tsx",),
+            files=(
+                NyxCatalogFileSummary(
+                    path="registry/ui/glow-card.tsx",
+                    file_type="registry:ui",
+                    target="components/ui/glow-card.tsx",
+                    content_bytes=42,
+                ),
+            ),
+        )
+        nyx_catalog.get_component_detail.return_value = expected
+
+        result = _make_orchestrator(nyx_catalog=nyx_catalog).get_nyx_component_detail(
+            "@nyx/glow-card"
+        )
+
+        assert result is expected
+        nyx_catalog.get_component_detail.assert_called_once_with("@nyx/glow-card")
+
+
 # ---------------------------------------------------------------------------
 # Retrieval
 # ---------------------------------------------------------------------------
@@ -419,6 +598,56 @@ class TestRunRagQuery:
         orch._trace_store.append_event = MagicMock()  # type: ignore[method-assign]
         result = orch.run_rag_query(req)
         assert result is fake_result
+
+    def test_ui_prompt_enriches_rag_query_settings_with_nyx_runtime(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def _fake_query_rag(req: Any) -> Any:
+            captured["settings"] = req.settings
+            return MagicMock(
+                run_id="run-rag-nyx",
+                answer_text="Use Glow Card for the card surface.",
+                sources=[],
+                context_block="context",
+                top_score=0.9,
+                selected_mode="Q&A",
+                retrieval_plan={"stages": []},
+                fallback={},
+                artifacts=list(req.settings.get("artifacts") or []),
+            )
+
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator.query_rag",
+            _fake_query_rag,
+        )
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_make_nyx_broker())
+        orch._trace_store.append_event = MagicMock()  # type: ignore[method-assign]
+        result = orch.run_rag_query(
+            RagQueryRequest(
+                manifest_path="/tmp/manifest.json",
+                question="Build a frosted glass dashboard card with a glow treatment.",
+                settings={},
+            )
+        )
+
+        artifacts = list(captured["settings"].get("artifacts") or [])
+        assert [artifact["type"] for artifact in artifacts] == [
+            "nyx_component_selection",
+            "nyx_install_plan",
+            "nyx_dependency_report",
+        ]
+        assert {
+            component["component_name"]
+            for component in captured["settings"]["nyx_runtime"]["selected_components"]
+        } >= {"apple-glass-effect", "glow-card"}
+        assert result.artifacts == artifacts
 
     def test_session_id_persists_session_messages_and_reflects(
         self, monkeypatch: pytest.MonkeyPatch
@@ -534,6 +763,8 @@ class TestRunRagQuery:
             "content": "What is METIS?",
             "run_id": "",
             "sources": [],
+                "artifacts": [],
+                "actions": [],
         }
         assert session_repo.append_message.call_args_list[1].args == ("s1",)
         assert session_repo.append_message.call_args_list[1].kwargs["role"] == "assistant"
@@ -576,6 +807,223 @@ class TestRunDirectQuery:
         orch._trace_store.append_event = MagicMock()  # type: ignore[method-assign]
         result = orch.run_direct_query(req)
         assert result is fake_result
+
+    def test_ui_prompt_enriches_direct_query_settings_with_nyx_runtime(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def _fake_query_direct(req: Any) -> Any:
+            captured["settings"] = req.settings
+            return MagicMock(
+                run_id="run-nyx-direct",
+                answer_text="Use Glow Card and Apple Glass Effect.",
+                selected_mode="Q&A",
+                llm_provider="mock",
+                llm_model="mock-model",
+                artifacts=list(req.settings.get("artifacts") or []),
+            )
+
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator.query_direct",
+            _fake_query_direct,
+        )
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_make_nyx_broker())
+        result = orch.run_direct_query(
+            DirectQueryRequest(
+                prompt="Design a frosted glass panel with a glowing card.",
+                settings={},
+            )
+        )
+
+        artifacts = list(captured["settings"].get("artifacts") or [])
+        assert [artifact["type"] for artifact in artifacts] == [
+            "nyx_component_selection",
+            "nyx_install_plan",
+            "nyx_dependency_report",
+        ]
+        assert "Nyx UI integration is active for this request." in captured["settings"]["system_instructions"]
+        assert {
+            component["component_name"]
+            for component in captured["settings"]["nyx_runtime"]["selected_components"]
+        } >= {"apple-glass-effect", "glow-card"}
+        assert result.artifacts == artifacts
+
+    def test_real_direct_query_auto_emits_nyx_artifacts_for_ui_prompt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_make_nyx_broker())
+        orch._trace_store.append_event = MagicMock()  # type: ignore[method-assign]
+
+        result = orch.run_direct_query(
+            DirectQueryRequest(
+                prompt="Design a frosted glass panel with a glowing card.",
+                settings={},
+            )
+        )
+
+        assert [artifact["type"] for artifact in result.artifacts or []] == [
+            "nyx_component_selection",
+            "nyx_install_plan",
+            "nyx_dependency_report",
+        ]
+
+    def test_real_direct_query_emits_nyx_install_actions_and_persists_trace_proposal(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_make_nyx_broker())
+        trace_append = MagicMock()
+        orch._trace_store.append_event = trace_append  # type: ignore[method-assign]
+
+        result = orch.run_direct_query(
+            DirectQueryRequest(
+                prompt="Design a frosted glass panel with a glowing card.",
+                settings={},
+            )
+        )
+
+        assert result.actions is not None
+        action = result.actions[0]
+        assert action["action_type"] == "nyx_install"
+        assert action["payload"]["action_id"] == action["action_id"]
+        assert action["payload"]["proposal_token"] == action["proposal"]["proposal_token"]
+        assert set(action["proposal"]["component_names"]) >= {
+            "apple-glass-effect",
+            "glow-card",
+        }
+
+        payload = trace_append.call_args.kwargs["payload"]
+        assert payload["actions"][0]["action_id"] == action["action_id"]
+        assert payload["actions"][0]["proposal"]["component_count"] == action["proposal"]["component_count"]
+
+    def test_real_direct_query_omits_nyx_artifacts_for_unrelated_prompt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_make_nyx_broker())
+        orch._trace_store.append_event = MagicMock()  # type: ignore[method-assign]
+
+        result = orch.run_direct_query(
+            DirectQueryRequest(
+                prompt="Explain how vector embeddings improve retrieval quality.",
+                settings={},
+            )
+        )
+
+        assert result.artifacts is None
+
+    def test_preview_only_components_do_not_emit_nyx_install_actions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _PreviewOnlyBroker:
+            def iter_curated_components(self) -> tuple[tuple[str, CuratedNyxComponent], ...]:
+                return ()
+
+            def get_component_detail(self, component_name: str) -> NyxCatalogComponentDetail:
+                return _make_preview_only_detail(component_name)
+
+        def _fake_query_direct(req: Any) -> Any:
+            return MagicMock(
+                run_id="run-preview-direct",
+                answer_text="Preview the marquee first.",
+                selected_mode="Q&A",
+                llm_provider="mock",
+                llm_model="mock-model",
+                artifacts=list(req.settings.get("artifacts") or []),
+            )
+
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator.query_direct",
+            _fake_query_direct,
+        )
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_PreviewOnlyBroker())
+        trace_append = MagicMock()
+        orch._trace_store.append_event = trace_append  # type: ignore[method-assign]
+
+        result = orch.run_direct_query(
+            DirectQueryRequest(
+                prompt="Preview the marquee treatment before any install.",
+                settings={
+                    "nyx_runtime": {
+                        "schema_version": "1.0",
+                        "query": "Preview the marquee treatment before any install.",
+                        "intent_type": "ui_layout_request",
+                        "matched_signals": ["explicit_nyx"],
+                        "selected_components": [{"component_name": "marquee"}],
+                    },
+                    "artifacts": [
+                        {
+                            "type": "nyx_component_selection",
+                            "payload": {
+                                "selected_components": [{"component_name": "marquee"}]
+                            },
+                        }
+                    ],
+                },
+            )
+        )
+
+        assert result.actions is None
+        assert "actions" not in trace_append.call_args.kwargs["payload"]
+
+    def test_non_ui_prompt_leaves_direct_query_settings_unmodified(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def _fake_query_direct(req: Any) -> Any:
+            captured["settings"] = req.settings
+            return MagicMock(
+                run_id="run-direct-plain",
+                answer_text="Embeddings convert text into vectors.",
+                selected_mode="Q&A",
+                llm_provider="mock",
+                llm_model="mock-model",
+            )
+
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator.query_direct",
+            _fake_query_direct,
+        )
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_make_nyx_broker())
+        orch.run_direct_query(
+            DirectQueryRequest(
+                prompt="Explain how vector embeddings improve retrieval quality.",
+                settings={},
+            )
+        )
+
+        assert "nyx_runtime" not in captured["settings"]
+        assert "artifacts" not in captured["settings"]
 
     def test_session_id_persists_session_messages_and_reflects(
         self, monkeypatch: pytest.MonkeyPatch
@@ -628,6 +1076,8 @@ class TestRunDirectQuery:
             "content": "Hello",
             "run_id": "",
             "sources": [],
+                "artifacts": [],
+                "actions": [],
         }
         assert session_repo.append_message.call_args_list[1].kwargs["run_id"] == "run-2"
         assert assistant_service.reflect.call_args.kwargs == {
@@ -800,6 +1250,108 @@ class TestStreamRagQuery:
         req = RagQueryRequest(manifest_path="/tmp/m.json", question="?", settings={})
         result = list(_make_orchestrator().stream_rag_query(req))
         assert result == events
+
+    def test_ui_prompt_enriches_stream_query_settings_with_nyx_runtime(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def _fake_stream(req: Any, cancel_token: Any = None) -> Any:
+            captured["settings"] = req.settings
+            return iter(
+                [
+                    {
+                        "type": "final",
+                        "run_id": "run-stream-nyx",
+                        "answer_text": "Use Glow Card and Apple Glass Effect.",
+                        "sources": [],
+                        "artifacts": list(req.settings.get("artifacts") or []),
+                    }
+                ]
+            )
+
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator.stream_rag_answer",
+            _fake_stream,
+        )
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_make_nyx_broker())
+        orch._trace_store.append_event = MagicMock()  # type: ignore[method-assign]
+
+        result = list(
+            orch.stream_rag_query(
+                RagQueryRequest(
+                    manifest_path="/tmp/m.json",
+                    question="Design a frosted glass hero with a glowing card.",
+                    settings={},
+                )
+            )
+        )
+
+        artifacts = list(captured["settings"].get("artifacts") or [])
+        assert [artifact["type"] for artifact in artifacts] == [
+            "nyx_component_selection",
+            "nyx_install_plan",
+            "nyx_dependency_report",
+        ]
+        assert {
+            component["component_name"]
+            for component in captured["settings"]["nyx_runtime"]["selected_components"]
+        } >= {"apple-glass-effect", "glow-card"}
+        assert result[-1]["artifacts"] == artifacts
+
+    def test_stream_final_emits_nyx_install_actions_and_persists_trace_proposal(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"llm_provider": "mock", "selected_mode": "Q&A"},
+        )
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator.stream_rag_answer",
+            lambda req, cancel_token=None: iter(
+                [
+                    {
+                        "type": "final",
+                        "run_id": "run-stream-nyx-action",
+                        "answer_text": "Use Glow Card and Apple Glass Effect.",
+                        "sources": [],
+                        "artifacts": list(req.settings.get("artifacts") or []),
+                    }
+                ]
+            ),
+        )
+
+        orch = _make_orchestrator(nyx_catalog=_make_nyx_broker())
+        trace_append = MagicMock()
+        orch._trace_store.append_event = trace_append  # type: ignore[method-assign]
+
+        result = list(
+            orch.stream_rag_query(
+                RagQueryRequest(
+                    manifest_path="/tmp/m.json",
+                    question="Design a frosted glass hero with a glowing card.",
+                    settings={},
+                    run_id="run-stream-nyx-action",
+                )
+            )
+        )
+
+        final = result[-1]
+        assert final["actions"][0]["action_type"] == "nyx_install"
+        assert final["actions"][0]["payload"]["proposal_token"] == final["actions"][0]["proposal"]["proposal_token"]
+        assert set(final["actions"][0]["proposal"]["component_names"]) >= {
+            "apple-glass-effect",
+            "glow-card",
+        }
+
+        payload = trace_append.call_args.kwargs["payload"]
+        assert payload["actions"][0]["action_id"] == final["actions"][0]["action_id"]
+        assert payload["actions"][0]["proposal"]["proposal_token"] == final["actions"][0]["proposal"]["proposal_token"]
 
     def test_session_id_writes_user_and_assistant_messages(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1140,7 +1692,13 @@ class TestAppendMessage:
         orch = _make_orchestrator(session_repo=session_repo)
         orch.append_message("s1", role="user", content="Hello", run_id="r1")
         session_repo.append_message.assert_called_once_with(
-            "s1", role="user", content="Hello", run_id="r1", sources=[]
+            "s1",
+            role="user",
+            content="Hello",
+            run_id="r1",
+            sources=[],
+            artifacts=[],
+            actions=[],
         )
 
 

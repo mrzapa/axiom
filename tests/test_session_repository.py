@@ -128,6 +128,62 @@ def test_loads_monolith_compatible_schema_without_migration(tmp_path) -> None:
     assert detail.messages[0].sources[0].source == "legacy.txt"
 
 
+def test_persists_assistant_artifacts_and_nyx_actions(tmp_path) -> None:
+    repo = SessionRepository(tmp_path / "rag_sessions.db")
+    repo.init_db()
+    session = repo.create_session(title="Nyx chat")
+
+    repo.append_message(
+        session.session_id,
+        role="assistant",
+        content="Use Glow Card.",
+        run_id="run-nyx",
+        artifacts=[
+            {
+                "id": "nyx_component_selection",
+                "type": "nyx_component_selection",
+                "summary": "Nyx matched 1 component candidate.",
+                "payload": {
+                    "selected_components": [
+                        {"component_name": "glow-card", "title": "Glow Card"}
+                    ]
+                },
+            }
+        ],
+        actions=[
+            {
+                "action_id": "nyx-install:abc123",
+                "action_type": "nyx_install",
+                "label": "Approve Nyx install proposal",
+                "summary": "Approve installing Glow Card.",
+                "requires_approval": True,
+                "run_action_endpoint": "/v1/runs/run-nyx/actions",
+                "payload": {
+                    "action_id": "nyx-install:abc123",
+                    "action_type": "nyx_install",
+                    "proposal_token": "nyx-proposal:abc123",
+                    "component_count": 1,
+                    "component_names": ["glow-card"],
+                },
+                "proposal": {
+                    "schema_version": "1.0",
+                    "proposal_token": "nyx-proposal:abc123",
+                    "component_names": ["glow-card"],
+                    "component_count": 1,
+                    "components": [{"component_name": "glow-card", "title": "Glow Card"}],
+                },
+            }
+        ],
+    )
+
+    detail = repo.get_session(session.session_id)
+
+    assert detail is not None
+    assert detail.messages[0].artifacts[0]["type"] == "nyx_component_selection"
+    assert detail.messages[0].actions[0]["action_type"] == "nyx_install"
+    assert detail.messages[0].actions[0]["proposal"]["component_names"] == ["glow-card"]
+
+
 def test_list_sessions_filters_by_selected_skill(tmp_path) -> None:
     repo = SessionRepository(tmp_path / "rag_sessions.db")
     repo.init_db()

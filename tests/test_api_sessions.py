@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from metis_app.api.app import create_app
 from metis_app.api import sessions as sessions_module
 from metis_app.services.session_repository import SessionRepository
+from metis_app.services.trace_store import TraceStore
 
 
 @pytest.fixture
@@ -136,6 +137,117 @@ def test_get_session_no_absolute_file_paths_in_sources(client, repo):
     msg = r.json()["messages"][0]
     assert len(msg["sources"]) == 1
     assert "file_path" not in msg["sources"][0]
+
+
+def test_get_session_hydrates_latest_nyx_action_result(client, repo, monkeypatch, tmp_path):
+    trace_store = TraceStore(tmp_path / "traces")
+    monkeypatch.setattr(sessions_module, "TraceStore", lambda: trace_store)
+
+    repo.create_session(session_id="s1", title="Nyx session")
+    repo.append_message(
+        "s1",
+        role="assistant",
+        content="Use Glow Card.",
+        run_id="run-nyx-action",
+        artifacts=[
+            {
+                "id": "nyx_component_selection",
+                "type": "nyx_component_selection",
+                "summary": "Nyx matched 1 component candidate.",
+                "payload": {
+                    "selected_components": [
+                        {"component_name": "glow-card", "title": "Glow Card"}
+                    ]
+                },
+            }
+        ],
+        actions=[
+            {
+                "action_id": "nyx-install:abc123",
+                "action_type": "nyx_install",
+                "label": "Approve Nyx install proposal",
+                "summary": "Approve installing Glow Card.",
+                "requires_approval": True,
+                "run_action_endpoint": "/v1/runs/run-nyx-action/actions",
+                "payload": {
+                    "action_id": "nyx-install:abc123",
+                    "action_type": "nyx_install",
+                    "proposal_token": "nyx-proposal:abc123",
+                    "component_count": 1,
+                    "component_names": ["glow-card"],
+                },
+                "proposal": {
+                    "schema_version": "1.0",
+                    "proposal_token": "nyx-proposal:abc123",
+                    "source": "nyx_runtime",
+                    "run_id": "run-nyx-action",
+                    "query": "Design a glowing card.",
+                    "intent_type": "interface_pattern_selection",
+                    "matched_signals": ["pattern:card"],
+                    "component_names": ["glow-card"],
+                    "component_count": 1,
+                    "components": [{"component_name": "glow-card", "title": "Glow Card"}],
+                },
+            }
+        ],
+    )
+    trace_store.append_event(
+        run_id="run-nyx-action",
+        stage="action_required",
+        event_type="nyx_install_action_submitted",
+        payload={
+            "approved": False,
+            "action_id": "nyx-install:abc123",
+            "action_type": "nyx_install",
+            "proposal_token": "nyx-proposal:abc123",
+            "component_names": ["glow-card"],
+            "component_count": 1,
+            "execution_status": "failed",
+            "status": "error",
+            "command": ["node", "scripts/add-nyx-component.mjs", "--", "glow-card"],
+            "cwd": str(tmp_path),
+            "package_script": "ui:add:nyx",
+            "returncode": 9,
+            "stdout_excerpt": "stale install output",
+            "failure_code": "installer_error",
+        },
+    )
+    trace_store.append_event(
+        run_id="run-nyx-action",
+        stage="action_required",
+        event_type="nyx_install_action_submitted",
+        payload={
+            "approved": True,
+            "action_id": "nyx-install:abc123",
+            "action_type": "nyx_install",
+            "proposal_token": "nyx-proposal:abc123",
+            "component_names": ["glow-card"],
+            "component_count": 1,
+            "execution_status": "completed",
+            "status": "success",
+            "command": ["node", "scripts/add-nyx-component.mjs", "--", "glow-card"],
+            "cwd": str(tmp_path),
+            "package_script": "ui:add:nyx",
+            "returncode": 0,
+            "stdout_excerpt": "newest install output",
+        },
+    )
+
+    r = client.get("/v1/sessions/s1")
+
+    assert r.status_code == 200
+    body = r.json()
+    message = body["messages"][0]
+    assert message["artifacts"][0]["type"] == "nyx_component_selection"
+    assert message["actions"][0]["action_type"] == "nyx_install"
+    assert message["action_result"]["execution_status"] == "completed"
+    assert message["action_result"]["status"] == "success"
+    assert message["action_result"]["proposal_token"] == "nyx-proposal:abc123"
+    assert message["action_result"]["installer"]["returncode"] == 0
+    assert message["action_result"]["installer"]["stdout_excerpt"] == "newest install output"
+    assert not message["action_result"]["failure_code"]
+    assert len(body["traces"]["run-nyx-action"]) == 2
+    assert body["traces"]["run-nyx-action"][0]["event_type"] == "nyx_install_action_submitted"
 
 
 # ---------------------------------------------------------------------------

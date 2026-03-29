@@ -3,6 +3,11 @@ import type {
   ArrowArtifact,
   ChatMessageContent,
   EvidenceSource,
+  NyxInstallAction,
+  NyxInstallActionInstaller,
+  NyxInstallActionResult,
+  NyxInstallProposal,
+  NyxInstallProposalComponent,
 } from "@/lib/chat-types";
 import { emitBrainGraphRagActivity } from "@/lib/brain-graph-rag-activity";
 
@@ -68,6 +73,7 @@ export interface DirectQueryResult {
   llm_provider: string;
   llm_model: string;
   artifacts?: ArrowArtifact[];
+  actions?: NyxInstallAction[];
 }
 
 export interface IndexSummary {
@@ -79,6 +85,45 @@ export interface IndexSummary {
   created_at: string;
   embedding_signature: string;
   brain_pass?: BrainPassMetadata;
+}
+
+export interface NyxCatalogFileSummary {
+  path: string;
+  file_type: string;
+  target: string;
+  content_bytes: number;
+}
+
+export interface NyxCatalogComponentSummary {
+  component_name: string;
+  title: string;
+  description: string;
+  curated_description: string;
+  component_type: string;
+  install_target: string;
+  registry_url: string;
+  schema_url: string;
+  source: string;
+  source_repo: string;
+  required_dependencies: string[];
+  dependencies: string[];
+  dev_dependencies: string[];
+  registry_dependencies: string[];
+  file_count: number;
+  targets: string[];
+}
+
+export interface NyxCatalogComponentDetail extends NyxCatalogComponentSummary {
+  files: NyxCatalogFileSummary[];
+}
+
+export interface NyxCatalogSearchResponse {
+  query: string;
+  total: number;
+  matched: number;
+  curated_only: boolean;
+  source: string;
+  items: NyxCatalogComponentSummary[];
 }
 
 export interface BrainPassPlacement {
@@ -121,6 +166,7 @@ export interface RagQueryResult {
   retrieval_plan: RetrievalPlan;
   fallback: RetrievalFallback;
   artifacts?: ArrowArtifact[];
+  actions?: NyxInstallAction[];
 }
 
 export interface RetrievalFallback {
@@ -197,6 +243,7 @@ export interface RagStreamFinalEvent extends RagStreamEnvelopeFields {
   sources: EvidenceSource[];
   fallback?: RetrievalFallback;
   artifacts?: ArrowArtifact[];
+  actions?: NyxInstallAction[];
 }
 
 export interface RagStreamErrorEvent extends RagStreamEnvelopeFields {
@@ -279,6 +326,10 @@ function getNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function getBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 function getStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
 }
@@ -291,8 +342,157 @@ function getArrowArtifacts(value: unknown): ArrowArtifact[] | undefined {
   return Array.isArray(value) ? (value as ArrowArtifact[]) : undefined;
 }
 
+function getNyxInstallProposalComponents(
+  value: unknown,
+): NyxInstallProposalComponent[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      const component = getRecord(item);
+      return {
+        component_name: getText(component.component_name),
+        title: getText(component.title),
+        description: getText(component.description),
+        curated_description: getText(component.curated_description),
+        component_type: getText(component.component_type),
+        install_target: getText(component.install_target),
+        registry_url: getText(component.registry_url),
+        source_repo: getText(component.source_repo),
+        required_dependencies: getStringArray(component.required_dependencies),
+        dependencies: getStringArray(component.dependencies),
+        dev_dependencies: getStringArray(component.dev_dependencies),
+        registry_dependencies: getStringArray(component.registry_dependencies),
+        file_count: getNumber(component.file_count),
+        targets: getStringArray(component.targets),
+        review_status: getText(component.review_status),
+        previewable: getBoolean(component.previewable, true),
+        installable: getBoolean(component.installable, true),
+        install_path_policy: getText(component.install_path_policy),
+        install_path_safe: getBoolean(component.install_path_safe, true),
+        install_path_issues: getStringArray(component.install_path_issues),
+        audit_issues: getStringArray(component.audit_issues),
+      };
+    })
+    .filter((component) => component.component_name);
+}
+
+function getNyxInstallProposal(value: unknown): NyxInstallProposal {
+  const proposal = getRecord(value);
+  const componentNames = getStringArray(proposal.component_names);
+  return {
+    schema_version: getText(proposal.schema_version, "1.0"),
+    proposal_token: getText(proposal.proposal_token),
+    source: getText(proposal.source),
+    run_id: getText(proposal.run_id),
+    query: getText(proposal.query),
+    intent_type: getText(proposal.intent_type),
+    matched_signals: getStringArray(proposal.matched_signals),
+    component_names: componentNames,
+    component_count: getNumber(
+      proposal.component_count,
+      componentNames.length,
+    ),
+    components: getNyxInstallProposalComponents(proposal.components),
+  };
+}
+
+function getNyxInstallActionPayload(value: unknown) {
+  const payload = getRecord(value);
+  return {
+    action_id: getText(payload.action_id),
+    action_type: "nyx_install" as const,
+    proposal_token: getText(payload.proposal_token),
+    component_count: getNumber(payload.component_count),
+    component_names: getStringArray(payload.component_names),
+  };
+}
+
+function getNyxInstallAction(value: unknown): NyxInstallAction {
+  const action = getRecord(value);
+  return {
+    action_id: getText(action.action_id),
+    action_type: "nyx_install",
+    label: getText(action.label, "Approve Nyx install proposal"),
+    summary: getText(action.summary, "Action required"),
+    requires_approval: getBoolean(action.requires_approval, true),
+    run_action_endpoint: getText(action.run_action_endpoint),
+    payload: getNyxInstallActionPayload(action.payload),
+    proposal: getNyxInstallProposal(action.proposal),
+  };
+}
+
+function getNyxInstallActions(value: unknown): NyxInstallAction[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const actions = value
+    .map((item) => getNyxInstallAction(item))
+    .filter((action) => action.action_id);
+  return actions.length > 0 ? actions : undefined;
+}
+
+function getNyxInstallActionInstaller(
+  value: unknown,
+): NyxInstallActionInstaller | undefined {
+  const installer = getRecord(value);
+  const command = getStringArray(installer.command);
+  const cwd = getText(installer.cwd);
+  const packageScript = getText(installer.package_script);
+  const returncode = getNumber(installer.returncode);
+  const stdoutExcerpt = getText(installer.stdout_excerpt);
+  const stderrExcerpt = getText(installer.stderr_excerpt);
+
+  if (
+    command.length === 0 &&
+    !cwd &&
+    !packageScript &&
+    returncode === 0 &&
+    !stdoutExcerpt &&
+    !stderrExcerpt
+  ) {
+    return undefined;
+  }
+
+  return {
+    command,
+    cwd,
+    package_script: packageScript,
+    returncode,
+    stdout_excerpt: stdoutExcerpt || undefined,
+    stderr_excerpt: stderrExcerpt || undefined,
+  };
+}
+
+function getNyxInstallActionResult(value: unknown): NyxInstallActionResult {
+  const result = getRecord(value);
+  const proposalRecord = getRecord(result.proposal);
+  const installer = getNyxInstallActionInstaller(result.installer);
+  const componentNames = getStringArray(result.component_names);
+  return {
+    run_id: getText(result.run_id),
+    approved: getBoolean(result.approved),
+    status: getText(result.status),
+    action_id: getText(result.action_id),
+    action_type: "nyx_install",
+    proposal_token: getText(result.proposal_token),
+    component_names: componentNames,
+    component_count: getNumber(result.component_count, componentNames.length),
+    execution_status: getText(result.execution_status),
+    proposal: Object.keys(proposalRecord).length
+      ? getNyxInstallProposal(proposalRecord)
+      : null,
+    installer: installer ?? null,
+    failure_code: getText(result.failure_code) || undefined,
+  };
+}
+
 function getActionRequiredAction(value: unknown): ActionRequiredAction {
   const action = getRecord(value);
+  if (getText(action.action_type) === "nyx_install") {
+    return getNyxInstallAction(action);
+  }
   return {
     kind: getText(action.kind, "action_required"),
     summary: getText(action.summary, "Action required"),
@@ -381,6 +581,7 @@ export function normalizeRagStreamEvent(rawEvent: unknown): RagStreamEvent {
         sources: getEvidenceSources(event.sources ?? payload.sources),
         fallback: getRecord(event.fallback ?? payload.fallback),
         artifacts: getArrowArtifacts(event.artifacts ?? payload.artifacts),
+        actions: getNyxInstallActions(event.actions ?? payload.actions),
         ...envelope,
       };
     case "error":
@@ -912,6 +1113,44 @@ export async function fetchIndexes(): Promise<IndexSummary[]> {
   return res.json();
 }
 
+export async function fetchNyxCatalog(
+  query = "",
+  options?: { limit?: number },
+): Promise<NyxCatalogSearchResponse> {
+  const params = new URLSearchParams();
+  if (query.trim()) {
+    params.set("q", query.trim());
+  }
+  if (
+    typeof options?.limit === "number" &&
+    Number.isFinite(options.limit) &&
+    options.limit > 0
+  ) {
+    params.set("limit", String(Math.trunc(options.limit)));
+  }
+
+  const url = `${await getApiBase()}/v1/nyx/catalog${params.toString() ? `?${params.toString()}` : ""}`;
+  const res = await apiFetch(url);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to fetch Nyx catalog (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function fetchNyxComponentDetail(
+  componentName: string,
+): Promise<NyxCatalogComponentDetail> {
+  const res = await apiFetch(
+    `${await getApiBase()}/v1/nyx/catalog/${encodeURIComponent(componentName)}`,
+  );
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to fetch Nyx component detail (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
 export async function queryRag(
   manifest_path: string,
   question: string,
@@ -1165,8 +1404,14 @@ export async function buildIndexStream(
 
 export async function submitRunAction(
   runId: string,
-  body: { approved: boolean; payload?: Record<string, unknown> },
-): Promise<void> {
+  body: {
+    approved: boolean;
+    action_id?: string;
+    action_type?: string;
+    proposal_token?: string;
+    payload?: Record<string, unknown>;
+  },
+): Promise<RunActionResponse> {
   const res = await apiFetch(
     `${await getApiBase()}/v1/runs/${encodeURIComponent(runId)}/actions`,
     {
@@ -1179,6 +1424,30 @@ export async function submitRunAction(
     const detail = await res.text();
     throw new Error(`Action submit failed (${res.status}): ${detail}`);
   }
+  const payload = (await res.json()) as unknown;
+  return parseRunActionResponse(payload);
+}
+
+export interface RunActionAcceptedResponse {
+  run_id: string;
+  approved: boolean;
+  status: string;
+}
+
+export type RunActionResponse =
+  | RunActionAcceptedResponse
+  | NyxInstallActionResult;
+
+function parseRunActionResponse(value: unknown): RunActionResponse {
+  const payload = getRecord(value);
+  if (getText(payload.action_type) === "nyx_install") {
+    return getNyxInstallActionResult(payload);
+  }
+  return {
+    run_id: getText(payload.run_id),
+    approved: getBoolean(payload.approved),
+    status: getText(payload.status, "accepted"),
+  };
 }
 
 export interface LogTailResult {

@@ -409,6 +409,7 @@ export function ChatPanel({
                     runId={msg.run_id}
                     action={msg.actionRequired.action}
                     status={msg.actionRequired.status}
+                    result={msg.actionRequired.result}
                     onApprove={() => onActionApprove?.(msg.id)}
                     onDeny={() => onActionDeny?.(msg.id)}
                   />

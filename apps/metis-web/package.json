@@ -13,6 +13,9 @@
     "lint": "eslint",
     "ui:diff": "npx shadcn diff",
     "ui:add": "npx shadcn add",
+    "ui:add:nyx": "node ./scripts/add-nyx-component.mjs",
+    "ui:list:nyx": "node ./scripts/add-nyx-component.mjs --list",
+    "ui:validate:nyx": "node ./scripts/add-nyx-component.mjs --validate",
     "test": "vitest run"
   },
   "dependencies": {

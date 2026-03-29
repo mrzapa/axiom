@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from metis_app.controllers.app_controller import AppController
 from metis_app.models.app_model import AppModel
+from metis_app.services.nyx_catalog import CuratedNyxComponent, NyxCatalogBroker
 from metis_app.services.session_repository import SessionRepository
 
 
@@ -83,6 +84,41 @@ def _drain(controller: AppController) -> None:
     if controller._active_future is not None:
         controller._active_future.result(timeout=5)
     controller.poll_and_dispatch()
+
+
+def _make_nyx_broker() -> NyxCatalogBroker:
+    registry_items = {
+        "apple-glass-effect": {
+            "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+            "name": "apple-glass-effect",
+            "type": "registry:ui",
+            "title": "Apple Glass Effect",
+            "description": "Glassmorphism container with motion-based depth.",
+            "dependencies": ["motion"],
+            "files": [
+                {
+                    "path": "registry/ui/apple-glass-effect.tsx",
+                    "type": "registry:ui",
+                    "target": "components/ui/apple-glass-effect.tsx",
+                    "content": "export function AppleGlassEffect() {}",
+                }
+            ],
+        }
+    }
+
+    def fake_fetch_json(url: str) -> dict[str, object]:
+        component_name = url.rsplit("/", 1)[-1].replace(".json", "")
+        return registry_items[component_name]
+
+    return NyxCatalogBroker(
+        curated_components={
+            "apple-glass-effect": CuratedNyxComponent(
+                description="Glassmorphism container with motion-based depth.",
+                required_dependencies=("motion",),
+            )
+        },
+        fetch_json=fake_fetch_json,
+    )
 
 
 def test_direct_prompt_is_persisted_to_session_db(tmp_path, monkeypatch) -> None:
@@ -276,6 +312,118 @@ def test_tutor_mode_uses_structured_pipeline(tmp_path, monkeypatch) -> None:
 
     assert any("### Flashcards" in message for message in view.chat_messages)
     assert any("### Quiz" in message for message in view.chat_messages)
+
+
+def test_tutor_mode_passes_resolved_nyx_prompt_to_structured_pipeline(tmp_path, monkeypatch) -> None:
+    model = AppModel()
+    model.session_db_path = tmp_path / "rag_sessions.db"
+    model.settings = {
+        "llm_provider": "mock",
+        "llm_model": "mock-v1",
+        "embedding_provider": "mock",
+        "selected_mode": "Tutor",
+        "top_k": 1,
+    }
+    model.index_state = {"built": True}
+    model.documents = ["doc.txt"]
+    model.chunks = [
+        {
+            "id": "doc.txt::chunk0",
+            "text": "Glassmorphism layers can improve interface depth cues.",
+            "source": "doc.txt",
+            "chunk_idx": 0,
+        }
+    ]
+    model.embeddings = [[0.1] * 32]
+    view = _FakeView(chat_mode="rag")
+    controller = AppController(model=model, view=view)
+
+    captured: dict[str, str] = {}
+
+    class _FakeLLM:
+        def invoke(self, _messages):
+            return _FakeMessage(content="unused")
+
+    def _fake_run_tutor_pipeline(_llm, *, query_text, context_block, sources, system_prompt=""):
+        captured["query_text"] = query_text
+        captured["context_block"] = context_block
+        captured["system_prompt"] = system_prompt
+        captured["source_count"] = str(len(sources))
+        return type("PipelineResult", (), {"response_text": "Tutor response"})()
+
+    monkeypatch.setattr("metis_app.controllers.app_controller.create_llm", lambda _s: _FakeLLM())
+    monkeypatch.setattr(
+        "metis_app.services.runtime_resolution.get_default_nyx_catalog_broker",
+        lambda: _make_nyx_broker(),
+    )
+    monkeypatch.setattr(
+        "metis_app.controllers.app_controller.run_tutor_pipeline",
+        _fake_run_tutor_pipeline,
+    )
+
+    controller.on_send_prompt("Teach me how to build a frosted glass interface with Nyx UI.")
+    _drain(controller)
+
+    assert captured["query_text"] == "Teach me how to build a frosted glass interface with Nyx UI."
+    assert captured["source_count"] == "1"
+    assert "Nyx UI integration is active for this request." in captured["system_prompt"]
+    assert any("Tutor response" in message for message in view.chat_messages)
+
+
+def test_summary_mode_passes_resolved_nyx_prompt_to_structured_pipeline(tmp_path, monkeypatch) -> None:
+    model = AppModel()
+    model.session_db_path = tmp_path / "rag_sessions.db"
+    model.settings = {
+        "llm_provider": "mock",
+        "llm_model": "mock-v1",
+        "embedding_provider": "mock",
+        "selected_mode": "Summary",
+        "top_k": 1,
+    }
+    model.index_state = {"built": True}
+    model.documents = ["doc.txt"]
+    model.chunks = [
+        {
+            "id": "doc.txt::chunk0",
+            "text": "Glassmorphism layers can improve interface depth cues.",
+            "source": "doc.txt",
+            "chunk_idx": 0,
+        }
+    ]
+    model.embeddings = [[0.1] * 32]
+    view = _FakeView(chat_mode="rag")
+    controller = AppController(model=model, view=view)
+
+    captured: dict[str, str] = {}
+
+    class _FakeLLM:
+        def invoke(self, _messages):
+            return _FakeMessage(content="unused")
+
+    def _fake_run_summary_pipeline(_llm, *, query_text, context_block, sources, system_prompt=""):
+        captured["query_text"] = query_text
+        captured["context_block"] = context_block
+        captured["system_prompt"] = system_prompt
+        captured["source_count"] = str(len(sources))
+        return type("PipelineResult", (), {"response_text": "Summary response"})()
+
+    monkeypatch.setattr("metis_app.controllers.app_controller.create_llm", lambda _s: _FakeLLM())
+    monkeypatch.setattr(
+        "metis_app.services.runtime_resolution.get_default_nyx_catalog_broker",
+        lambda: _make_nyx_broker(),
+    )
+    monkeypatch.setattr(
+        "metis_app.controllers.app_controller.run_blinkist_summary_pipeline",
+        _fake_run_summary_pipeline,
+    )
+
+    controller.on_send_prompt("Summarize how to build a frosted glass interface with Nyx UI.")
+    _drain(controller)
+
+    assert captured["query_text"] == "Summarize how to build a frosted glass interface with Nyx UI."
+    assert captured["source_count"] == "1"
+    assert "Nyx UI integration is active for this request." in captured["system_prompt"]
+    assert any("Summary response" in message for message in view.chat_messages)
 
 
 def test_secure_mode_blocks_rag_without_override(tmp_path) -> None:

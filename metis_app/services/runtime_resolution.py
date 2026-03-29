@@ -15,6 +15,8 @@ from metis_app.models.parity_types import (
     SkillMatch,
     SkillSessionState,
 )
+from metis_app.services.nyx_catalog import get_default_nyx_catalog_broker
+from metis_app.services.nyx_runtime import append_system_instruction, build_nyx_runtime_context
 from metis_app.services.skill_repository import SCALAR_OVERRIDE_KEYS
 
 MODE_ALIASES = {
@@ -398,6 +400,21 @@ def resolve_runtime_settings(
         prompt_settings["system_instructions"] = (
             base_prompt + ("\n\n" if base_prompt else "") + joined
         ).strip()
+    nyx_payload: dict[str, Any] = {}
+    if str(query or "").strip():
+        try:
+            nyx_context = build_nyx_runtime_context(
+                query,
+                get_default_nyx_catalog_broker(),
+            )
+        except RuntimeError:
+            nyx_context = None
+        if nyx_context is not None:
+            prompt_settings["system_instructions"] = append_system_instruction(
+                str(prompt_settings.get("system_instructions") or ""),
+                nyx_context.system_instruction_append(),
+            )
+            nyx_payload = nyx_context.to_payload()
     system_prompt = build_system_prompt(
         prompt_settings,
         selected_skills=selected_skills,
@@ -464,6 +481,7 @@ def resolve_runtime_settings(
             "primary_skill_id": primary.skill_id if primary is not None else "",
             "runtime_override_conflicts": conflicts,
             "skills": next_session_state.to_payload(),
+            **({"nyx": nyx_payload} if nyx_payload else {}),
         },
     )
 

@@ -42,6 +42,7 @@ describe("ArtifactMessageContent runtime integration", () => {
       },
       payload_bytes: 0,
       payload_truncated: false,
+      render_kind: "runtime",
       runtime_eligible: true,
       runtime_skip_reason: undefined,
     };
@@ -85,6 +86,7 @@ describe("ArtifactMessageContent runtime integration", () => {
         },
         payload_bytes: 0,
         payload_truncated: false,
+        render_kind: "runtime",
         runtime_eligible: true,
         runtime_skip_reason: undefined,
       },
@@ -99,6 +101,7 @@ describe("ArtifactMessageContent runtime integration", () => {
         },
         payload_bytes: 0,
         payload_truncated: false,
+        render_kind: "runtime",
         runtime_eligible: true,
         runtime_skip_reason: undefined,
       },
@@ -151,6 +154,7 @@ describe("ArtifactMessageContent runtime integration", () => {
       },
       payload_bytes: 0,
       payload_truncated: false,
+      render_kind: "runtime",
       runtime_eligible: true,
       runtime_skip_reason: undefined,
     };
@@ -169,5 +173,66 @@ describe("ArtifactMessageContent runtime integration", () => {
         "Artifact 1 runtime skipped: Runtime disabled",
       );
     });
+  });
+
+  it("renders structured Nyx artifacts without the runtime sandbox", async () => {
+    sandbox.mockClear();
+
+    const artifact: NormalizedArrowArtifact = {
+      id: "nyx_component_selection",
+      type: "nyx_component_selection",
+      summary: "Nyx selection",
+      path: "nyx/component-selection",
+      mime_type: "application/vnd.metis.nyx+json",
+      payload: {
+        query: "Use Glow Card in a hero",
+        intent_type: "ui_layout_request",
+        confidence: 0.92,
+        selection_reason: "NyxUI candidates were resolved from the live prompt.",
+        matched_signals: ["explicit_nyx", "pattern:card"],
+        selected_components: [
+          {
+            component_name: "glow-card",
+            title: "Glow Card",
+            description: "Interactive card with glow effects.",
+            curated_description: "Accent-heavy card chrome for calls to action.",
+            component_type: "registry:ui",
+            install_target: "@nyx/glow-card",
+            registry_url: "https://nyxui.com/r/glow-card.json",
+            source_repo: "https://github.com/MihirJaiswal/nyxui",
+            match_score: 42,
+            match_reason: "query hint: glow",
+            match_reasons: ["query hint: glow"],
+            preview_targets: ["components/ui/glow-card.tsx"],
+            targets: ["components/ui/glow-card.tsx"],
+            file_count: 1,
+            required_dependencies: ["clsx"],
+            dependencies: ["tailwind-merge"],
+            dev_dependencies: [],
+            registry_dependencies: [],
+          },
+        ],
+      },
+      payload_bytes: 0,
+      payload_truncated: false,
+      render_kind: "structured",
+      runtime_eligible: false,
+      runtime_skip_reason: undefined,
+    };
+
+    render(<ArtifactMessageContent artifacts={[artifact]} runtimeEnabled={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("nyx-component-selection-artifact")).toBeInTheDocument();
+      expect(screen.getByTestId("arrow-artifact-runtime-badge-0")).toHaveTextContent("Nyx render");
+      expect(screen.getByText("Glow Card")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Open detail" })).toHaveAttribute("href", "/library/glow-card");
+      expect(screen.getByRole("link", { name: "Registry JSON" })).toHaveAttribute(
+        "href",
+        "https://nyxui.com/r/glow-card.json",
+      );
+    });
+
+    expect(sandbox).not.toHaveBeenCalled();
   });
 });

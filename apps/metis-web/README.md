@@ -65,6 +65,10 @@ On Windows (PowerShell):
 | `pnpm build` | Production build |
 | `pnpm start` | Start production server (requires `pnpm build` first) |
 | `pnpm lint` | Run ESLint |
+| `pnpm ui:add` | Add a component from the default shadcn source |
+| `pnpm ui:add:nyx -- <component>` | Add a reviewed-installable NyxUI component from the configured `@nyx` registry |
+| `pnpm ui:list:nyx` | Show the reviewed-installable NyxUI subset currently supported by Metis |
+| `pnpm ui:validate:nyx` | Validate the installed shadcn config, default registry access, and the reviewed Nyx subset without writing files |
 
 ## Pages
 
@@ -88,3 +92,8 @@ NEXT_PUBLIC_METIS_API_BASE=http://127.0.0.1:8000
 - The API server must be running before the web UI can load data.
 - Both the API server and web dev server support hot reload — changes take effect immediately.
 - API docs are available at `http://127.0.0.1:8000/docs` when the server is running.
+- The default `pnpm ui:add -- <component>` flow still uses the built-in shadcn registry; Nyx is added as an extra source rather than replacing it.
+- NyxUI is configured as the `@nyx` shadcn registry source. Use `pnpm ui:list:nyx` to inspect the reviewed-installable subset before running `pnpm ui:add:nyx -- <component>`.
+- The review source of truth lives in `metis_app/assets/nyx_catalog_review.json`, and `python scripts/refresh_nyx_catalog.py` rebuilds the packaged snapshot consumed by both the API and the installer.
+- Preview-only Nyx components can exist in the packaged snapshot for review and metadata inspection, but the installer will only allow components whose review status is installable and whose target paths pass the governed allowlist policy.
+- The reviewed installable subset is intentionally limited to components supported by the existing `clsx`, `lucide-react`, `motion`, `tailwind-merge`, and `three` dependency surface in this app.

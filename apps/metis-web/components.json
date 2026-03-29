@@ -22,8 +22,6 @@
   "menuColor": "default",
   "menuAccent": "subtle",
   "registries": {
-    "shadcn": {
-      "url": "https://ui.shadcn.com/r"
-    }
+    "@nyx": "https://nyxui.com/r/{name}.json"
   }
 }

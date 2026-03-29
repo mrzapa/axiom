@@ -5,6 +5,7 @@ import json
 import metis_app.models.app_model as app_model_module
 from metis_app.models.app_model import AppModel
 from metis_app.models.parity_types import SkillDefinition, SkillSessionState
+from metis_app.services.nyx_catalog import CuratedNyxComponent, NyxCatalogBroker
 from metis_app.services.local_model_registry import LocalModelRegistryService
 from metis_app.services.runtime_resolution import resolve_runtime_settings
 from metis_app.services.skill_repository import SkillRepository, parse_skill_file
@@ -196,6 +197,83 @@ def test_runtime_resolution_uses_skill_precedence_and_conflicts() -> None:
     assert resolved.resolution_payload["skills"]["pinned"] == ["qa-core"]
     assert "Enabled skills:" in resolved.capability_index
     assert "Selected skill instructions:" in resolved.system_prompt
+
+
+def test_runtime_resolution_appends_nyx_prompt_context(monkeypatch) -> None:
+    registry_items = {
+        "apple-glass-effect": {
+            "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+            "name": "apple-glass-effect",
+            "type": "registry:ui",
+            "title": "Apple Glass Effect",
+            "description": "Glassmorphism container with motion-based depth.",
+            "dependencies": ["motion"],
+            "files": [
+                {
+                    "path": "registry/ui/apple-glass-effect.tsx",
+                    "type": "registry:ui",
+                    "target": "components/ui/apple-glass-effect.tsx",
+                    "content": "export function AppleGlassEffect() {}",
+                }
+            ],
+        },
+        "glow-card": {
+            "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+            "name": "glow-card",
+            "type": "registry:ui",
+            "title": "Glow Card",
+            "description": "Interactive card with glow-based accent effects.",
+            "dependencies": ["clsx", "tailwind-merge"],
+            "files": [
+                {
+                    "path": "registry/ui/glow-card.tsx",
+                    "type": "registry:ui",
+                    "target": "components/ui/glow-card.tsx",
+                    "content": "export function GlowCard() {}",
+                }
+            ],
+        },
+    }
+
+    def fake_fetch_json(url: str) -> dict[str, object]:
+        component_name = url.rsplit("/", 1)[-1].replace(".json", "")
+        return registry_items[component_name]
+
+    broker = NyxCatalogBroker(
+        curated_components={
+            "apple-glass-effect": CuratedNyxComponent(
+                description="Glassmorphism container with motion-based depth.",
+                required_dependencies=("motion",),
+            ),
+            "glow-card": CuratedNyxComponent(
+                description="Interactive card with glow-based accent effects.",
+                required_dependencies=("clsx", "tailwind-merge"),
+            ),
+        },
+        fetch_json=fake_fetch_json,
+    )
+    monkeypatch.setattr(
+        "metis_app.services.runtime_resolution.get_default_nyx_catalog_broker",
+        lambda: broker,
+    )
+
+    resolved = resolve_runtime_settings(
+        {
+            "selected_mode": "Q&A",
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+        },
+        enabled_skills=[],
+        session_skill_state=SkillSessionState(),
+        query="Design a frosted glass panel with a glowing card.",
+    )
+
+    assert "Nyx UI integration is active for this request." in resolved.system_prompt
+    assert resolved.resolution_payload["nyx"]["schema_version"] == "1.0"
+    assert {
+        component["component_name"]
+        for component in resolved.resolution_payload["nyx"]["selected_components"]
+    } >= {"apple-glass-effect", "glow-card"}
 
 
 def test_local_model_registry_adds_and_activates_entries() -> None:

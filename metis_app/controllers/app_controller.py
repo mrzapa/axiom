@@ -1973,6 +1973,7 @@ class AppController:
                     query_text=prompt,
                     context_block=query_result.context_block,
                     sources=list(query_result.sources),
+                    system_prompt=resolved.system_prompt,
                 )
                 answer = pipeline_result.response_text
             elif is_tutor_mode(selected_mode):
@@ -1991,6 +1992,7 @@ class AppController:
                     query_text=prompt,
                     context_block=query_result.context_block,
                     sources=list(query_result.sources),
+                    system_prompt=resolved.system_prompt,
                 )
                 answer = pipeline_result.response_text
             else:

@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  LandingStarfieldWebgl,
+  type LandingStarfieldFrame,
+  type LandingWebglStar,
+} from "@/components/home/landing-starfield-webgl";
 import { StarDetailsPanel } from "@/components/constellation/star-observatory-dialog";
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { fetchIndexes, type IndexBuildResult, type IndexSummary } from "@/lib/api";
@@ -47,7 +52,6 @@ import {
   type BackgroundCameraState,
 } from "@/lib/constellation-home";
 import {
-  buildProjectedCandidateHitTarget,
   buildProjectedUserStarHitTarget,
   buildStarFocusCamera,
   cloneCameraSnapshot,
@@ -55,11 +59,20 @@ import {
   findClosestProjectedTarget,
   isCameraSettled,
   type ConstellationCameraSnapshot,
-  type ProjectedHitTarget,
   type ProjectedUserStarHitTarget,
   STAR_FOCUS_CLOSE_LOCK_MS,
   STAR_FOCUS_SETTLE_TIMEOUT_MS,
 } from "@/lib/constellation-focus";
+import { generateStellarProfile, type StellarProfile } from "@/lib/landing-stars";
+import { buildLandingStarRenderPlan } from "@/lib/landing-stars/landing-star-lod";
+import {
+  buildLandingStarSpatialHash,
+  findClosestLandingStarHitTarget,
+} from "@/lib/landing-stars/landing-star-spatial-index";
+import type {
+  LandingStarHitTarget,
+  LandingStarSpatialHash,
+} from "@/lib/landing-stars/landing-star-types";
 import type { UserStar } from "@/lib/constellation-types";
 
 /* ────────────────────────────── constants ────────────────────────────── */
@@ -154,6 +167,11 @@ interface HomeToastState {
   tone: "default" | "error";
 }
 
+interface LandingWorldStarRenderState extends LandingStarHitTarget {
+  addable: boolean;
+  profile: StellarProfile;
+}
+
 interface ProjectedUserStarRenderState {
   attachmentCount: number;
   dragging: boolean;
@@ -164,6 +182,7 @@ interface ProjectedUserStarRenderState {
   ringCount: number;
   selected: boolean;
   star: UserStar;
+  stellarProfile: StellarProfile;
   target: ProjectedUserStarHitTarget;
 }
 
@@ -496,6 +515,20 @@ function applyTintBias(
   ];
 }
 
+function mixRgbColors(
+  left: readonly [number, number, number],
+  right: readonly [number, number, number],
+  amount: number,
+): [number, number, number] {
+  const clampedAmount = Math.max(0, Math.min(1, amount));
+
+  return [
+    clampColorChannel(left[0] + (right[0] - left[0]) * clampedAmount),
+    clampColorChannel(left[1] + (right[1] - left[1]) * clampedAmount),
+    clampColorChannel(left[2] + (right[2] - left[2]) * clampedAmount),
+  ];
+}
+
 function getRenderEpochMs(frameTimestampMs: number): number {
   const timeOrigin = typeof performance !== "undefined" ? performance.timeOrigin : Number.NaN;
   return Number.isFinite(timeOrigin) ? timeOrigin + frameTimestampMs : Date.now();
@@ -614,9 +647,14 @@ export default function Home() {
     startedAt: 0,
   });
   const projectedUserStarTargetsRef = useRef<ProjectedUserStarHitTarget[]>([]);
-  const projectedCandidateTargetsRef = useRef<ProjectedHitTarget[]>([]);
-  const projectedCandidateByIdRef = useRef<Map<string, StarData>>(new Map());
   const visibleStarsRef = useRef<StarData[]>([]);
+  const landingStarProfileCacheRef = useRef<Map<string, StellarProfile>>(new Map());
+  const landingStarfieldFrameRef = useRef<LandingStarfieldFrame>({
+    height: 0,
+    revision: 0,
+    stars: [],
+    width: 0,
+  });
   const optimisticIndexKeysRef = useRef<Set<string>>(new Set());
   const conceptHideTimeoutRef = useRef<number | null>(null);
   const starTooltipHideTimeoutRef = useRef<number | null>(null);
@@ -640,6 +678,7 @@ export default function Home() {
 
   useEffect(() => {
     availableIndexesRef.current = availableIndexes;
+    starfieldRevisionRef.current += 1;
   }, [availableIndexes]);
 
   useEffect(() => {
@@ -1334,8 +1373,8 @@ export default function Home() {
     let H = window.innerHeight;
     const projectedUserStarTargets: ProjectedUserStarHitTarget[] = [];
     let projectedUserStarRenderState = new Map<string, ProjectedUserStarRenderState>();
-    const projectedCandidateTargets: ProjectedHitTarget[] = [];
     const projectedCandidateById = new Map<string, StarData>();
+    let landingStarSpatialHash: LandingStarSpatialHash<LandingWorldStarRenderState> | null = null;
 
     function syncCanvasBounds() {
       const fallbackWidth = window.innerWidth;
@@ -1503,6 +1542,17 @@ export default function Home() {
         y: backgroundCameraOriginRef.current.y,
         zoomFactor: backgroundZoomRef.current,
       };
+    }
+
+    function getCachedStellarProfile(starId: string): StellarProfile {
+      const cachedProfile = landingStarProfileCacheRef.current.get(starId);
+      if (cachedProfile) {
+        return cachedProfile;
+      }
+
+      const nextProfile = generateStellarProfile(starId);
+      landingStarProfileCacheRef.current.set(starId, nextProfile);
+      return nextProfile;
     }
 
     function syncConstellationLayout(backgroundCamera: BackgroundCameraState) {
@@ -1682,6 +1732,54 @@ export default function Home() {
       });
 
       nextVisibleStars.length = visibleStarCount;
+      projectedCandidateById.clear();
+
+      const landingRenderableStars: LandingWorldStarRenderState[] = nextVisibleStars.map((star) => {
+        const profile = getCachedStellarProfile(star.id);
+        const projectedStar: LandingWorldStarRenderState = {
+          addable: star.isAddable,
+          apparentSize: star.baseSize,
+          brightness: star.brightness,
+          hitRadius: Math.max(8, star.baseSize * 5.5),
+          id: star.id,
+          profile,
+          x: star.nx * W,
+          y: star.ny * H,
+        };
+
+        if (star.isAddable) {
+          projectedCandidateById.set(star.id, star);
+        }
+
+        return projectedStar;
+      });
+      const renderPlan = buildLandingStarRenderPlan(landingRenderableStars, backgroundCamera.zoomFactor);
+      const flattenedRenderPlan = [
+        ...renderPlan.batches.point,
+        ...renderPlan.batches.sprite,
+        ...renderPlan.batches.hero,
+      ];
+      const nextWebglStars: LandingWebglStar[] = flattenedRenderPlan.map((star) => ({
+        addable: star.addable,
+        apparentSize: star.apparentSize,
+        brightness: star.brightness,
+        id: star.id,
+        profile: star.profile,
+        renderTier: star.renderTier,
+        x: star.x,
+        y: star.y,
+      }));
+      const addableTargets = landingRenderableStars.filter((star) => star.addable);
+
+      landingStarSpatialHash = addableTargets.length > 0
+        ? buildLandingStarSpatialHash(addableTargets)
+        : null;
+      landingStarfieldFrameRef.current = {
+        height: H,
+        revision: landingStarfieldFrameRef.current.revision + 1,
+        stars: nextWebglStars,
+        width: W,
+      };
       lastVisibleStarfieldWidth = W;
       lastVisibleStarfieldHeight = H;
       lastVisibleStarfieldRevision = starfieldRevisionRef.current;
@@ -1708,80 +1806,6 @@ export default function Home() {
         ctx!.fill();
         ctx!.restore();
       });
-    }
-
-    function drawStar(s: StarData, t: number) {
-      const addable = s.isAddable;
-      const projectedHitTarget = buildProjectedCandidateHitTarget(
-        s,
-        W,
-        H,
-        mouse,
-        coarsePointerRef.current ? MOBILE_ADD_CANDIDATE_HIT_RADIUS_PX : ADD_CANDIDATE_HIT_RADIUS_PX,
-      );
-      const px = projectedHitTarget.x;
-      const py = projectedHitTarget.y;
-      const hoveredCandidate = hoveredAddCandidateRef.current?.id === s.id;
-      if (addable) {
-        projectedCandidateTargets.push(projectedHitTarget);
-        projectedCandidateById.set(s.id, s);
-      }
-      let b = s.brightness;
-      if (s.twinkle) b += Math.sin(t * s.twinkleSpeed + s.twinklePhase) * 0.15;
-      if (addable) {
-        const beaconPulse = reducedMotion ? 0.58 : 0.54 + Math.sin(t * 0.0018 + s.twinklePhase) * 0.1;
-        b += hoveredCandidate ? 0.22 : 0.08 + beaconPulse * 0.04;
-      }
-      b = Math.max(0.05, Math.min(1, b));
-      let sz = s.baseSize;
-      const dx = px - mouse.x, dy = py - mouse.y, dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 200) { const prox = 1 - dist / 200; b += prox * 0.3; sz += prox * 0.5; }
-      if (addable) {
-        sz += hoveredCandidate ? 0.45 : 0.18;
-      }
-      const r = addable
-        ? 194 + Math.round(b * 36)
-        : 180 + Math.round(b * 40);
-      const g = addable
-        ? 202 + Math.round(b * 28)
-        : 195 + Math.round(b * 30);
-      const bl = addable
-        ? 222 + Math.round(b * 14)
-        : 220 + Math.round(b * 20);
-      if (addable) {
-        const beaconPulse = reducedMotion ? 0.58 : 0.54 + Math.sin(t * 0.0018 + s.twinklePhase) * 0.1;
-        const beaconRadius = sz * (hoveredCandidate ? 13 : 8.5) + beaconPulse * 3;
-        const candidateGlow = ctx!.createRadialGradient(px, py, 0, px, py, beaconRadius);
-        candidateGlow.addColorStop(
-          0,
-          `rgba(215,187,112,${hoveredCandidate ? 0.18 + beaconPulse * 0.05 : 0.06 + beaconPulse * 0.04})`,
-        );
-        candidateGlow.addColorStop(1, "rgba(0,0,0,0)");
-        ctx!.fillStyle = candidateGlow;
-        ctx!.beginPath();
-        ctx!.arc(px, py, beaconRadius, 0, Math.PI * 2);
-        ctx!.fill();
-
-        if (!hoveredCandidate && sz > 0.5) {
-          ctx!.beginPath();
-          ctx!.arc(px, py, sz * 2.1 + beaconPulse * 1.3, 0, Math.PI * 2);
-          ctx!.strokeStyle = `rgba(219,193,132,${0.08 + beaconPulse * 0.05})`;
-          ctx!.lineWidth = 0.4;
-          ctx!.stroke();
-        }
-      }
-      ctx!.beginPath(); ctx!.arc(px, py, sz, 0, Math.PI * 2);
-      ctx!.fillStyle = `rgba(${r},${g},${bl},${b})`; ctx!.fill();
-      if (b > 0.4) {
-        ctx!.beginPath(); ctx!.arc(px, py, sz * 3, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(${r},${g},${bl},${b * 0.08})`; ctx!.fill();
-      }
-      if (s.hasDiffraction && b > 0.3) {
-        const spikeLen = sz * 8 * b;
-        ctx!.strokeStyle = `rgba(${r},${g},${bl},${b * 0.15})`; ctx!.lineWidth = 0.5;
-        ctx!.beginPath(); ctx!.moveTo(px - spikeLen, py); ctx!.lineTo(px + spikeLen, py);
-        ctx!.moveTo(px, py - spikeLen); ctx!.lineTo(px, py + spikeLen); ctx!.stroke();
-      }
     }
 
     function rebuildProjectedUserStarRenderState(
@@ -1830,6 +1854,7 @@ export default function Home() {
           ringCount: getStageRingCount(star.stage),
           selected: currentSelectedStarId === star.id,
           star,
+          stellarProfile: getCachedStellarProfile(star.id),
           target,
         });
       });
@@ -1945,19 +1970,26 @@ export default function Home() {
           ringCount,
           selected,
           star,
+          stellarProfile,
           target,
         } = projectedState;
         const ragHighlighted = ragPulseStrength > 0 && Boolean(ragPulseState?.starIds.has(star.id));
         const richness = 1 + Math.max(0, influenceColors.length - 1) * 0.18;
-        const haloColor = applyTintBias(mixed, profile.tintBias * 1.05);
-        const fillColor = applyTintBias(mixed, profile.tintBias * 0.48);
+        const haloColor = mixRgbColors(
+          applyTintBias(mixed, profile.tintBias * 1.05),
+          stellarProfile.palette.halo,
+          0.52,
+        );
+        const fillColor = mixRgbColors(
+          applyTintBias(mixed, profile.tintBias * 0.48),
+          stellarProfile.palette.surface,
+          0.44,
+        );
+        const coreColor = mixRgbColors(fillColor, stellarProfile.palette.core, 0.72);
+        const accentColor = mixRgbColors(stellarProfile.palette.accent, mixed, 0.38);
         const shadowColor = applyTintBias(
-          [
-            Math.max(20, fillColor[0] - 82),
-            Math.max(20, fillColor[1] - 82),
-            Math.max(28, fillColor[2] - 82),
-          ],
-          profile.tintBias * 0.18,
+          mixRgbColors(stellarProfile.palette.rim, fillColor, 0.28),
+          profile.tintBias * 0.12,
         );
         const px = target.x;
         const py = target.y;
@@ -2036,6 +2068,7 @@ export default function Home() {
           sz * 1.42,
         );
         fill.addColorStop(0, `rgba(255,255,255,${Math.min(1, (0.95 + profile.coreIntensity * 0.08) * fadeIn)})`);
+        fill.addColorStop(0.16, `rgba(${coreColor[0]},${coreColor[1]},${coreColor[2]},${0.98 * fadeIn})`);
         fill.addColorStop(0.24, `rgba(${fillColor[0]},${fillColor[1]},${fillColor[2]},${0.94 * fadeIn})`);
         fill.addColorStop(0.68, `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${0.88 * fadeIn})`);
         fill.addColorStop(1, `rgba(${shadowColor[0]},${shadowColor[1]},${shadowColor[2]},${0.98 * fadeIn})`);
@@ -2052,13 +2085,13 @@ export default function Home() {
           const satelliteY = py + Math.sin(angle) * orbitRadius * 0.8;
           ctx!.beginPath();
           ctx!.arc(satelliteX, satelliteY, 1.3 + satelliteIndex * 0.25, 0, Math.PI * 2);
-          ctx!.fillStyle = `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${0.85 * fadeIn})`;
+          ctx!.fillStyle = `rgba(${accentColor[0]},${accentColor[1]},${accentColor[2]},${0.85 * fadeIn})`;
           ctx!.fill();
         }
 
         ctx!.beginPath();
         ctx!.arc(px, py, sz * 0.34, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(255,255,255,${Math.min(1, (0.9 + twinkle * 0.09) * fadeIn)})`;
+        ctx!.fillStyle = `rgba(${coreColor[0]},${coreColor[1]},${coreColor[2]},${Math.min(1, (0.9 + twinkle * 0.09) * fadeIn)})`;
         ctx!.fill();
       });
     }
@@ -2338,25 +2371,18 @@ export default function Home() {
       if (shouldRefreshVisibleStars) {
         refreshVisibleStars(backgroundCamera);
       }
-      const visibleStars = visibleStarsRef.current;
-      projectedCandidateTargets.length = 0;
-      projectedCandidateById.clear();
       rebuildProjectedUserStarRenderState(backgroundCamera, getRenderEpochMs(ts));
 
-      ctx!.fillStyle = "rgba(6,8,14,1)";
-      ctx!.fillRect(0, 0, W, H);
+      ctx!.clearRect(0, 0, W, H);
       if (!awakened && ts > 2000) {
         awakened = true; awakenStart = ts;
       }
       drawNebulae();
-      visibleStars.forEach((star) => drawStar(star, ts));
       drawDust();
       drawNodes(ts);
       drawUserStarEdges(ts);
       drawAddCandidatePreview(ts);
       drawUserStars(ts);
-      projectedCandidateTargetsRef.current = projectedCandidateTargets;
-      projectedCandidateByIdRef.current = projectedCandidateById;
       projectedUserStarTargetsRef.current = projectedUserStarTargets;
       animFrame = requestAnimationFrame(render);
     }
@@ -2497,23 +2523,40 @@ export default function Home() {
 
     function getHoveredCandidate(clientX: number, clientY: number): StarData | null {
       const pointer = getCanvasPointer(clientX, clientY);
-      const cachedTargets = projectedCandidateTargetsRef.current;
-      const availableTargets = cachedTargets.length > 0
-        ? cachedTargets
-        : visibleStarsRef.current
-            .filter((star) => star.isAddable)
-            .map((star) => buildProjectedCandidateHitTarget(
-              star,
-              W,
-              H,
-              mouse,
-              coarsePointerRef.current ? MOBILE_ADD_CANDIDATE_HIT_RADIUS_PX : ADD_CANDIDATE_HIT_RADIUS_PX,
-            ));
-      const target = findClosestProjectedTarget(availableTargets, pointer);
+      const spatialHash = landingStarSpatialHash ?? (() => {
+        const addableTargets = visibleStarsRef.current
+          .filter((star) => star.isAddable)
+          .map<LandingWorldStarRenderState>((star) => ({
+            addable: true,
+            apparentSize: star.baseSize,
+            brightness: star.brightness,
+            hitRadius: Math.max(8, star.baseSize * 5.5),
+            id: star.id,
+            profile: getCachedStellarProfile(star.id),
+            x: star.nx * W,
+            y: star.ny * H,
+          }));
+
+        return addableTargets.length > 0 ? buildLandingStarSpatialHash(addableTargets) : null;
+      })();
+      if (!spatialHash) {
+        return null;
+      }
+
+      const target = findClosestLandingStarHitTarget(
+        spatialHash,
+        pointer.x,
+        pointer.y,
+        {
+          queryPaddingPx: coarsePointerRef.current
+            ? MOBILE_ADD_CANDIDATE_HIT_RADIUS_PX
+            : ADD_CANDIDATE_HIT_RADIUS_PX,
+        },
+      );
       if (!target) {
         return null;
       }
-      return projectedCandidateByIdRef.current.get(target.id)
+      return projectedCandidateById.get(target.id)
         ?? visibleStarsRef.current.find((star) => star.id === target.id)
         ?? null;
     }
@@ -2932,6 +2975,11 @@ export default function Home() {
         <div className="metis-nav-right" />
       </nav>
 
+      <LandingStarfieldWebgl
+        className="metis-starfield-webgl"
+        frameRef={landingStarfieldFrameRef}
+      />
+
       <canvas
         ref={canvasRef}
         id="universe"
@@ -3201,9 +3249,20 @@ body {
 .metis-nav-right { display: flex; align-items: center; gap: 32px; }
 
 /* HERO CANVAS */
+.metis-starfield-webgl {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+  pointer-events: none;
+}
+
 .metis-universe {
   position: fixed; top: 0; left: 0;
-  width: 100vw; height: 100vh; z-index: 1;
+  width: 100vw; height: 100vh; z-index: 2;
+  background: transparent;
   touch-action: none;
 }
 

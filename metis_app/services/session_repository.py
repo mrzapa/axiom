@@ -128,10 +128,13 @@ class SessionRepository:
                     role TEXT,
                     content TEXT,
                     run_id TEXT,
-                    sources_json TEXT
+                    sources_json TEXT,
+                    artifacts_json TEXT,
+                    actions_json TEXT
                 )
                 """
             )
+            self._ensure_message_columns(conn)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_messages_session_ts ON messages(session_id, ts)"
             )
@@ -150,6 +153,19 @@ class SessionRepository:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_feedback_session ON message_feedback(session_id, ts)"
             )
+
+    @staticmethod
+    def _ensure_message_columns(conn: sqlite3.Connection) -> None:
+        rows = conn.execute("PRAGMA table_info(messages)").fetchall()
+        existing_columns = {
+            str(row["name"] or "")
+            for row in rows
+            if isinstance(row, sqlite3.Row)
+        }
+        for column_name in ("artifacts_json", "actions_json"):
+            if column_name in existing_columns:
+                continue
+            conn.execute(f"ALTER TABLE messages ADD COLUMN {column_name} TEXT")
 
     def create_session(
         self,
@@ -366,7 +382,7 @@ class SessionRepository:
 
             messages = conn.execute(
                 """
-                SELECT role, content, ts, run_id, sources_json
+                SELECT role, content, ts, run_id, sources_json, artifacts_json, actions_json
                 FROM messages
                 WHERE session_id = ?
                 ORDER BY ts ASC
@@ -398,6 +414,8 @@ class SessionRepository:
         content: str,
         run_id: str | None = None,
         sources: list[EvidenceSource] | list[dict[str, Any]] | None = None,
+        artifacts: list[dict[str, Any]] | None = None,
+        actions: list[dict[str, Any]] | None = None,
     ) -> None:
         serialized_sources = []
         for item in sources or []:
@@ -405,12 +423,32 @@ class SessionRepository:
                 serialized_sources.append(item.to_dict())
             elif isinstance(item, dict):
                 serialized_sources.append(EvidenceSource.from_dict(item).to_dict())
+        serialized_artifacts = [
+            dict(item)
+            for item in list(artifacts or [])
+            if isinstance(item, dict)
+        ]
+        serialized_actions = [
+            dict(item)
+            for item in list(actions or [])
+            if isinstance(item, dict)
+        ]
 
         with self._transaction() as conn:
             conn.execute(
                 """
-                INSERT INTO messages(message_id, session_id, ts, role, content, run_id, sources_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO messages(
+                    message_id,
+                    session_id,
+                    ts,
+                    role,
+                    content,
+                    run_id,
+                    sources_json,
+                    artifacts_json,
+                    actions_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(uuid.uuid4()),
@@ -420,6 +458,8 @@ class SessionRepository:
                     str(content or ""),
                     str(run_id or ""),
                     json.dumps(serialized_sources, ensure_ascii=False),
+                    json.dumps(serialized_artifacts, ensure_ascii=False),
+                    json.dumps(serialized_actions, ensure_ascii=False),
                 ),
             )
             conn.execute(
@@ -535,6 +575,8 @@ class SessionRepository:
                 content=message.content,
                 run_id=message.run_id,
                 sources=message.sources,
+                artifacts=message.artifacts,
+                actions=message.actions,
             )
         return self.get_session(clone.session_id).summary  # type: ignore[union-attr]
 
@@ -608,6 +650,11 @@ class SessionRepository:
                     "ts": msg.ts,
                     "run_id": msg.run_id,
                     "sources": [source.to_dict() for source in msg.sources],
+                    "artifacts": [dict(item) for item in msg.artifacts],
+                    "actions": [dict(item) for item in msg.actions],
+                    "action_result": dict(msg.action_result)
+                    if isinstance(msg.action_result, dict)
+                    else None,
                 }
             )
         payload["feedback"] = [asdict(item) for item in detail.feedback]
@@ -701,12 +748,36 @@ class SessionRepository:
                 for item in raw_sources
                 if isinstance(item, dict)
             ]
+        parsed_artifacts: list[dict[str, Any]] = []
+        try:
+            raw_artifacts = json.loads(row["artifacts_json"] or "[]")
+        except (KeyError, json.JSONDecodeError):
+            raw_artifacts = []
+        if isinstance(raw_artifacts, list):
+            parsed_artifacts = [
+                dict(item)
+                for item in raw_artifacts
+                if isinstance(item, dict)
+            ]
+        parsed_actions: list[dict[str, Any]] = []
+        try:
+            raw_actions = json.loads(row["actions_json"] or "[]")
+        except (KeyError, json.JSONDecodeError):
+            raw_actions = []
+        if isinstance(raw_actions, list):
+            parsed_actions = [
+                dict(item)
+                for item in raw_actions
+                if isinstance(item, dict)
+            ]
         return SessionMessage(
             role=str(row["role"] or ""),
             content=str(row["content"] or ""),
             ts=str(row["ts"] or ""),
             run_id=str(row["run_id"] or ""),
             sources=parsed_sources,
+            artifacts=parsed_artifacts,
+            actions=parsed_actions,
         )
 
     @staticmethod

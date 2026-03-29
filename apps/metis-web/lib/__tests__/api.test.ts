@@ -5,6 +5,8 @@ vi.stubGlobal("window", { ...globalThis.window });
 
 // Dynamically import after mocks are in place
 const {
+  fetchNyxCatalog,
+  fetchNyxComponentDetail,
   fetchSessions,
   fetchSettings,
   fetchUiTelemetrySummary,
@@ -12,6 +14,7 @@ const {
   fetchGgufCatalog,
   queryKnowledgeSearch,
   normalizeRagStreamEvent,
+  submitRunAction,
 } = await import(
   "../api"
 );
@@ -69,6 +72,103 @@ describe("fetchSettings", () => {
 
     const result = await fetchSettings();
     expect(result).toEqual(mockSettings);
+  });
+});
+
+describe("fetchNyxCatalog", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("calls the local Nyx catalog endpoint with search params", async () => {
+    const mockCatalog = {
+      query: "glow",
+      total: 2,
+      matched: 1,
+      curated_only: true,
+      source: "nyx_registry",
+      items: [
+        {
+          component_name: "glow-card",
+          title: "Glow Card",
+          description: "A glow card.",
+          curated_description: "Interactive card with glow-based accent effects.",
+          component_type: "registry:ui",
+          install_target: "@nyx/glow-card",
+          registry_url: "https://nyxui.com/r/glow-card.json",
+          schema_url: "https://ui.shadcn.com/schema/registry-item.json",
+          source: "nyx_registry",
+          source_repo: "https://github.com/MihirJaiswal/nyxui",
+          required_dependencies: ["clsx"],
+          dependencies: ["clsx"],
+          dev_dependencies: [],
+          registry_dependencies: [],
+          file_count: 1,
+          targets: ["components/ui/glow-card.tsx"],
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockCatalog),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchNyxCatalog("glow", { limit: 5 });
+
+    expect(result).toEqual(mockCatalog);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      "/v1/nyx/catalog?q=glow&limit=5",
+    );
+  });
+});
+
+describe("fetchNyxComponentDetail", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("calls the local Nyx component detail endpoint", async () => {
+    const mockDetail = {
+      component_name: "glow-card",
+      title: "Glow Card",
+      description: "A glow card.",
+      curated_description: "Interactive card with glow-based accent effects.",
+      component_type: "registry:ui",
+      install_target: "@nyx/glow-card",
+      registry_url: "https://nyxui.com/r/glow-card.json",
+      schema_url: "https://ui.shadcn.com/schema/registry-item.json",
+      source: "nyx_registry",
+      source_repo: "https://github.com/MihirJaiswal/nyxui",
+      required_dependencies: ["clsx", "tailwind-merge"],
+      dependencies: ["clsx", "tailwind-merge"],
+      dev_dependencies: [],
+      registry_dependencies: [],
+      file_count: 1,
+      targets: ["components/ui/glow-card.tsx"],
+      files: [
+        {
+          path: "registry/ui/glow-card.tsx",
+          file_type: "registry:ui",
+          target: "components/ui/glow-card.tsx",
+          content_bytes: 128,
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockDetail),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchNyxComponentDetail("glow-card");
+
+    expect(result).toEqual(mockDetail);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      "/v1/nyx/catalog/glow-card",
+    );
   });
 });
 
@@ -321,6 +421,60 @@ describe("normalizeRagStreamEvent", () => {
     expect(normalized.timestamp).toBe("2026-03-23T10:00:00+00:00");
   });
 
+  it("preserves Nyx actions on final events", () => {
+    const normalized = normalizeRagStreamEvent({
+      event_type: "final",
+      run_id: "run-nyx",
+      payload: {
+        answer_text: "Ready to install.",
+        sources: [],
+        actions: [
+          {
+            action_id: "action-1",
+            action_type: "nyx_install",
+            label: "Install Nyx components",
+            summary: "Install glow-card",
+            requires_approval: true,
+            run_action_endpoint: "/v1/runs/run-nyx/actions",
+            payload: {
+              action_id: "action-1",
+              action_type: "nyx_install",
+              proposal_token: "proposal-1",
+              component_count: 1,
+              component_names: ["glow-card"],
+            },
+            proposal: {
+              schema_version: "1.0",
+              proposal_token: "proposal-1",
+              component_names: ["glow-card"],
+              component_count: 1,
+              components: [
+                {
+                  component_name: "glow-card",
+                  title: "Glow Card",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(normalized.type).toBe("final");
+    if (normalized.type === "final") {
+      expect(normalized.actions).toEqual([
+        expect.objectContaining({
+          action_id: "action-1",
+          action_type: "nyx_install",
+          proposal: expect.objectContaining({
+            proposal_token: "proposal-1",
+            component_names: ["glow-card"],
+          }),
+        }),
+      ]);
+    }
+  });
+
   it("keeps legacy flat events working", () => {
     const legacy = normalizeRagStreamEvent({
       type: "final",
@@ -335,5 +489,58 @@ describe("normalizeRagStreamEvent", () => {
       expect(legacy.answer_text).toBe("done");
       expect(legacy.sources).toEqual([]);
     }
+  });
+});
+
+describe("submitRunAction", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns parsed Nyx action results from the backend response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            run_id: "run-nyx",
+            approved: true,
+            status: "success",
+            action_id: "action-1",
+            action_type: "nyx_install",
+            proposal_token: "proposal-1",
+            component_names: ["glow-card"],
+            component_count: 1,
+            execution_status: "completed",
+            installer: {
+              command: ["pnpm", "dlx", "shadcn@latest", "add", "@nyx/glow-card"],
+              cwd: "/workspace",
+              package_script: "ui:add:nyx",
+              returncode: 0,
+              stdout_excerpt: "installed",
+            },
+          }),
+      }),
+    );
+
+    const result = await submitRunAction("run-nyx", {
+      approved: true,
+      action_id: "action-1",
+      action_type: "nyx_install",
+      proposal_token: "proposal-1",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        run_id: "run-nyx",
+        action_type: "nyx_install",
+        execution_status: "completed",
+        installer: expect.objectContaining({
+          returncode: 0,
+          stdout_excerpt: "installed",
+        }),
+      }),
+    );
   });
 });

@@ -94,7 +94,8 @@ license-files = ["LICENSE"]
 include = ["metis_app*"]
 
 [tool.setuptools.package-data]
-"metis_app.assets" = ["logo.png", "llmfit_gguf_catalog.json"]
+"metis_app.assets" = ["logo.png", "llmfit_gguf_catalog.json", "nyx_catalog_review.json", "nyx_catalog_snapshot.json"]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

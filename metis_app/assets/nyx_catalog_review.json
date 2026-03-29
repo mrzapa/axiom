@@ -1,0 +1,112 @@
+{
+  "schema_version": "1.1",
+  "source": "nyx_registry",
+  "source_repo": "https://github.com/MihirJaiswal/nyxui",
+  "registry_url_template": "https://nyxui.com/r/{name}.json",
+  "schema_url": "https://ui.shadcn.com/schema/registry-item.json",
+  "install_target_policy": {
+    "policy_name": "metis_nyx_targets_v1",
+    "allowed_target_prefixes": [
+      "components/",
+      "hooks/",
+      "lib/"
+    ],
+    "allowed_targetless_types": [
+      "registry:lib"
+    ]
+  },
+  "components": {
+    "animated-grainy-bg": {
+      "review_status": "installable",
+      "description": "Animated gradient background surface.",
+      "required_dependencies": [
+        "clsx",
+        "motion",
+        "tailwind-merge"
+      ]
+    },
+    "animated-text": {
+      "review_status": "installable",
+      "description": "Motion-driven text transitions and reveals.",
+      "required_dependencies": [
+        "motion"
+      ]
+    },
+    "apple-glass-effect": {
+      "review_status": "installable",
+      "description": "Glassmorphism container with motion-based depth.",
+      "required_dependencies": [
+        "motion"
+      ]
+    },
+    "custom-cursor": {
+      "review_status": "installable",
+      "description": "Cursor effects for guided or immersive surfaces.",
+      "required_dependencies": [
+        "clsx",
+        "motion",
+        "tailwind-merge"
+      ]
+    },
+    "github-repo-card": {
+      "review_status": "installable",
+      "description": "Repository card with metadata and status chrome.",
+      "required_dependencies": [
+        "clsx",
+        "lucide-react",
+        "tailwind-merge"
+      ]
+    },
+    "glow-card": {
+      "review_status": "installable",
+      "description": "Interactive card with glow-based accent effects.",
+      "required_dependencies": [
+        "clsx",
+        "tailwind-merge"
+      ]
+    },
+    "image-scanner": {
+      "review_status": "installable",
+      "description": "Animated scanline treatment for media blocks.",
+      "required_dependencies": [
+        "clsx",
+        "lucide-react",
+        "motion",
+        "tailwind-merge"
+      ]
+    },
+    "keyboard": {
+      "review_status": "installable",
+      "description": "Interactive keyboard display component.",
+      "required_dependencies": [
+        "lucide-react"
+      ]
+    },
+    "marquee": {
+      "review_status": "preview",
+      "description": "Looping marquee strip for logos, tags, or callouts.",
+      "required_dependencies": []
+    },
+    "music-player": {
+      "review_status": "installable",
+      "description": "Compact music player interface.",
+      "required_dependencies": [
+        "lucide-react"
+      ]
+    },
+    "reveal-card": {
+      "review_status": "installable",
+      "description": "Layered reveal card for media-heavy presentation.",
+      "required_dependencies": [
+        "lucide-react"
+      ]
+    },
+    "water-ripple-effect": {
+      "review_status": "installable",
+      "description": "Shader-style water ripple canvas effect.",
+      "required_dependencies": [
+        "three"
+      ]
+    }
+  }
+}

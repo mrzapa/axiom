@@ -25,6 +25,9 @@ _MAX_ARROW_ARTIFACT_SUMMARY_CHARS = 280
 _MAX_ARROW_ARTIFACT_ID_CHARS = 96
 _MAX_ARROW_ARTIFACT_TYPE_CHARS = 64
 _MAX_ARROW_ARTIFACT_PATH_CHARS = 240
+_NYX_ARTIFACT_TYPE_PREFIX = "nyx_"
+_NYX_ARTIFACT_PATH_PREFIX = "nyx/"
+_NYX_ARTIFACT_MIME_PREFIX = "application/vnd.metis.nyx"
 
 
 @dataclass(slots=True)
@@ -47,6 +50,7 @@ class RagQueryResult:
     retrieval_plan: dict[str, Any] = field(default_factory=dict)
     fallback: dict[str, Any] = field(default_factory=dict)
     artifacts: list[dict[str, Any]] | None = None
+    actions: list[dict[str, Any]] | None = None
 
 
 @dataclass(slots=True)
@@ -63,6 +67,8 @@ class DirectQueryResult:
     selected_mode: str
     llm_provider: str = ""
     llm_model: str = ""
+    artifacts: list[dict[str, Any]] | None = None
+    actions: list[dict[str, Any]] | None = None
 
 
 @dataclass(slots=True)
@@ -177,15 +183,27 @@ def arrow_artifacts_enabled(settings: dict[str, Any]) -> bool:
     return bool(settings.get("enable_arrow_artifacts", False))
 
 
+def _is_nyx_artifact(raw: Any) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    artifact_type = str(raw.get("type") or raw.get("artifact_type") or "").strip().lower()
+    artifact_id = str(raw.get("id") or raw.get("artifact_id") or "").strip().lower()
+    artifact_path = str(raw.get("path") or raw.get("artifact_path") or "").strip().lower()
+    mime_type = str(raw.get("mime_type") or raw.get("mimeType") or "").strip().lower()
+    return (
+        artifact_type.startswith(_NYX_ARTIFACT_TYPE_PREFIX)
+        or artifact_id.startswith(_NYX_ARTIFACT_TYPE_PREFIX)
+        or artifact_path.startswith(_NYX_ARTIFACT_PATH_PREFIX)
+        or mime_type.startswith(_NYX_ARTIFACT_MIME_PREFIX)
+    )
+
+
 def extract_arrow_artifacts(
     settings: dict[str, Any],
     *,
     metadata_only: bool = False,
     max_count: int = _MAX_ARROW_ARTIFACTS,
 ) -> list[dict[str, Any]]:
-    if not arrow_artifacts_enabled(settings):
-        return []
-
     raw_items: Any = None
     for key in _ARTIFACT_SETTINGS_KEYS:
         if key in settings:
@@ -200,6 +218,13 @@ def extract_arrow_artifacts(
         candidates = raw_items
     else:
         return []
+
+    if not arrow_artifacts_enabled(settings):
+        if not settings.get("nyx_runtime"):
+            return []
+        candidates = [item for item in candidates if _is_nyx_artifact(item)]
+        if not candidates:
+            return []
 
     bounded_count = max(0, min(int(max_count or 0), _MAX_ARROW_ARTIFACTS))
     normalized: list[dict[str, Any]] = []
@@ -303,6 +328,7 @@ def query_direct(req: DirectQueryRequest) -> DirectQueryResult:
         selected_mode=_selected_mode(settings),
         llm_provider=str(settings.get("llm_provider", "") or ""),
         llm_model=str(settings.get("llm_model", "") or ""),
+        artifacts=extract_arrow_artifacts(settings) or None,
     )
 
 

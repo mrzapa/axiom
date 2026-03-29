@@ -125,19 +125,31 @@ def build_source_cards(sources: list[EvidenceSource]) -> str:
     return "\n\n".join(cards)
 
 
+def _compose_pipeline_system_prompt(system_prompt: str, stage_prompt: str) -> str:
+    base_prompt = str(system_prompt or "").strip()
+    pipeline_prompt = str(stage_prompt or "").strip()
+    if base_prompt and pipeline_prompt:
+        return f"{base_prompt}\n\n{pipeline_prompt}"
+    return base_prompt or pipeline_prompt
+
+
 def run_blinkist_summary_pipeline(
     llm: Any,
     *,
     query_text: str,
     context_block: str,
     sources: list[EvidenceSource],
+    system_prompt: str = "",
 ) -> PipelineResult:
     source_cards = build_source_cards(sources)
-    stage_a_prompt = (
+    stage_a_prompt = _compose_pipeline_system_prompt(
+        system_prompt,
+        (
         "You are Stage A planner for Blinkist-style summary mode. "
         "Build a strict JSON plan using CONTEXT and SOURCE_CARDS only. "
         "Do not ask for more information. Omit unsupported claims. Return ONLY valid JSON with keys: "
         "premise, key_ideas, actionable_takeaways, memorable_quotes, key_takeaways, chapter_mini_summaries."
+        ),
     )
     stage_a_messages = [
         {"type": "system", "content": stage_a_prompt},
@@ -153,7 +165,9 @@ def run_blinkist_summary_pipeline(
     stage_a_response = llm.invoke(stage_a_messages)
     plan_payload = extract_json_payload(str(getattr(stage_a_response, "content", stage_a_response) or ""))
 
-    stage_b_prompt = (
+    stage_b_prompt = _compose_pipeline_system_prompt(
+        system_prompt,
+        (
         "You are Stage B renderer for Blinkist-style summary mode. "
         "Render final output from PLAN_JSON only. Use this template exactly:\n"
         "1) Premise\n"
@@ -163,6 +177,7 @@ def run_blinkist_summary_pipeline(
         "5) Whole-book key takeaways\n"
         "6) Optional Chapter-by-chapter mini-summaries\n"
         "Use [S#] citations. Never emit placeholders."
+        ),
     )
     stage_b_messages = [
         {"type": "system", "content": stage_b_prompt},
@@ -250,6 +265,7 @@ def run_tutor_pipeline(
     query_text: str,
     context_block: str,
     sources: list[EvidenceSource],
+    system_prompt: str = "",
 ) -> PipelineResult:
     source_cards = build_source_cards(sources)
     one_shot_mode = is_one_shot_learning_request(query_text)
@@ -258,11 +274,14 @@ def run_tutor_pipeline(
         if one_shot_mode
         else "socratic_questions must contain exactly 3 questions."
     )
-    stage_a_prompt = (
+    stage_a_prompt = _compose_pipeline_system_prompt(
+        system_prompt,
+        (
         "You are Stage A planner for Tutor mode. "
         "Build strict JSON grounded in CONTEXT and SOURCE_CARDS only. Return ONLY valid JSON with keys: "
         "lesson, analogies, socratic_questions, flashcards, quiz. "
         f"{socratic_rule}"
+        ),
     )
     stage_a_messages = [
         {"type": "system", "content": stage_a_prompt},

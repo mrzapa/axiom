@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { NyxCatalogPage } from "@/components/library/nyx-catalog-page";
 
 export default function LibraryPage() {
-  redirect("/");
+  return <NyxCatalogPage />;
 }

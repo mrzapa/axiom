@@ -10,7 +10,10 @@ import type {
   ChatMessageStatus,
   ChatRun,
   EvidenceSource,
+  NyxInstallAction,
+  NyxInstallActionResult,
 } from "@/lib/chat-types";
+import { getChatActionStatusFromResult } from "@/lib/chat-types";
 
 interface ChatTranscriptState {
   messagesById: Record<string, ChatMessage>;
@@ -60,6 +63,27 @@ function upsertRun(
   if (!existingRun) {
     state.runOrder.push(runId);
   }
+}
+
+interface DerivedActionState {
+  action: ActionRequiredAction;
+  status: ChatActionStatus;
+  result: NyxInstallActionResult | null;
+}
+
+function getStoredActionState(
+  message: ChatMessageContent,
+): DerivedActionState | null {
+  const action = Array.isArray(message.actions) ? message.actions[0] : undefined;
+  if (!action) {
+    return null;
+  }
+  const result = message.action_result ?? null;
+  return {
+    action,
+    status: getChatActionStatusFromResult(result),
+    result,
+  };
 }
 
 export function useChatTranscript() {
@@ -181,6 +205,57 @@ export function useChatTranscript() {
     [nextMessageId],
   );
 
+  const upsertRunActionMessage = useCallback(
+    (
+      nextState: ChatTranscriptState,
+      runId: string,
+      timestamp: string,
+      actionState: DerivedActionState,
+    ) => {
+      const run = nextState.runsById[runId];
+      if (!run) {
+        return null;
+      }
+
+      const existingActionMessageId = run.action_message_id;
+      const actionMessageId = existingActionMessageId || nextMessageId();
+      const existingActionMessage = existingActionMessageId
+        ? nextState.messagesById[existingActionMessageId]
+        : undefined;
+      const actionMessage: ChatMessage = {
+        id: actionMessageId,
+        role: "assistant",
+        content: "",
+        ts: timestamp,
+        run_id: runId,
+        sources: [],
+        status: "complete",
+        actionRequired: {
+          action: actionState.action,
+          status: actionState.status,
+          result: actionState.result,
+        },
+      };
+
+      if (existingActionMessage) {
+        nextState.messagesById[actionMessageId] = {
+          ...existingActionMessage,
+          ...actionMessage,
+        };
+      } else {
+        appendMessage(nextState, actionMessage);
+      }
+
+      nextState.runsById[runId] = {
+        ...run,
+        action_message_id: actionMessageId,
+        status: "action_required",
+      };
+      return actionMessageId;
+    },
+    [nextMessageId],
+  );
+
   const restoreStreamingRun = useCallback(
     ({
       userMessage,
@@ -227,12 +302,22 @@ export function useChatTranscript() {
             sources: chatMessage.sources,
             pending_sources: [],
           }));
+
+          const actionState = getStoredActionState(chatMessage);
+          if (actionState) {
+            upsertRunActionMessage(
+              nextState,
+              chatMessage.run_id,
+              chatMessage.ts,
+              actionState,
+            );
+          }
         }
 
         return nextState;
       });
     },
-    [createMessage, discardPendingRunTokens],
+    [createMessage, discardPendingRunTokens, upsertRunActionMessage],
   );
 
   const reset = useCallback(() => {
@@ -265,11 +350,21 @@ export function useChatTranscript() {
           sources: message.sources,
           pending_sources: [],
         }));
+
+        const actionState = getStoredActionState(message);
+        if (actionState) {
+          upsertRunActionMessage(
+            nextState,
+            message.run_id,
+            message.ts,
+            actionState,
+          );
+        }
       }
 
       return nextState;
     });
-  }, []);
+  }, [upsertRunActionMessage]);
 
   const bindRunToAssistantMessage = useCallback(
     (runId: string, assistantMessageId: string) => {
@@ -340,6 +435,7 @@ export function useChatTranscript() {
     answerText: string,
     sources: EvidenceSource[],
     artifacts?: ArrowArtifact[],
+    actions?: NyxInstallAction[],
   ) => {
     const pendingText = drainPendingRunTokens([runId])[runId] ?? "";
     setState((previousState) => {
@@ -362,6 +458,7 @@ export function useChatTranscript() {
         run_id: runId,
         sources: finalSources,
         artifacts: artifacts ?? assistantMessage.artifacts,
+        actions: actions ?? assistantMessage.actions,
         status: "complete",
       };
       nextState.runsById[runId] = {
@@ -370,9 +467,19 @@ export function useChatTranscript() {
         sources: finalSources,
         pending_sources: finalSources,
       };
+
+      const actionState = getStoredActionState(nextState.messagesById[assistantMessage.id]);
+      if (actionState) {
+        upsertRunActionMessage(
+          nextState,
+          runId,
+          nextState.messagesById[assistantMessage.id].ts,
+          actionState,
+        );
+      }
       return nextState;
     });
-  }, [drainPendingRunTokens]);
+  }, [drainPendingRunTokens, upsertRunActionMessage]);
 
   const markRunActionRequired = useCallback(
     (runId: string, action: ActionRequiredAction, timestamp: string) => {
@@ -396,31 +503,16 @@ export function useChatTranscript() {
             : "Action required — see below.",
           status: "complete",
         };
-
-        const actionMessageId = nextMessageId();
-        appendMessage(nextState, {
-          id: actionMessageId,
-          role: "assistant",
-          content: "",
-          ts: timestamp,
-          run_id: runId,
-          sources: [],
-          status: "complete",
-          actionRequired: {
-            action,
-            status: "pending",
-          },
+        upsertRunActionMessage(nextState, runId, timestamp, {
+          action,
+          status: "pending",
+          result: null,
         });
-        nextState.runsById[runId] = {
-          ...run,
-          action_message_id: actionMessageId,
-          status: "action_required",
-        };
 
         return nextState;
       });
     },
-    [drainPendingRunTokens, nextMessageId],
+    [drainPendingRunTokens, upsertRunActionMessage],
   );
 
   const markRunError = useCallback((runId: string, message: string) => {
@@ -551,6 +643,43 @@ export function useChatTranscript() {
     });
   }, []);
 
+  const setActionResult = useCallback(
+    (messageId: string, result: NyxInstallActionResult | null) => {
+      setState((previousState) => {
+        const message = previousState.messagesById[messageId];
+        if (!message?.actionRequired) {
+          return previousState;
+        }
+
+        const nextState = cloneTranscriptState(previousState);
+        nextState.messagesById[messageId] = {
+          ...message,
+          actionRequired: {
+            ...message.actionRequired,
+            result,
+          },
+        };
+
+        const run = previousState.runsById[message.run_id];
+        if (!run) {
+          return nextState;
+        }
+
+        const assistantMessage = previousState.messagesById[run.assistant_message_id];
+        if (!assistantMessage) {
+          return nextState;
+        }
+
+        nextState.messagesById[assistantMessage.id] = {
+          ...assistantMessage,
+          action_result: result,
+        };
+        return nextState;
+      });
+    },
+    [],
+  );
+
   const messages = useMemo(
     () => state.messageOrder.map((messageId) => state.messagesById[messageId]).filter(Boolean),
     [state.messageOrder, state.messagesById],
@@ -592,6 +721,7 @@ export function useChatTranscript() {
     markRunAborted,
     markMessageAborted,
     setActionStatus,
+    setActionResult,
     getMessage,
     getRun: (runId: string) => state.runsById[runId],
     messages,

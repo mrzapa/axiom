@@ -5,12 +5,38 @@ from importlib import import_module
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
+import pytest
 
 from metis_app.models.brain_graph import BrainGraph
+from metis_app.services import nyx_catalog as nyx_catalog_module
+from metis_app.services.nyx_catalog import NyxCatalogComponentNotFoundError
 from metis_app.services.stream_replay import ReplayableRunStreamManager, StreamReplayStore
+from metis_app.services.nyx_catalog import (
+    NyxCatalogComponentDetail,
+    NyxCatalogComponentSummary,
+    NyxCatalogFileSummary,
+    NyxCatalogSearchResult,
+)
+from metis_app.services.nyx_install_executor import (
+    NyxInstallActionExecutionError,
+    NyxInstallExecutionResult,
+)
 from metis_app.services.trace_store import TraceStore
 
 api_app_module = import_module("metis_app.api.app")
+
+
+@pytest.fixture(autouse=True)
+def reset_default_nyx_catalog_state() -> None:
+    nyx_catalog_module.load_curated_nyx_components.cache_clear()
+    nyx_catalog_module.load_nyx_snapshot_component_details.cache_clear()
+    nyx_catalog_module.load_optional_nyx_snapshot_component_details.cache_clear()
+    nyx_catalog_module._DEFAULT_BROKER = None
+    yield
+    nyx_catalog_module.load_curated_nyx_components.cache_clear()
+    nyx_catalog_module.load_nyx_snapshot_component_details.cache_clear()
+    nyx_catalog_module.load_optional_nyx_snapshot_component_details.cache_clear()
+    nyx_catalog_module._DEFAULT_BROKER = None
 
 
 def test_healthz_returns_ok() -> None:
@@ -122,6 +148,184 @@ def test_stream_build_index_uses_orchestrator_and_progress_callback(monkeypatch)
     assert fake_orchestrator.build_index.call_count == 1
 
 
+def test_search_nyx_catalog_uses_orchestrator(monkeypatch) -> None:
+    client = TestClient(api_app_module.create_app())
+    captured: dict[str, object] = {}
+
+    fake_orchestrator = MagicMock()
+
+    def _fake_search_nyx_catalog(*, query="", limit=None):
+        captured["query"] = query
+        captured["limit"] = limit
+        return NyxCatalogSearchResult(
+            query=query,
+            total=2,
+            matched=1,
+            curated_only=True,
+            source="nyx_registry",
+            items=(
+                NyxCatalogComponentSummary(
+                    component_name="glow-card",
+                    title="Glow Card",
+                    description="A glow card.",
+                    curated_description="Interactive card with glow-based accent effects.",
+                    component_type="registry:ui",
+                    install_target="@nyx/glow-card",
+                    registry_url="https://nyxui.com/r/glow-card.json",
+                    schema_url="https://ui.shadcn.com/schema/registry-item.json",
+                    source="nyx_registry",
+                    source_repo="https://github.com/MihirJaiswal/nyxui",
+                    required_dependencies=("clsx",),
+                    dependencies=("clsx",),
+                    dev_dependencies=(),
+                    registry_dependencies=(),
+                    file_count=1,
+                    targets=("components/ui/glow-card.tsx",),
+                ),
+            ),
+        )
+
+    fake_orchestrator.search_nyx_catalog.side_effect = _fake_search_nyx_catalog
+    monkeypatch.setattr(api_app_module, "WorkspaceOrchestrator", lambda: fake_orchestrator)
+
+    response = client.get("/v1/nyx/catalog?q=glow&limit=5")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["query"] == "glow"
+    assert payload["matched"] == 1
+    assert payload["items"][0]["component_name"] == "glow-card"
+    assert payload["items"][0]["install_target"] == "@nyx/glow-card"
+    assert captured == {"query": "glow", "limit": 5}
+
+
+def test_get_nyx_component_detail_uses_orchestrator(monkeypatch) -> None:
+    client = TestClient(api_app_module.create_app())
+    captured: dict[str, object] = {}
+
+    fake_orchestrator = MagicMock()
+
+    def _fake_get_nyx_component_detail(component_name: str):
+        captured["component_name"] = component_name
+        return NyxCatalogComponentDetail(
+            component_name="glow-card",
+            title="Glow Card",
+            description="A glow card.",
+            curated_description="Interactive card with glow-based accent effects.",
+            component_type="registry:ui",
+            install_target="@nyx/glow-card",
+            registry_url="https://nyxui.com/r/glow-card.json",
+            schema_url="https://ui.shadcn.com/schema/registry-item.json",
+            source="nyx_registry",
+            source_repo="https://github.com/MihirJaiswal/nyxui",
+            required_dependencies=("clsx", "tailwind-merge"),
+            dependencies=("clsx", "tailwind-merge"),
+            dev_dependencies=(),
+            registry_dependencies=(),
+            file_count=1,
+            targets=("components/ui/glow-card.tsx",),
+            files=(
+                NyxCatalogFileSummary(
+                    path="registry/ui/glow-card.tsx",
+                    file_type="registry:ui",
+                    target="components/ui/glow-card.tsx",
+                    content_bytes=128,
+                ),
+            ),
+        )
+
+    fake_orchestrator.get_nyx_component_detail.side_effect = _fake_get_nyx_component_detail
+    monkeypatch.setattr(api_app_module, "WorkspaceOrchestrator", lambda: fake_orchestrator)
+
+    response = client.get("/v1/nyx/catalog/glow-card")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["component_name"] == "glow-card"
+    assert payload["files"][0]["target"] == "components/ui/glow-card.tsx"
+    assert captured == {"component_name": "glow-card"}
+
+
+def test_get_nyx_component_detail_returns_404_for_unknown_component(monkeypatch) -> None:
+    client = TestClient(api_app_module.create_app())
+
+    fake_orchestrator = MagicMock()
+    fake_orchestrator.get_nyx_component_detail.side_effect = (
+        NyxCatalogComponentNotFoundError(
+            "Unsupported NyxUI component: does-not-exist"
+        )
+    )
+    monkeypatch.setattr(api_app_module, "WorkspaceOrchestrator", lambda: fake_orchestrator)
+
+    response = client.get("/v1/nyx/catalog/does-not-exist")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Unsupported NyxUI component: does-not-exist"}
+    fake_orchestrator.get_nyx_component_detail.assert_called_once_with(
+        "does-not-exist"
+    )
+
+
+def test_nyx_catalog_endpoints_use_packaged_snapshot_without_live_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_calls: list[str] = []
+
+    def fail_fetch(url: str) -> dict[str, object]:
+        fetch_calls.append(url)
+        raise AssertionError(f"Unexpected live Nyx fetch: {url}")
+
+    monkeypatch.setattr(nyx_catalog_module, "_default_fetch_json", fail_fetch)
+    client = TestClient(api_app_module.create_app())
+
+    catalog_response = client.get("/v1/nyx/catalog", params={"q": "glow", "limit": 1})
+    detail_response = client.get("/v1/nyx/catalog/glow-card")
+
+    assert catalog_response.status_code == 200
+    assert catalog_response.json()["items"][0]["component_name"] == "glow-card"
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["component_name"] == "glow-card"
+    assert detail_payload["install_target"] == "@nyx/glow-card"
+    assert detail_payload["schema_url"] == "https://ui.shadcn.com/schema/registry-item.json"
+    assert detail_payload["files"][0]["target"] == "components/ui/glow-card.tsx"
+    assert detail_payload["previewable"] is True
+    assert detail_payload["installable"] is True
+    assert fetch_calls == []
+
+
+def test_nyx_catalog_endpoints_expose_preview_only_snapshot_components_without_live_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_calls: list[str] = []
+
+    def fail_fetch(url: str) -> dict[str, object]:
+        fetch_calls.append(url)
+        raise AssertionError(f"Unexpected live Nyx fetch: {url}")
+
+    monkeypatch.setattr(nyx_catalog_module, "_default_fetch_json", fail_fetch)
+    client = TestClient(api_app_module.create_app())
+
+    catalog_response = client.get("/v1/nyx/catalog", params={"q": "marquee", "limit": 5})
+    detail_response = client.get("/v1/nyx/catalog/marquee")
+
+    assert catalog_response.status_code == 200
+    catalog_payload = catalog_response.json()
+    assert catalog_payload["matched"] == 1
+    assert catalog_payload["items"][0]["component_name"] == "marquee"
+    assert catalog_payload["items"][0]["previewable"] is True
+    assert catalog_payload["items"][0]["installable"] is False
+    assert catalog_payload["items"][0]["review_status"] == "preview"
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["component_name"] == "marquee"
+    assert detail_payload["previewable"] is True
+    assert detail_payload["installable"] is False
+    assert detail_payload["review_status"] == "preview"
+    assert fetch_calls == []
+
+
 def test_query_direct_happy_path(monkeypatch) -> None:
     client = TestClient(api_app_module.create_app())
     captured: dict[str, object] = {}
@@ -157,6 +361,524 @@ def test_query_direct_happy_path(monkeypatch) -> None:
     assert payload["selected_mode"] == "Q&A"
     assert payload["run_id"] == "run-xyz"
     assert captured == {"prompt": "Say hello", "session_id": ""}
+
+
+def test_query_direct_serializes_artifacts(monkeypatch) -> None:
+    client = TestClient(api_app_module.create_app())
+
+    class _Result:
+        run_id = "run-nyx-direct"
+        answer_text = "Use Glow Card."
+        selected_mode = "Q&A"
+        llm_provider = "mock"
+        llm_model = "mock-model"
+        artifacts = [
+            {
+                "id": "nyx_component_selection",
+                "type": "nyx_component_selection",
+                "summary": "Nyx matched 1 component candidate.",
+                "path": "nyx/component-selection",
+                "mime_type": "application/vnd.metis.nyx+json",
+                "payload": {
+                    "schema_version": "1.0",
+                    "query": "Build a glowing card",
+                    "intent_type": "interface_pattern_selection",
+                    "confidence": 0.81,
+                    "matched_signals": ["pattern:card", "interaction:glow"],
+                    "selected_components": [
+                        {
+                            "component_name": "glow-card",
+                            "title": "Glow Card",
+                            "install_target": "@nyx/glow-card",
+                            "registry_url": "https://nyxui.com/r/glow-card.json",
+                        }
+                    ],
+                },
+                "payload_bytes": 512,
+                "payload_truncated": False,
+            }
+        ]
+
+    fake_orchestrator = MagicMock()
+    fake_orchestrator.run_direct_query.return_value = _Result()
+    monkeypatch.setattr(api_app_module, "WorkspaceOrchestrator", lambda: fake_orchestrator)
+
+    response = client.post(
+        "/v1/query/direct",
+        json={
+            "prompt": "Build a glowing card",
+            "settings": {"llm_provider": "mock", "selected_mode": "Q&A"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["artifacts"][0]["type"] == "nyx_component_selection"
+    assert payload["artifacts"][0]["payload"]["schema_version"] == "1.0"
+    assert payload["artifacts"][0]["payload"]["selected_components"][0]["component_name"] == "glow-card"
+
+
+def test_query_direct_serializes_nyx_install_actions(monkeypatch) -> None:
+    client = TestClient(api_app_module.create_app())
+
+    class _Result:
+        run_id = "run-nyx-action"
+        answer_text = "Use Glow Card."
+        selected_mode = "Q&A"
+        llm_provider = "mock"
+        llm_model = "mock-model"
+        actions = [
+            {
+                "action_id": "nyx-install:abc123",
+                "action_type": "nyx_install",
+                "label": "Approve Nyx install proposal",
+                "summary": "Approve installing Glow Card.",
+                "requires_approval": True,
+                "run_action_endpoint": "/v1/runs/run-nyx-action/actions",
+                "payload": {
+                    "action_id": "nyx-install:abc123",
+                    "action_type": "nyx_install",
+                    "proposal_token": "nyx-proposal:abc123",
+                    "component_count": 1,
+                    "component_names": ["glow-card"],
+                },
+                "proposal": {
+                    "schema_version": "1.0",
+                    "proposal_token": "nyx-proposal:abc123",
+                    "source": "nyx_runtime",
+                    "run_id": "run-nyx-action",
+                    "query": "Design a glowing card.",
+                    "intent_type": "interface_pattern_selection",
+                    "matched_signals": ["explicit_nyx", "pattern:card"],
+                    "component_names": ["glow-card"],
+                    "component_count": 1,
+                    "components": [
+                        {
+                            "component_name": "glow-card",
+                            "title": "Glow Card",
+                            "description": "Interactive card with glow-based accent effects.",
+                            "curated_description": "Interactive card with glow-based accent effects.",
+                            "component_type": "registry:ui",
+                            "install_target": "@nyx/glow-card",
+                            "registry_url": "https://nyxui.com/r/glow-card.json",
+                            "source_repo": "https://github.com/MihirJaiswal/nyxui",
+                            "required_dependencies": ["clsx", "tailwind-merge"],
+                            "dependencies": ["clsx", "tailwind-merge"],
+                            "dev_dependencies": [],
+                            "registry_dependencies": [],
+                            "file_count": 1,
+                            "targets": ["components/ui/glow-card.tsx"],
+                            "review_status": "installable",
+                            "previewable": True,
+                            "installable": True,
+                            "install_path_policy": "metis_nyx_targets_v1",
+                            "install_path_safe": True,
+                            "install_path_issues": [],
+                            "audit_issues": [],
+                        }
+                    ],
+                },
+            }
+        ]
+
+    fake_orchestrator = MagicMock()
+    fake_orchestrator.run_direct_query.return_value = _Result()
+    monkeypatch.setattr(api_app_module, "WorkspaceOrchestrator", lambda: fake_orchestrator)
+
+    response = client.post(
+        "/v1/query/direct",
+        json={
+            "prompt": "Design a glowing card",
+            "settings": {"llm_provider": "mock", "selected_mode": "Q&A"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["actions"][0]["action_type"] == "nyx_install"
+    assert payload["actions"][0]["payload"]["proposal_token"] == "nyx-proposal:abc123"
+    assert payload["actions"][0]["proposal"]["component_names"] == ["glow-card"]
+
+
+def _make_persisted_nyx_action(
+    *,
+    action_id: str = "nyx-install:abc123",
+    proposal_token: str = "nyx-proposal:abc123",
+) -> dict[str, object]:
+    return {
+        "action_id": action_id,
+        "action_type": "nyx_install",
+        "label": "Approve Nyx install proposal",
+        "summary": "Approve installing Glow Card.",
+        "requires_approval": True,
+        "run_action_endpoint": "/v1/runs/run-nyx-action/actions",
+        "payload": {
+            "action_id": action_id,
+            "action_type": "nyx_install",
+            "proposal_token": proposal_token,
+            "component_count": 1,
+            "component_names": ["glow-card"],
+        },
+        "proposal": {
+            "schema_version": "1.0",
+            "proposal_token": proposal_token,
+            "source": "nyx_runtime",
+            "run_id": "run-nyx-action",
+            "query": "Design a glowing card.",
+            "intent_type": "interface_pattern_selection",
+            "matched_signals": ["explicit_nyx", "pattern:card"],
+            "component_names": ["glow-card"],
+            "component_count": 1,
+            "components": [
+                {
+                    "component_name": "glow-card",
+                    "title": "Glow Card",
+                    "description": "Interactive card with glow-based accent effects.",
+                    "curated_description": "Interactive card with glow-based accent effects.",
+                    "component_type": "registry:ui",
+                    "install_target": "@nyx/glow-card",
+                    "registry_url": "https://nyxui.com/r/glow-card.json",
+                    "source_repo": "https://github.com/MihirJaiswal/nyxui",
+                    "required_dependencies": ["clsx", "tailwind-merge"],
+                    "dependencies": ["clsx", "tailwind-merge"],
+                    "dev_dependencies": [],
+                    "registry_dependencies": [],
+                    "file_count": 1,
+                    "targets": ["components/ui/glow-card.tsx"],
+                    "review_status": "installable",
+                    "previewable": True,
+                    "installable": True,
+                    "install_path_policy": "metis_nyx_targets_v1",
+                    "install_path_safe": True,
+                    "install_path_issues": [],
+                    "audit_issues": [],
+                }
+            ],
+        },
+    }
+
+
+def test_run_action_infers_nyx_approval_without_action_type(monkeypatch, tmp_path) -> None:
+    trace_store = TraceStore(tmp_path / "traces")
+    persisted_action = _make_persisted_nyx_action()
+    trace_store.append_event(
+        run_id="run-nyx-action",
+        stage="synthesis",
+        event_type="final",
+        payload={"actions": [persisted_action]},
+    )
+
+    def fake_execute_nyx_install_action(**_kwargs):
+        return NyxInstallExecutionResult(
+            action_id="nyx-install:abc123",
+            proposal_token="nyx-proposal:abc123",
+            component_names=("glow-card",),
+            component_count=1,
+            proposal=dict(persisted_action["proposal"]),
+            command=("node", "scripts/add-nyx-component.mjs", "--", "glow-card"),
+            cwd=str(tmp_path),
+            returncode=0,
+            stdout_excerpt="installed glow-card",
+            stderr_excerpt="",
+        )
+
+    monkeypatch.setattr(api_app_module, "TraceStore", lambda: trace_store)
+    monkeypatch.setattr(api_app_module, "execute_nyx_install_action", fake_execute_nyx_install_action)
+    client = TestClient(api_app_module.create_app())
+
+    response = client.post(
+        "/v1/runs/run-nyx-action/actions",
+        json={
+            "approved": True,
+            "payload": {
+                "action_id": "nyx-install:abc123",
+                "proposal_token": "nyx-proposal:abc123",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["action_id"] == "nyx-install:abc123"
+    assert payload["action_type"] == "nyx_install"
+    assert payload["proposal_token"] == "nyx-proposal:abc123"
+    assert payload["status"] == "completed"
+    assert payload["execution_status"] == "completed"
+
+
+def test_run_action_infers_nyx_decline_without_action_type(monkeypatch, tmp_path) -> None:
+    trace_store = TraceStore(tmp_path / "traces")
+    persisted_action = _make_persisted_nyx_action()
+    trace_store.append_event(
+        run_id="run-nyx-action",
+        stage="synthesis",
+        event_type="final",
+        payload={"actions": [persisted_action]},
+    )
+
+    monkeypatch.setattr(api_app_module, "TraceStore", lambda: trace_store)
+    client = TestClient(api_app_module.create_app())
+
+    response = client.post(
+        "/v1/runs/run-nyx-action/actions",
+        json={"approved": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["approved"] is False
+    assert payload["status"] == "declined"
+    assert payload["action_id"] == "nyx-install:abc123"
+    assert payload["action_type"] == "nyx_install"
+    assert payload["proposal_token"] == "nyx-proposal:abc123"
+    assert payload["execution_status"] == "declined"
+
+    run_events = trace_store.read_run_events("run-nyx-action")
+    submitted_event = next(
+        event for event in run_events if event["event_type"] == "nyx_install_action_submitted"
+    )
+    assert submitted_event["payload"]["approved"] is False
+    assert submitted_event["payload"]["status"] == "declined"
+    assert submitted_event["payload"]["execution_status"] == "declined"
+
+
+def test_run_action_returns_clear_nyx_mismatch_status_without_action_type(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    trace_store = TraceStore(tmp_path / "traces")
+    persisted_action = _make_persisted_nyx_action()
+    trace_store.append_event(
+        run_id="run-nyx-action",
+        stage="synthesis",
+        event_type="final",
+        payload={"actions": [persisted_action]},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_execute_nyx_install_action(**kwargs):
+        captured.update(kwargs)
+        raise NyxInstallActionExecutionError(
+            "Nyx install proposal token no longer matches the persisted proposal.",
+            code="proposal_mismatch",
+            metadata={
+                "proposal_token": "nyx-proposal:abc123",
+                "requested_proposal_token": "nyx-proposal:mismatch",
+            },
+        )
+
+    monkeypatch.setattr(api_app_module, "TraceStore", lambda: trace_store)
+    monkeypatch.setattr(api_app_module, "execute_nyx_install_action", fake_execute_nyx_install_action)
+    client = TestClient(api_app_module.create_app())
+
+    response = client.post(
+        "/v1/runs/run-nyx-action/actions",
+        json={
+            "approved": True,
+            "payload": {
+                "action_id": "nyx-install:abc123",
+                "proposal_token": "nyx-proposal:mismatch",
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["detail"]
+        == "Nyx install proposal token no longer matches the persisted proposal."
+    )
+    assert captured["action_id"] == "nyx-install:abc123"
+    assert captured["proposal_token"] == "nyx-proposal:mismatch"
+
+    run_events = trace_store.read_run_events("run-nyx-action")
+    submitted_event = next(
+        event for event in run_events if event["event_type"] == "nyx_install_action_submitted"
+    )
+    assert submitted_event["payload"]["status"] == "error"
+    assert submitted_event["payload"]["execution_status"] == "failed"
+    assert submitted_event["payload"]["failure_code"] == "proposal_mismatch"
+
+
+def test_run_action_revalidates_persisted_nyx_install_proposal(monkeypatch, tmp_path) -> None:
+    trace_store = TraceStore(tmp_path / "traces")
+    persisted_action = {
+        "action_id": "nyx-install:abc123",
+        "action_type": "nyx_install",
+        "label": "Approve Nyx install proposal",
+        "summary": "Approve installing Glow Card.",
+        "requires_approval": True,
+        "run_action_endpoint": "/v1/runs/run-nyx-action/actions",
+        "payload": {
+            "action_id": "nyx-install:abc123",
+            "action_type": "nyx_install",
+            "proposal_token": "nyx-proposal:abc123",
+            "component_count": 1,
+            "component_names": ["glow-card"],
+        },
+        "proposal": {
+            "schema_version": "1.0",
+            "proposal_token": "nyx-proposal:abc123",
+            "source": "nyx_runtime",
+            "run_id": "run-nyx-action",
+            "query": "Design a glowing card.",
+            "intent_type": "interface_pattern_selection",
+            "matched_signals": ["explicit_nyx", "pattern:card"],
+            "component_names": ["glow-card"],
+            "component_count": 1,
+            "components": [
+                {
+                    "component_name": "glow-card",
+                    "title": "Glow Card",
+                    "description": "Interactive card with glow-based accent effects.",
+                    "curated_description": "Interactive card with glow-based accent effects.",
+                    "component_type": "registry:ui",
+                    "install_target": "@nyx/glow-card",
+                    "registry_url": "https://nyxui.com/r/glow-card.json",
+                    "source_repo": "https://github.com/MihirJaiswal/nyxui",
+                    "required_dependencies": ["clsx", "tailwind-merge"],
+                    "dependencies": ["clsx", "tailwind-merge"],
+                    "dev_dependencies": [],
+                    "registry_dependencies": [],
+                    "file_count": 1,
+                    "targets": ["components/ui/glow-card.tsx"],
+                    "review_status": "installable",
+                    "previewable": True,
+                    "installable": True,
+                    "install_path_policy": "metis_nyx_targets_v1",
+                    "install_path_safe": True,
+                    "install_path_issues": [],
+                    "audit_issues": [],
+                }
+            ],
+        },
+    }
+    trace_store.append_event(
+        run_id="run-nyx-action",
+        stage="synthesis",
+        event_type="final",
+        payload={"actions": [persisted_action]},
+    )
+
+    def fake_execute_nyx_install_action(**_kwargs):
+        return NyxInstallExecutionResult(
+            action_id="nyx-install:abc123",
+            proposal_token="nyx-proposal:abc123",
+            component_names=("glow-card",),
+            component_count=1,
+            proposal=dict(persisted_action["proposal"]),
+            command=("node", "scripts/add-nyx-component.mjs", "--", "glow-card"),
+            cwd=str(tmp_path),
+            returncode=0,
+            stdout_excerpt="installed glow-card",
+            stderr_excerpt="",
+        )
+
+    monkeypatch.setattr(api_app_module, "TraceStore", lambda: trace_store)
+    monkeypatch.setattr(api_app_module, "execute_nyx_install_action", fake_execute_nyx_install_action)
+    client = TestClient(api_app_module.create_app())
+
+    response = client.post(
+        "/v1/runs/run-nyx-action/actions",
+        json={
+            "approved": True,
+            "payload": {
+                "action_id": "nyx-install:abc123",
+                "action_type": "nyx_install",
+                "proposal_token": "nyx-proposal:abc123",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["action_id"] == "nyx-install:abc123"
+    assert payload["proposal_token"] == "nyx-proposal:abc123"
+    assert payload["status"] == "completed"
+    assert payload["execution_status"] == "completed"
+    assert payload["proposal"]["component_names"] == ["glow-card"]
+    assert payload["installer"]["returncode"] == 0
+
+    run_events = trace_store.read_run_events("run-nyx-action")
+    submitted_event = next(
+        event for event in run_events if event["event_type"] == "nyx_install_action_submitted"
+    )
+    assert submitted_event["payload"]["status"] == "success"
+    assert submitted_event["payload"]["execution_status"] == "completed"
+    assert submitted_event["payload"]["returncode"] == 0
+
+
+def test_run_action_records_failed_nyx_install_execution(monkeypatch, tmp_path) -> None:
+    trace_store = TraceStore(tmp_path / "traces")
+    trace_store.append_event(
+        run_id="run-nyx-action",
+        stage="synthesis",
+        event_type="final",
+        payload={
+            "actions": [
+                {
+                    "action_id": "nyx-install:abc123",
+                    "action_type": "nyx_install",
+                    "label": "Approve Nyx install proposal",
+                    "summary": "Approve installing Glow Card.",
+                    "requires_approval": True,
+                    "run_action_endpoint": "/v1/runs/run-nyx-action/actions",
+                    "payload": {
+                        "action_id": "nyx-install:abc123",
+                        "action_type": "nyx_install",
+                        "proposal_token": "nyx-proposal:abc123",
+                        "component_count": 1,
+                        "component_names": ["glow-card"],
+                    },
+                    "proposal": {
+                        "schema_version": "1.0",
+                        "proposal_token": "nyx-proposal:abc123",
+                        "source": "nyx_runtime",
+                        "run_id": "run-nyx-action",
+                        "query": "Design a glowing card.",
+                        "intent_type": "interface_pattern_selection",
+                        "matched_signals": ["explicit_nyx", "pattern:card"],
+                        "component_names": ["glow-card"],
+                        "component_count": 1,
+                        "components": [{"component_name": "glow-card"}],
+                    },
+                }
+            ]
+        },
+    )
+
+    def fake_execute_nyx_install_action(**_kwargs):
+        raise NyxInstallActionExecutionError(
+            "Nyx install proposal is stale and must be regenerated.",
+            code="stale_proposal",
+            metadata={"current_action_id": "nyx-install:def456"},
+        )
+
+    monkeypatch.setattr(api_app_module, "TraceStore", lambda: trace_store)
+    monkeypatch.setattr(api_app_module, "execute_nyx_install_action", fake_execute_nyx_install_action)
+    client = TestClient(api_app_module.create_app())
+
+    response = client.post(
+        "/v1/runs/run-nyx-action/actions",
+        json={
+            "approved": True,
+            "payload": {
+                "action_id": "nyx-install:abc123",
+                "action_type": "nyx_install",
+                "proposal_token": "nyx-proposal:abc123",
+            },
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Nyx install proposal is stale and must be regenerated."
+
+    run_events = trace_store.read_run_events("run-nyx-action")
+    submitted_event = next(
+        event for event in run_events if event["event_type"] == "nyx_install_action_submitted"
+    )
+    assert submitted_event["payload"]["status"] == "error"
+    assert submitted_event["payload"]["execution_status"] == "failed"
+    assert submitted_event["payload"]["failure_code"] == "stale_proposal"
 
 
 def test_query_rag_forwards_session_id_to_orchestrator(monkeypatch) -> None:

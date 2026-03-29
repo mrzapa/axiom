@@ -24,6 +24,12 @@ from pydantic import ValidationError
 import metis_app.settings_store as _settings_store
 from metis_app.engine import list_indexes
 from metis_app.engine.querying import _normalize_run_id
+from metis_app.services.nyx_catalog import NyxCatalogComponentNotFoundError
+from metis_app.services.nyx_install_executor import (
+    NyxInstallActionExecutionError,
+    execute_nyx_install_action,
+)
+from metis_app.services.nyx_runtime import NYX_INSTALL_ACTION_TYPE, find_persisted_nyx_install_action
 from metis_app.services.stream_replay import ReplayableRunStreamManager
 from metis_app.services.topo_scaffold import compute_scaffold, scaffold_to_payload
 from metis_app.services.trace_store import TraceStore
@@ -43,6 +49,8 @@ from .models import (
     IndexBuildResultModel,
     KnowledgeSearchRequestModel,
     KnowledgeSearchResultModel,
+    NyxCatalogComponentDetailModel,
+    NyxCatalogSearchResponseModel,
     OpenAIChatCompletionChoiceModel,
     OpenAIChatCompletionMessageOutputModel,
     OpenAIChatCompletionRequestModel,
@@ -101,6 +109,120 @@ def _require_token(
 log = logging.getLogger(__name__)
 
 
+def _append_nyx_install_action_event(
+    *,
+    trace_store: TraceStore,
+    run_id: str,
+    approved: bool,
+    action_id: str,
+    proposal_token: str,
+    component_names: list[str],
+    component_count: int,
+    execution_status: str,
+    status: str,
+    extra_payload: dict[str, Any] | None = None,
+) -> None:
+    payload = {
+        "approved": approved,
+        "action_id": action_id,
+        "action_type": NYX_INSTALL_ACTION_TYPE,
+        "proposal_token": proposal_token,
+        "component_names": component_names,
+        "component_count": component_count,
+        "execution_status": execution_status,
+        "status": status,
+    }
+    if isinstance(extra_payload, dict):
+        payload.update(extra_payload)
+    trace_store.append_event(
+        run_id=run_id,
+        stage="action_required",
+        event_type="nyx_install_action_submitted",
+        payload=payload,
+    )
+
+
+def _nyx_install_http_status(error_code: str) -> int:
+    if error_code in {
+        "unsupported_action",
+        "invalid_proposal",
+        "component_mismatch",
+        "action_mismatch",
+        "proposal_mismatch",
+    }:
+        return 400
+    if error_code in {
+        "unsupported_component",
+        "preview_only_component",
+        "unsafe_component",
+        "stale_proposal",
+    }:
+        return 409
+    if error_code in {"revalidation_failed", "installer_unavailable"}:
+        return 503
+    return 500
+
+
+def _looks_like_nyx_action_reference(
+    *,
+    action_type: str,
+    action_id: str,
+    proposal_token: str,
+) -> bool:
+    return (
+        str(action_type or "").strip() == NYX_INSTALL_ACTION_TYPE
+        or str(action_id or "").strip().startswith("nyx-install:")
+        or str(proposal_token or "").strip().startswith("nyx-proposal:")
+    )
+
+
+def _resolve_persisted_nyx_install_action(
+    *,
+    run_id: str,
+    trace_store: TraceStore,
+    action_id: str,
+    proposal_token: str,
+    infer_latest: bool,
+) -> tuple[dict[str, Any] | None, str]:
+    exact_match = find_persisted_nyx_install_action(
+        run_id=run_id,
+        trace_store=trace_store,
+        action_id=action_id,
+        proposal_token=proposal_token,
+    )
+    if exact_match is not None:
+        return exact_match, "exact"
+
+    if action_id:
+        action_match = find_persisted_nyx_install_action(
+            run_id=run_id,
+            trace_store=trace_store,
+            action_id=action_id,
+        )
+        if action_match is not None:
+            return action_match, "action_id"
+
+    if proposal_token:
+        token_match = find_persisted_nyx_install_action(
+            run_id=run_id,
+            trace_store=trace_store,
+            proposal_token=proposal_token,
+        )
+        if token_match is not None:
+            return token_match, "proposal_token"
+
+    if infer_latest:
+        latest_match = find_persisted_nyx_install_action(
+            run_id=run_id,
+            trace_store=trace_store,
+            allow_latest=True,
+        )
+        if latest_match is not None:
+            return latest_match, "latest"
+
+    return None, ""
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="METIS API", version="1.0")
 
@@ -150,6 +272,40 @@ def create_app() -> FastAPI:
     @app.get("/v1/index/list", dependencies=_auth)
     def api_list_indexes() -> list[dict[str, Any]]:
         return _run_engine(list_indexes)
+
+    @app.get(
+        "/v1/nyx/catalog",
+        response_model=NyxCatalogSearchResponseModel,
+        dependencies=_auth,
+    )
+    def api_search_nyx_catalog(
+        q: str = "",
+        limit: int | None = None,
+    ) -> NyxCatalogSearchResponseModel:
+        if limit is not None and limit <= 0:
+            raise HTTPException(status_code=422, detail="limit must be a positive integer")
+        orchestrator = WorkspaceOrchestrator()
+        return NyxCatalogSearchResponseModel.from_service(
+            _run_engine(orchestrator.search_nyx_catalog, query=q, limit=limit)
+        )
+
+    @app.get(
+        "/v1/nyx/catalog/{component_name:path}",
+        response_model=NyxCatalogComponentDetailModel,
+        dependencies=_auth,
+    )
+    def api_get_nyx_component_detail(component_name: str) -> NyxCatalogComponentDetailModel:
+        orchestrator = WorkspaceOrchestrator()
+        try:
+            detail = orchestrator.get_nyx_component_detail(component_name)
+        except NyxCatalogComponentNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        return NyxCatalogComponentDetailModel.from_service(detail)
 
     @app.get("/v1/brain/graph", dependencies=_auth)
     def api_brain_graph() -> dict[str, Any]:
@@ -349,6 +505,152 @@ def create_app() -> FastAPI:
 
     @app.post("/v1/runs/{run_id}/actions", dependencies=_auth)
     def api_run_action(run_id: str, payload: RunActionRequestModel) -> dict[str, Any]:
+        action_payload = dict(payload.payload or {})
+        action_type = str(
+            payload.action_type or action_payload.get("action_type") or ""
+        ).strip()
+        action_id = str(payload.action_id or action_payload.get("action_id") or "").strip()
+        proposal_token = str(
+            payload.proposal_token or action_payload.get("proposal_token") or ""
+        ).strip()
+
+        infer_latest_nyx_action = (
+            not payload.approved
+            and not action_id
+            and not proposal_token
+            and (not action_type or action_type == NYX_INSTALL_ACTION_TYPE)
+        )
+        should_resolve_nyx_action = _looks_like_nyx_action_reference(
+            action_type=action_type,
+            action_id=action_id,
+            proposal_token=proposal_token,
+        ) or infer_latest_nyx_action
+
+        persisted_action: dict[str, Any] | None = None
+        matched_by = ""
+        trace_store: TraceStore | None = None
+
+        if should_resolve_nyx_action:
+            trace_store = TraceStore()
+            persisted_action, matched_by = _resolve_persisted_nyx_install_action(
+                run_id=run_id,
+                trace_store=trace_store,
+                action_id=action_id,
+                proposal_token=proposal_token,
+                infer_latest=infer_latest_nyx_action,
+            )
+            if persisted_action is not None:
+                action_type = NYX_INSTALL_ACTION_TYPE
+            elif action_type == NYX_INSTALL_ACTION_TYPE or action_id or proposal_token:
+                latest_persisted_action = find_persisted_nyx_install_action(
+                    run_id=run_id,
+                    trace_store=trace_store,
+                    allow_latest=True,
+                )
+                if latest_persisted_action is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Nyx install identifiers do not match any persisted proposal for this run.",
+                    )
+                raise HTTPException(status_code=404, detail="Nyx install proposal not found")
+
+        if action_type == NYX_INSTALL_ACTION_TYPE:
+            if persisted_action is None or trace_store is None:
+                raise HTTPException(status_code=404, detail="Nyx install proposal not found")
+
+            persisted_proposal = dict(persisted_action.get("proposal") or {})
+            resolved_action_id = str(persisted_action.get("action_id") or action_id).strip()
+            resolved_token = str(
+                persisted_proposal.get("proposal_token")
+                or proposal_token
+                or action_payload.get("proposal_token")
+            ).strip()
+            component_names = [
+                str(item)
+                for item in list(persisted_proposal.get("component_names") or [])
+                if str(item).strip()
+            ]
+            component_count = int(persisted_proposal.get("component_count") or len(component_names) or 0)
+
+            if not payload.approved:
+                if matched_by == "action_id" and proposal_token:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Nyx install proposal token no longer matches the persisted proposal.",
+                    )
+                if matched_by == "proposal_token" and action_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Nyx install action id no longer matches the persisted proposal.",
+                    )
+                _append_nyx_install_action_event(
+                    trace_store=trace_store,
+                    run_id=run_id,
+                    approved=False,
+                    action_id=resolved_action_id,
+                    proposal_token=resolved_token,
+                    component_names=component_names,
+                    component_count=component_count,
+                    execution_status="declined",
+                    status="declined",
+                )
+                return {
+                    "run_id": run_id,
+                    "approved": False,
+                    "status": "declined",
+                    "action_id": resolved_action_id,
+                    "action_type": NYX_INSTALL_ACTION_TYPE,
+                    "proposal_token": resolved_token,
+                    "component_names": component_names,
+                    "component_count": component_count,
+                    "execution_status": "declined",
+                    "proposal": persisted_proposal,
+                }
+
+            try:
+                execution_result = execute_nyx_install_action(
+                    run_id=run_id,
+                    persisted_action=persisted_action,
+                    action_id=action_id or resolved_action_id,
+                    proposal_token=proposal_token or resolved_token,
+                    requested_component_names=action_payload.get("component_names"),
+                )
+            except NyxInstallActionExecutionError as exc:
+                _append_nyx_install_action_event(
+                    trace_store=trace_store,
+                    run_id=run_id,
+                    approved=True,
+                    action_id=resolved_action_id,
+                    proposal_token=resolved_token,
+                    component_names=component_names,
+                    component_count=component_count,
+                    execution_status="failed",
+                    status="error",
+                    extra_payload={
+                        "failure_code": exc.code,
+                        **dict(exc.metadata),
+                    },
+                )
+                raise HTTPException(
+                    status_code=_nyx_install_http_status(exc.code),
+                    detail=str(exc),
+                ) from exc
+
+            _append_nyx_install_action_event(
+                trace_store=trace_store,
+                run_id=run_id,
+                approved=True,
+                action_id=execution_result.action_id,
+                proposal_token=execution_result.proposal_token,
+                component_names=list(execution_result.component_names),
+                component_count=execution_result.component_count,
+                execution_status=execution_result.execution_status,
+                status="success",
+                extra_payload=execution_result.to_trace_payload(approved=True),
+            )
+
+            return execution_result.to_response_payload(run_id=run_id, approved=True)
+
         log.info(
             "Run action received: run_id=%s approved=%s payload=%s",
             run_id,

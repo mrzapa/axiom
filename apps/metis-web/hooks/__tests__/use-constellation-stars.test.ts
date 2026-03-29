@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { fetchSettings, updateSettings } from "@/lib/api";
@@ -132,5 +132,112 @@ describe("useConstellationStars", () => {
     expect(result.current.userStars).toEqual(normalizedSnapshot);
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]")).toEqual(normalizedSnapshot);
     expect(vi.mocked(updateSettings)).toHaveBeenLastCalledWith({ [SETTINGS_KEY]: normalizedSnapshot });
+  });
+
+  it("loads settings-seeded stars as stable editable records", async () => {
+    const settingsSeed = {
+      label: "Settings seed",
+      x: 0.25,
+      y: 0.3,
+      primaryDomainId: "knowledge",
+      linkedManifestPath: "/indexes/settings-seed.json",
+    };
+    vi.mocked(fetchSettings).mockResolvedValue({
+      [SETTINGS_KEY]: [settingsSeed],
+    } as Record<string, unknown>);
+
+    const firstRender = renderHook(() => useConstellationStars());
+
+    await waitFor(() => {
+      expect(firstRender.result.current.userStars).toHaveLength(1);
+    });
+
+    const loadedStar = firstRender.result.current.userStars[0];
+    expect(loadedStar).toEqual(
+      expect.objectContaining({
+        id: expect.stringMatching(/^default-star-/),
+        label: "Settings seed",
+        linkedManifestPath: "/indexes/settings-seed.json",
+        linkedManifestPaths: ["/indexes/settings-seed.json"],
+        primaryDomainId: "knowledge",
+        size: 1,
+        stage: "growing",
+      }),
+    );
+    expect(loadedStar.createdAt).toBeGreaterThan(0);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]")).toEqual([loadedStar]);
+
+    await act(async () => {
+      const updated = await firstRender.result.current.updateUserStarById(loadedStar.id, {
+        label: "Edited settings seed",
+        notes: "Now editable like any other star.",
+      });
+      expect(updated).toBe(true);
+    });
+
+    expect(firstRender.result.current.userStars[0]).toEqual(
+      expect.objectContaining({
+        id: loadedStar.id,
+        label: "Edited settings seed",
+        notes: "Now editable like any other star.",
+      }),
+    );
+    expect(vi.mocked(updateSettings)).toHaveBeenLastCalledWith({
+      [SETTINGS_KEY]: [
+        expect.objectContaining({
+          id: loadedStar.id,
+          label: "Edited settings seed",
+          notes: "Now editable like any other star.",
+        }),
+      ],
+    });
+
+    firstRender.unmount();
+    localStorage.clear();
+    vi.clearAllMocks();
+    vi.mocked(fetchSettings).mockResolvedValue({
+      [SETTINGS_KEY]: [settingsSeed],
+    } as Record<string, unknown>);
+    vi.mocked(updateSettings).mockResolvedValue({});
+
+    const secondRender = renderHook(() => useConstellationStars());
+
+    await waitFor(() => {
+      expect(secondRender.result.current.userStars).toHaveLength(1);
+    });
+
+    expect(secondRender.result.current.userStars[0]).toEqual(
+      expect.objectContaining({
+        id: loadedStar.id,
+        createdAt: loadedStar.createdAt,
+        label: "Settings seed",
+      }),
+    );
+  });
+
+  it("keeps fully populated settings stars unchanged", async () => {
+    const fullyPopulatedStar = normalizeUserStar({
+      id: "full-settings-star",
+      createdAt: 42,
+      x: 0.4,
+      y: 0.6,
+      size: 1.2,
+      label: "Already normalized",
+      primaryDomainId: "memory",
+      relatedDomainIds: ["knowledge"],
+      linkedManifestPaths: ["/indexes/already-normalized.json"],
+      activeManifestPath: "/indexes/already-normalized.json",
+      linkedManifestPath: "/indexes/already-normalized.json",
+      notes: "Persisted payload",
+    });
+    vi.mocked(fetchSettings).mockResolvedValue({
+      [SETTINGS_KEY]: [fullyPopulatedStar],
+    } as Record<string, unknown>);
+
+    const { result } = renderHook(() => useConstellationStars());
+
+    await waitFor(() => {
+      expect(result.current.userStars).toEqual([fullyPopulatedStar]);
+    });
   });
 });

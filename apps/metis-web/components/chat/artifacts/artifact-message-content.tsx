@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
+import { NyxArtifactContent } from "@/components/chat/artifacts/nyx-artifact-content";
 import type { NormalizedArrowArtifact } from "@/lib/artifacts/extract-arrow-artifacts";
 import { useArrowState } from "@/hooks/use-arrow-state";
 
@@ -53,7 +54,7 @@ interface ArtifactMessageContentProps {
 }
 
 interface ArtifactRuntimeState {
-  lifecycle: ArtifactRuntimeLifecycle;
+  lifecycle: ArtifactRuntimeLifecycle | "structured";
   skipReason?: ArtifactRuntimeSkipReason;
   errorName?: string;
 }
@@ -250,6 +251,9 @@ function getSkipReasonLabel(reason?: ArtifactRuntimeSkipReason): string {
 }
 
 function getRuntimeBadgeLabel(state: ArtifactRuntimeState): string {
+  if (state.lifecycle === "structured") {
+    return "Nyx render";
+  }
   if (state.lifecycle === "attempt") {
     return "Runtime loading";
   }
@@ -277,6 +281,9 @@ function getLiveRegionMessage(event: ArtifactRuntimeLifecycleEvent): string {
 }
 
 function getRuntimeBadgeClassName(state: ArtifactRuntimeState): string {
+  if (state.lifecycle === "structured") {
+    return "border-primary/35 bg-primary/10 text-primary";
+  }
   if (state.lifecycle === "attempt") {
     return "border-blue-500/35 bg-blue-500/10 text-blue-200";
   }
@@ -414,14 +421,15 @@ export function ArtifactMessageContent({
 }: ArtifactMessageContentProps) {
   const runtimeResults = useMemo(() => {
     return artifacts.map((artifact, index) => {
-      const shouldUseRuntime = runtimeEnabled && artifact.runtime_eligible;
-      const skipReason = !runtimeEnabled
+      const shouldUseStructured = artifact.render_kind === "structured";
+      const shouldUseRuntime = artifact.render_kind === "runtime" && runtimeEnabled && artifact.runtime_eligible;
+      const skipReason = artifact.render_kind === "runtime" && !runtimeEnabled
         ? "runtime_disabled"
         : (artifact.runtime_skip_reason as ArtifactRuntimeSkipReason | undefined);
 
       const lifecycleEvents: ArtifactRuntimeLifecycleEvent[] = [];
 
-      if (!shouldUseRuntime) {
+      if (!shouldUseRuntime && !shouldUseStructured) {
         lifecycleEvents.push({
           lifecycle: "skipped",
           artifact,
@@ -434,6 +442,7 @@ export function ArtifactMessageContent({
         key: artifact.id || `${artifact.type}-${index}`,
         artifact,
         index,
+        shouldUseStructured,
         shouldUseRuntime,
         lifecycleEvents,
       };
@@ -458,6 +467,13 @@ export function ArtifactMessageContent({
       const next: Record<string, ArtifactRuntimeState> = {};
 
       runtimeResults.forEach((result) => {
+        if (result.shouldUseStructured) {
+          next[result.key] = {
+            lifecycle: "structured",
+          };
+          return;
+        }
+
         if (!result.shouldUseRuntime) {
           const skippedEvent = result.lifecycleEvents[0];
           next[result.key] = {
@@ -530,7 +546,11 @@ export function ArtifactMessageContent({
   }
 
   const selectedRuntimeState = runtimeStateByKey[selectedResult.key] ?? {
-    lifecycle: selectedResult.shouldUseRuntime ? "attempt" : "skipped",
+    lifecycle: selectedResult.shouldUseStructured
+      ? "structured"
+      : selectedResult.shouldUseRuntime
+        ? "attempt"
+        : "skipped",
     skipReason: selectedResult.lifecycleEvents[0]?.skipReason,
   };
 
@@ -578,6 +598,8 @@ export function ArtifactMessageContent({
             artifactIndex={selectedResult.index}
             onRuntimeLifecycleEvent={handleRuntimeLifecycleEvent}
           />
+        ) : selectedResult.shouldUseStructured ? (
+          <NyxArtifactContent artifact={selectedResult.artifact} />
         ) : (
           <RuntimeArtifactFallback artifact={selectedResult.artifact} />
         )}
@@ -596,7 +618,11 @@ export function ArtifactMessageContent({
           >
             {runtimeResults.map((result, index) => {
               const runtimeState = runtimeStateByKey[result.key] ?? {
-                lifecycle: result.shouldUseRuntime ? "attempt" : "skipped",
+                lifecycle: result.shouldUseStructured
+                  ? "structured"
+                  : result.shouldUseRuntime
+                    ? "attempt"
+                    : "skipped",
                 skipReason: result.lifecycleEvents[0]?.skipReason,
               };
               const isSelected = selectedResult.index === result.index;

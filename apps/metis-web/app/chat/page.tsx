@@ -1,16 +1,25 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef } from "react";
 import { ResizablePanels } from "@/components/chat/resizable-panels";
 import { SessionsPanel } from "@/components/chat/sessions-panel";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { EvidencePanel } from "@/components/chat/evidence-panel";
+import { NyxChatEntry } from "@/components/library/nyx-chat-entry";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { PageChrome } from "@/components/shell/page-chrome";
 import { createSession, fetchSession, fetchSettings, queryDirect, queryKnowledgeSearch, queryRagStream, submitRunAction, updateSettings } from "@/lib/api";
 import type { RetrievalFallback, SessionSummary, TraceEvent } from "@/lib/api";
 import type { RagStreamEvent } from "@/lib/api";
-import type { EvidenceSource } from "@/lib/chat-types";
+import {
+  getChatActionStatusFromResult,
+  isNyxInstallAction,
+  isNyxInstallActionResult,
+  type ActionRequiredAction,
+  type EvidenceSource,
+} from "@/lib/chat-types";
 import { useChatTranscript } from "@/app/chat/use-chat-transcript";
 import { useArrowState } from "@/hooks/use-arrow-state";
 import { emitBrainGraphRagActivity } from "@/lib/brain-graph-rag-activity";
@@ -32,6 +41,25 @@ function resolveArtifactsEnabled(settings: Record<string, unknown>): boolean | u
 function resolveArtifactRuntimeEnabled(settings: Record<string, unknown>): boolean | undefined {
   const candidate = settings.enable_arrow_artifact_runtime;
   return typeof candidate === "boolean" ? candidate : undefined;
+}
+
+function buildRunActionRequest(
+  action: ActionRequiredAction,
+  approved: boolean,
+) {
+  if (!isNyxInstallAction(action)) {
+    return {
+      approved,
+      payload: action.payload,
+    };
+  }
+  return {
+    approved,
+    action_id: action.action_id,
+    action_type: action.action_type,
+    proposal_token: action.payload.proposal_token,
+    payload: action.payload,
+  };
 }
 
 interface ActiveRagStream {
@@ -211,6 +239,7 @@ export default function ChatPage() {
     markMessageAborted,
     setMessageStatus,
     setActionStatus,
+    setActionResult,
     getMessage,
     getRun,
     messages,
@@ -541,6 +570,7 @@ export default function ChatPage() {
             llm_provider: result.llm_provider,
             llm_model: result.llm_model,
             artifacts: result.artifacts,
+            actions: result.actions,
             query_mode: "direct",
           }),
         );
@@ -843,6 +873,7 @@ export default function ChatPage() {
                     event.answer_text,
                     finalSources,
                     event.artifacts,
+                    event.actions,
                   );
                   break;
                 }
@@ -1137,16 +1168,26 @@ export default function ChatPage() {
       setActionStatus(messageId, "submitting");
 
       try {
-        await submitRunAction(message.run_id, {
-          approved: true,
-          payload: message.actionRequired.action.payload,
-        });
+        const response = await submitRunAction(
+          message.run_id,
+          buildRunActionRequest(message.actionRequired.action, true),
+        );
+        if (isNyxInstallActionResult(response)) {
+          setActionResult(messageId, response);
+          setActionStatus(
+            messageId,
+            getChatActionStatusFromResult(response),
+          );
+          return;
+        }
+        setActionResult(messageId, null);
         setActionStatus(messageId, "approved");
       } catch {
+        setActionResult(messageId, null);
         setActionStatus(messageId, "pending");
       }
     },
-    [getMessage, setActionStatus],
+    [getMessage, setActionResult, setActionStatus],
   );
 
   const handleActionDeny = useCallback(
@@ -1157,13 +1198,26 @@ export default function ChatPage() {
       setActionStatus(messageId, "submitting");
 
       try {
-        await submitRunAction(message.run_id, { approved: false });
+        const response = await submitRunAction(
+          message.run_id,
+          buildRunActionRequest(message.actionRequired.action, false),
+        );
+        if (isNyxInstallActionResult(response)) {
+          setActionResult(messageId, response);
+          setActionStatus(
+            messageId,
+            getChatActionStatusFromResult(response),
+          );
+          return;
+        }
+        setActionResult(messageId, null);
         setActionStatus(messageId, "denied");
       } catch {
+        setActionResult(messageId, null);
         setActionStatus(messageId, "pending");
       }
     },
-    [getMessage, setActionStatus],
+    [getMessage, setActionResult, setActionStatus],
   );
 
   useEffect(() => {
@@ -1195,9 +1249,15 @@ export default function ChatPage() {
               Index: {activeIndexLabel}
             </Badge>
           ) : null}
+          <Link
+            href="/library"
+            className={`${buttonVariants({ size: "sm", variant: "outline" })} border-[rgba(196,149,58,0.16)] bg-[rgba(10,14,28,0.58)] text-[rgba(222,229,241,0.84)] hover:border-[rgba(196,149,58,0.3)] hover:bg-[rgba(18,24,44,0.76)]`}
+          >
+            Browse Nyx UI
+          </Link>
         </>
       }
-      heroAside={undefined}
+      heroAside={<NyxChatEntry />}
       fullBleed
       contentClassName="rounded-none border-0 bg-transparent p-0"
       companionContext={{

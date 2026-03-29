@@ -635,3 +635,47 @@ def test_stream_final_includes_bounded_artifacts_when_enabled(tmp_path, monkeypa
     assert small["payload_truncated"] is False
     assert large["payload_truncated"] is True
     assert "payload" not in large
+
+
+def test_stream_final_auto_emits_only_nyx_artifacts_when_nyx_runtime_present(
+    tmp_path, monkeypatch
+) -> None:
+    build_result = _build_test_index(tmp_path, monkeypatch)
+
+    req = RagQueryRequest(
+        manifest_path=build_result.manifest_path,
+        question="Who wrote the first algorithm?",
+        settings={
+            "embedding_provider": "mock",
+            "llm_provider": "mock",
+            "vector_db_type": "json",
+            "enable_arrow_artifacts": False,
+            "nyx_runtime": {
+                "schema_version": "1.0",
+                "selected_components": [{"component_name": "glow-card"}],
+            },
+            "artifacts": [
+                {
+                    "id": "nyx_component_selection",
+                    "type": "nyx_component_selection",
+                    "summary": "Nyx matched a glow-card recommendation.",
+                    "path": "nyx/component-selection",
+                    "mime_type": "application/vnd.metis.nyx+json",
+                    "payload": {"selected_components": [{"component_name": "glow-card"}]},
+                },
+                {
+                    "id": "generic-table",
+                    "type": "table",
+                    "summary": "Generic artifact that should stay gated.",
+                    "payload": {"rows": [{"name": "Ada"}]},
+                },
+            ],
+        },
+        run_id="artifacts-nyx-auto-run",
+    )
+
+    final = list(stream_rag_answer(req))[-1]
+    assert final["type"] == "final"
+    assert [artifact["type"] for artifact in final.get("artifacts") or []] == [
+        "nyx_component_selection"
+    ]

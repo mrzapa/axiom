@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchIndexes } from "@/lib/api";
+import { fetchIndexes, fetchSettings, updateSettings } from "@/lib/api";
 import type { UserStar } from "@/lib/constellation-types";
 
 vi.mock("next/navigation", () => ({
@@ -21,11 +21,13 @@ vi.mock("@/components/constellation/star-observatory-dialog", () => ({
   StarDetailsPanel: ({
     open,
     onOpenChange,
+    onUpdateStar,
     star,
     entryMode,
   }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    onUpdateStar: (starId: string, updates: Partial<UserStar>) => Promise<boolean>;
     star: UserStar | null;
     entryMode: "new" | "existing";
   }) => (
@@ -33,6 +35,17 @@ vi.mock("@/components/constellation/star-observatory-dialog", () => ({
       <div data-testid="star-details-panel">
         <div>{entryMode}</div>
         <div>{star?.label ?? "Unnamed star"}</div>
+        <button
+          type="button"
+          onClick={() => {
+            if (!star) {
+              return;
+            }
+            void onUpdateStar(star.id, { label: "Edited settings star" });
+          }}
+        >
+          Save edited star
+        </button>
         <button type="button" onClick={() => onOpenChange(false)}>
           Close details
         </button>
@@ -115,6 +128,8 @@ describe("Home page", () => {
     reducedMotion = false;
     window.localStorage.clear();
     vi.mocked(fetchIndexes).mockResolvedValue([]);
+    vi.mocked(fetchSettings).mockResolvedValue({});
+    vi.mocked(updateSettings).mockResolvedValue({});
 
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1000 });
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
@@ -301,6 +316,76 @@ describe("Home page", () => {
     });
 
     expect(screen.getByRole("button", { name: "Zoom closer" })).not.toBeDisabled();
+  });
+
+  it("opens and edits a settings-loaded default star like any existing star", async () => {
+    reducedMotion = true;
+    vi.mocked(fetchSettings).mockResolvedValue({
+      landing_constellation_user_stars: [
+        {
+          label: "Settings star",
+          x: 0.25,
+          y: 0.3,
+          primaryDomainId: "knowledge",
+          linkedManifestPath: "/indexes/settings-star.json",
+        },
+      ],
+    } as Record<string, unknown>);
+
+    await renderHomePage();
+
+    await waitFor(() => {
+      const stored = JSON.parse(window.localStorage.getItem("metis_constellation_user_stars") ?? "[]");
+      expect(stored).toEqual([
+        expect.objectContaining({
+          id: expect.stringMatching(/^default-star-/),
+          label: "Settings star",
+          linkedManifestPath: "/indexes/settings-star.json",
+        }),
+      ]);
+    });
+
+    const canvas = await prepareCanvas();
+    elementFromPointMock.mockImplementation(() => canvas);
+
+    fireEvent.pointerDown(canvas, {
+      clientX: 250,
+      clientY: 240,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(window, {
+      clientX: 250,
+      clientY: 240,
+      pointerId: 1,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("star-details-panel")).toBeInTheDocument();
+      expect(screen.getByText("existing")).toBeInTheDocument();
+      expect(screen.getByText("Settings star")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save edited star" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Edited settings star")).toBeInTheDocument();
+    });
+
+    const stored = JSON.parse(window.localStorage.getItem("metis_constellation_user_stars") ?? "[]");
+    expect(stored).toEqual([
+      expect.objectContaining({
+        id: expect.stringMatching(/^default-star-/),
+        label: "Edited settings star",
+      }),
+    ]);
+    expect(vi.mocked(updateSettings)).toHaveBeenCalledWith({
+      landing_constellation_user_stars: [
+        expect.objectContaining({
+          id: stored[0].id,
+          label: "Edited settings star",
+        }),
+      ],
+    });
   });
 
   it("ignores zoom input while details are open", async () => {

@@ -46,10 +46,46 @@ describe("extractArrowArtifacts", () => {
         },
         payload_bytes: 128,
         payload_truncated: false,
+        render_kind: "runtime",
         runtime_eligible: true,
         runtime_skip_reason: undefined,
       },
     ]);
+  });
+
+  it("recognizes Nyx artifacts as structured renderers", () => {
+    const result = extractArrowArtifacts([
+      {
+        id: "nyx_component_selection",
+        type: "nyx_component_selection",
+        summary: "Nyx selection",
+        payload: {
+          query: "Build me a glowing hero",
+          intent_type: "ui_layout_request",
+          confidence: 0.91,
+          selected_components: [
+            {
+              component_name: "glow-card",
+              title: "Glow Card",
+              install_target: "@nyx/glow-card",
+              registry_url: "https://nyxui.com/r/glow-card.json",
+              targets: ["components/ui/glow-card.tsx"],
+              preview_targets: ["components/ui/glow-card.tsx"],
+              required_dependencies: ["clsx"],
+              dependencies: ["tailwind-merge"],
+              dev_dependencies: [],
+              registry_dependencies: [],
+              match_reasons: ["query hint: glow"],
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(result.isValid).toBe(true);
+    expect(result.artifacts[0]?.render_kind).toBe("structured");
+    expect(result.artifacts[0]?.runtime_eligible).toBe(false);
+    expect(result.artifacts[0]?.runtime_skip_reason).toBeUndefined();
   });
 
   it("marks unsupported types as runtime skipped", () => {
@@ -62,6 +98,7 @@ describe("extractArrowArtifacts", () => {
     ]);
 
     expect(result.isValid).toBe(true);
+    expect(result.artifacts[0]?.render_kind).toBe("fallback");
     expect(result.artifacts[0]?.runtime_eligible).toBe(false);
     expect(result.artifacts[0]?.runtime_skip_reason).toBe("unsupported_type");
   });
@@ -76,6 +113,7 @@ describe("extractArrowArtifacts", () => {
     ]);
 
     expect(result.isValid).toBe(true);
+    expect(result.artifacts[0]?.render_kind).toBe("fallback");
     expect(result.artifacts[0]?.runtime_eligible).toBe(false);
     expect(result.artifacts[0]?.runtime_skip_reason).toBe("payload_truncated");
   });
@@ -89,6 +127,7 @@ describe("extractArrowArtifacts", () => {
     ]);
 
     expect(result.isValid).toBe(true);
+    expect(result.artifacts[0]?.render_kind).toBe("fallback");
     expect(result.artifacts[0]?.runtime_eligible).toBe(false);
     expect(result.artifacts[0]?.runtime_skip_reason).toBe("invalid_payload");
   });

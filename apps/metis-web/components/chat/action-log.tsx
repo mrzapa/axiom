@@ -2,7 +2,11 @@
 
 import { CheckCircle2, Clock, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ActionRequiredAction, ChatActionStatus } from "@/lib/chat-types";
+import {
+  isNyxInstallAction,
+  type ActionRequiredAction,
+  type ChatActionStatus,
+} from "@/lib/chat-types";
 
 export interface ActionLogEntry {
   id: string;
@@ -30,11 +34,16 @@ export function ActionLog({ entries, className }: ActionLogProps) {
           {entry.status === "denied" && (
             <XCircle className="size-3 text-destructive" />
           )}
+          {entry.status === "failed" && (
+            <XCircle className="size-3 text-destructive" />
+          )}
           {(entry.status === "pending" || entry.status === "submitting") && (
             <Clock className="size-3 text-amber-500" />
           )}
-          <span className="capitalize">
-            {entry.action.kind.replace(/_/g, " ")}
+          <span className={cn(!isNyxInstallAction(entry.action) && "capitalize")}>
+            {isNyxInstallAction(entry.action)
+              ? entry.action.label
+              : entry.action.kind.replace(/_/g, " ")}
           </span>
           <span className="opacity-60">— {entry.status}</span>
         </div>

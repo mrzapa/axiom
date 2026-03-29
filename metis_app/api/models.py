@@ -25,6 +25,14 @@ from metis_app.models.session_types import (
     SessionMessage,
     SessionSummary,
 )
+from metis_app.services.nyx_catalog import (
+    NYX_INSTALL_TARGET_POLICY_NAME,
+    NYX_REVIEW_STATUS_INSTALLABLE,
+    NyxCatalogComponentDetail,
+    NyxCatalogComponentSummary,
+    NyxCatalogFileSummary,
+    NyxCatalogSearchResult,
+)
 
 
 class IndexBuildRequestModel(BaseModel):
@@ -94,10 +102,12 @@ class RagQueryResultModel(BaseModel):
     retrieval_plan: dict[str, Any] = Field(default_factory=dict)
     fallback: dict[str, Any] = Field(default_factory=dict)
     artifacts: list["QueryArtifactModel"] | None = None
+    actions: list["NyxInstallActionModel"] | None = None
 
     @classmethod
     def from_engine(cls, result: RagQueryResult) -> "RagQueryResultModel":
         raw_artifacts = getattr(result, "artifacts", None)
+        raw_actions = getattr(result, "actions", None)
         return cls(
             run_id=result.run_id,
             answer_text=result.answer_text,
@@ -108,6 +118,7 @@ class RagQueryResultModel(BaseModel):
             retrieval_plan=dict(result.retrieval_plan or {}),
             fallback=dict(result.fallback or {}),
             artifacts=[QueryArtifactModel(**item) for item in list(raw_artifacts or [])] or None,
+            actions=[NyxInstallActionModel(**item) for item in list(raw_actions or [])] or None,
         )
 
 
@@ -120,6 +131,88 @@ class QueryArtifactModel(BaseModel):
     payload: Any | None = None
     payload_bytes: int = 0
     payload_truncated: bool = False
+
+
+class NyxInstallProposalComponentModel(BaseModel):
+    component_name: str
+    title: str
+    description: str = ""
+    curated_description: str = ""
+    component_type: str = ""
+    install_target: str = ""
+    registry_url: str = ""
+    source_repo: str = ""
+    required_dependencies: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    dev_dependencies: list[str] = Field(default_factory=list)
+    registry_dependencies: list[str] = Field(default_factory=list)
+    file_count: int = 0
+    targets: list[str] = Field(default_factory=list)
+    review_status: str = NYX_REVIEW_STATUS_INSTALLABLE
+    previewable: bool = True
+    installable: bool = True
+    install_path_policy: str = NYX_INSTALL_TARGET_POLICY_NAME
+    install_path_safe: bool = True
+    install_path_issues: list[str] = Field(default_factory=list)
+    audit_issues: list[str] = Field(default_factory=list)
+
+
+class NyxInstallProposalModel(BaseModel):
+    schema_version: str
+    proposal_token: str
+    source: str = "nyx_runtime"
+    run_id: str = ""
+    query: str = ""
+    intent_type: str = ""
+    matched_signals: list[str] = Field(default_factory=list)
+    component_names: list[str] = Field(default_factory=list)
+    component_count: int = 0
+    components: list[NyxInstallProposalComponentModel] = Field(default_factory=list)
+
+
+class NyxInstallActionPayloadModel(BaseModel):
+    action_id: str
+    action_type: Literal["nyx_install"]
+    proposal_token: str
+    component_count: int = 0
+    component_names: list[str] = Field(default_factory=list)
+
+
+class NyxInstallActionModel(BaseModel):
+    action_id: str
+    action_type: Literal["nyx_install"]
+    label: str
+    summary: str = ""
+    requires_approval: bool = True
+    run_action_endpoint: str = ""
+    payload: NyxInstallActionPayloadModel
+    proposal: NyxInstallProposalModel
+
+
+class NyxInstallActionInstallerModel(BaseModel):
+    command: list[str] = Field(default_factory=list)
+    cwd: str = ""
+    package_script: str = ""
+    returncode: int = 0
+    stdout_excerpt: str = ""
+    stderr_excerpt: str = ""
+
+
+class NyxInstallActionResultModel(BaseModel):
+    run_id: str
+    approved: bool
+    status: str
+    action_id: str
+    action_type: Literal["nyx_install"]
+    proposal_token: str
+    component_names: list[str] = Field(default_factory=list)
+    component_count: int = 0
+    execution_status: str = ""
+    proposal: NyxInstallProposalModel | None = None
+    installer: NyxInstallActionInstallerModel | None = None
+    failure_code: str = ""
+
+    model_config = ConfigDict(extra="allow")
 
 
 class KnowledgeSearchRequestModel(BaseModel):
@@ -186,15 +279,159 @@ class DirectQueryResultModel(BaseModel):
     selected_mode: str
     llm_provider: str = ""
     llm_model: str = ""
+    artifacts: list["QueryArtifactModel"] | None = None
+    actions: list["NyxInstallActionModel"] | None = None
 
     @classmethod
     def from_engine(cls, result: DirectQueryResult) -> "DirectQueryResultModel":
+        raw_artifacts = getattr(result, "artifacts", None)
+        raw_actions = getattr(result, "actions", None)
         return cls(
             run_id=result.run_id,
             answer_text=result.answer_text,
             selected_mode=result.selected_mode,
             llm_provider=result.llm_provider,
             llm_model=result.llm_model,
+            artifacts=[QueryArtifactModel(**item) for item in list(raw_artifacts or [])] or None,
+            actions=[NyxInstallActionModel(**item) for item in list(raw_actions or [])] or None,
+        )
+
+
+class NyxCatalogFileSummaryModel(BaseModel):
+    path: str = ""
+    file_type: str = ""
+    target: str = ""
+    content_bytes: int = 0
+
+    @classmethod
+    def from_service(cls, file_summary: NyxCatalogFileSummary) -> "NyxCatalogFileSummaryModel":
+        return cls(
+            path=file_summary.path,
+            file_type=file_summary.file_type,
+            target=file_summary.target,
+            content_bytes=file_summary.content_bytes,
+        )
+
+
+class NyxCatalogComponentSummaryModel(BaseModel):
+    component_name: str = Field(description="Curated NyxUI component slug")
+    title: str
+    description: str
+    curated_description: str
+    component_type: str
+    install_target: str
+    registry_url: str
+    schema_url: str = ""
+    source: str = "nyx_registry"
+    source_repo: str
+    required_dependencies: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    dev_dependencies: list[str] = Field(default_factory=list)
+    registry_dependencies: list[str] = Field(default_factory=list)
+    file_count: int = 0
+    targets: list[str] = Field(default_factory=list)
+    review_status: str = NYX_REVIEW_STATUS_INSTALLABLE
+    previewable: bool = True
+    installable: bool = True
+    install_path_policy: str = NYX_INSTALL_TARGET_POLICY_NAME
+    install_path_safe: bool = True
+    install_path_issues: list[str] = Field(default_factory=list)
+    audit_issues: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_service(
+        cls,
+        component: NyxCatalogComponentSummary,
+    ) -> "NyxCatalogComponentSummaryModel":
+        return cls(
+            component_name=component.component_name,
+            title=component.title,
+            description=component.description,
+            curated_description=component.curated_description,
+            component_type=component.component_type,
+            install_target=component.install_target,
+            registry_url=component.registry_url,
+            schema_url=component.schema_url,
+            source=component.source,
+            source_repo=component.source_repo,
+            required_dependencies=list(component.required_dependencies),
+            dependencies=list(component.dependencies),
+            dev_dependencies=list(component.dev_dependencies),
+            registry_dependencies=list(component.registry_dependencies),
+            file_count=component.file_count,
+            targets=list(component.targets),
+            review_status=component.review_status,
+            previewable=component.previewable,
+            installable=component.installable,
+            install_path_policy=component.install_path_policy,
+            install_path_safe=component.install_path_safe,
+            install_path_issues=list(component.install_path_issues),
+            audit_issues=list(component.audit_issues),
+        )
+
+
+class NyxCatalogComponentDetailModel(NyxCatalogComponentSummaryModel):
+    files: list[NyxCatalogFileSummaryModel] = Field(default_factory=list)
+
+    @classmethod
+    def from_service(
+        cls,
+        component: NyxCatalogComponentDetail,
+    ) -> "NyxCatalogComponentDetailModel":
+        return cls(
+            component_name=component.component_name,
+            title=component.title,
+            description=component.description,
+            curated_description=component.curated_description,
+            component_type=component.component_type,
+            install_target=component.install_target,
+            registry_url=component.registry_url,
+            schema_url=component.schema_url,
+            source=component.source,
+            source_repo=component.source_repo,
+            required_dependencies=list(component.required_dependencies),
+            dependencies=list(component.dependencies),
+            dev_dependencies=list(component.dev_dependencies),
+            registry_dependencies=list(component.registry_dependencies),
+            file_count=component.file_count,
+            targets=list(component.targets),
+            review_status=component.review_status,
+            previewable=component.previewable,
+            installable=component.installable,
+            install_path_policy=component.install_path_policy,
+            install_path_safe=component.install_path_safe,
+            install_path_issues=list(component.install_path_issues),
+            audit_issues=list(component.audit_issues),
+            files=[
+                NyxCatalogFileSummaryModel.from_service(file_summary)
+                for file_summary in component.files
+            ],
+        )
+
+
+class NyxCatalogSearchResponseModel(BaseModel):
+    query: str = ""
+    total: int
+    matched: int
+    curated_only: bool = True
+    source: str = "nyx_registry"
+    items: list[NyxCatalogComponentSummaryModel] = Field(default_factory=list)
+
+    @classmethod
+    def from_service(
+        cls,
+        result: NyxCatalogSearchResult,
+    ) -> "NyxCatalogSearchResponseModel":
+        return cls(
+            query=result.query,
+            total=result.total,
+            matched=result.matched,
+            curated_only=result.curated_only,
+            source=result.source,
+            items=[
+                NyxCatalogComponentSummaryModel.from_service(component)
+                for component in result.items
+            ],
         )
 
 
@@ -525,6 +762,9 @@ class SessionMessageModel(BaseModel):
     ts: str
     run_id: str = ""
     sources: list[EvidenceSourceModel] = Field(default_factory=list)
+    artifacts: list[QueryArtifactModel] | None = None
+    actions: list[NyxInstallActionModel] | None = None
+    action_result: NyxInstallActionResultModel | None = None
 
     @classmethod
     def from_dataclass(cls, m: SessionMessage) -> "SessionMessageModel":
@@ -534,6 +774,13 @@ class SessionMessageModel(BaseModel):
             ts=m.ts,
             run_id=m.run_id,
             sources=[EvidenceSourceModel.from_dataclass(s) for s in m.sources],
+            artifacts=[QueryArtifactModel.model_validate(item) for item in m.artifacts] or None,
+            actions=[NyxInstallActionModel.model_validate(item) for item in m.actions] or None,
+            action_result=(
+                NyxInstallActionResultModel.model_validate(m.action_result)
+                if isinstance(m.action_result, dict)
+                else None
+            ),
         )
 
 
@@ -575,6 +822,9 @@ class SessionDetailModel(BaseModel):
 
 class RunActionRequestModel(BaseModel):
     approved: bool
+    action_id: str = ""
+    action_type: str = ""
+    proposal_token: str = ""
     payload: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")

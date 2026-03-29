@@ -184,6 +184,9 @@ class SessionMessage:
     ts: str
     run_id: str = ""
     sources: list[EvidenceSource] = field(default_factory=list)
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
+    actions: list[dict[str, Any]] = field(default_factory=list)
+    action_result: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
