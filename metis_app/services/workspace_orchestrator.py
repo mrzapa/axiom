@@ -583,10 +583,15 @@ class WorkspaceOrchestrator:
         from metis_app.services.autonomous_research_service import AutonomousResearchService
         from metis_app.utils.web_search import create_web_search
 
-        resolved = self._resolve_query_settings(settings)
-        policy = AssistantPolicy.from_payload(resolved.get("assistant_policy") or {})
+        # Read policy from the incoming settings directly (not from resolved/disk settings)
+        # _resolve_query_settings clobbers assistant_policy with on-disk values
+        raw_policy = (settings or {}).get("assistant_policy") or {}
+        policy = AssistantPolicy.from_payload(raw_policy)
         if not policy.autonomous_research_enabled:
             return None
+
+        # Resolve LLM/embedding settings for the research service
+        resolved = self._resolve_query_settings(settings)
 
         index_dicts = self.list_indexes()
         index_list = [

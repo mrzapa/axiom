@@ -1271,6 +1271,41 @@ def test_run_autonomous_research_returns_none_when_disabled(tmp_path):
     assert result is None
 
 
+def test_run_autonomous_research_returns_result_when_enabled():
+    """run_autonomous_research propagates AutonomousResearchService.run result."""
+    import unittest.mock as um
+    from metis_app.services.workspace_orchestrator import WorkspaceOrchestrator
+
+    expected = {
+        "faculty_id": "emergence",
+        "index_id": "auto_emergence_abc12345",
+        "title": "Emergence in Complex Systems",
+        "sources": ["http://example.com"],
+    }
+
+    settings = {
+        "assistant_policy": {"autonomous_research_enabled": True},
+        "llm_provider": "mock",
+    }
+
+    orc = WorkspaceOrchestrator()
+
+    mock_svc_instance = um.MagicMock()
+    mock_svc_instance.run.return_value = expected
+    MockSvcClass = um.MagicMock(return_value=mock_svc_instance)
+
+    with um.patch(
+        "metis_app.services.autonomous_research_service.AutonomousResearchService",
+        MockSvcClass,
+    ), um.patch(
+        "metis_app.utils.web_search.create_web_search",
+        return_value=um.MagicMock(),
+    ), um.patch.object(orc, "list_indexes", return_value=[]):
+        result = orc.run_autonomous_research(settings)
+
+    assert result == expected
+
+
 # ---------------------------------------------------------------------------
 # API integration — brain graph uses orchestrator
 # ---------------------------------------------------------------------------
