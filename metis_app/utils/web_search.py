@@ -9,7 +9,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
 
-log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -36,26 +36,31 @@ def create_web_search(settings: dict[str, Any]) -> Callable[[str], list[WebSearc
 
 
 def _tavily_search(query: str, *, n_results: int, api_key: str) -> list[WebSearchResult]:
-    """Call Tavily search API. Falls back to DuckDuckGo if tavily-python not installed."""
+    """Call Tavily search API. Falls back to DuckDuckGo if tavily-python not installed or on error."""
     try:
         from tavily import TavilyClient  # type: ignore[import-untyped]
     except ImportError as exc:
-        log.warning("tavily-python not installed; falling back to DuckDuckGo: %s", exc)
+        _log.warning("tavily-python not installed; falling back to DuckDuckGo: %s", exc)
         return _ddg_search(query, n_results=n_results)
 
-    client = TavilyClient(api_key=api_key)
-    response = client.search(query, max_results=n_results, include_raw_content=False)
-    results = []
-    for item in response.get("results", []):
-        results.append(
-            WebSearchResult(
-                title=str(item.get("title") or ""),
-                url=str(item.get("url") or ""),
-                snippet=str(item.get("content") or ""),
-                content=str(item.get("content") or ""),
+    try:
+        client = TavilyClient(api_key=api_key)
+        response = client.search(query, max_results=n_results, include_raw_content=False)
+        results = []
+        for item in response.get("results", []):
+            full_content = str(item.get("content") or "")
+            results.append(
+                WebSearchResult(
+                    title=str(item.get("title") or ""),
+                    url=str(item.get("url") or ""),
+                    snippet=full_content[:500],
+                    content=full_content,
+                )
             )
-        )
-    return results
+        return results
+    except Exception as exc:
+        _log.warning("Tavily search failed; falling back to DuckDuckGo: %s", exc)
+        return _ddg_search(query, n_results=n_results)
 
 
 def _ddg_search(query: str, *, n_results: int = 5) -> list[WebSearchResult]:
@@ -67,12 +72,13 @@ def _ddg_search(query: str, *, n_results: int = 5) -> list[WebSearchResult]:
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
-        log.warning("DuckDuckGo search failed: %s", exc)
+        _log.warning("DuckDuckGo search failed: %s", exc)
         return []
 
     results: list[WebSearchResult] = []
     abstract = data.get("AbstractText", "")
     abstract_url = data.get("AbstractURL", "")
+    abstract_added = False
     if abstract and abstract_url:
         results.append(
             WebSearchResult(
@@ -82,7 +88,10 @@ def _ddg_search(query: str, *, n_results: int = 5) -> list[WebSearchResult]:
                 content=abstract,
             )
         )
-    for item in data.get("RelatedTopics", [])[:n_results]:
+        abstract_added = True
+    for item in data.get("RelatedTopics", []):
+        if len(results) >= n_results:
+            break
         if isinstance(item, dict) and item.get("Text") and item.get("FirstURL"):
             results.append(
                 WebSearchResult(
@@ -92,6 +101,4 @@ def _ddg_search(query: str, *, n_results: int = 5) -> list[WebSearchResult]:
                     content=item.get("Text", ""),
                 )
             )
-            if len(results) >= n_results:
-                break
     return results
