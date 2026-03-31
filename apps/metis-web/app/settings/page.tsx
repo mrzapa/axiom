@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { GlowCard } from "@/components/ui/glow-card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
@@ -692,28 +693,52 @@ export default function SettingsPage() {
             </p>
           </div>
           <div className="grid gap-2 md:grid-cols-3">
-            {UI_VARIANTS.map((variant) => (
-              <button
-                key={variant.value}
-                type="button"
-                onClick={() => applyUiVariant(variant.value)}
-                className={cn(
-                  "glass-micro-surface rounded-[1.1rem] border px-4 py-3 text-left transition-all duration-200",
-                  uiVariant === variant.value
-                    ? "border-primary/40 bg-primary/14 shadow-[0_14px_36px_-22px_color-mix(in_oklch,var(--primary)_68%,transparent)]"
-                    : "border-white/8 hover:border-white/14 hover:bg-white/8",
-                )}
-                aria-pressed={uiVariant === variant.value}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium">{variant.label}</span>
-                  <span className="chat-control-pill rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                    {uiVariant === variant.value ? "Active" : "Preview"}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">{variant.description}</p>
-              </button>
-            ))}
+            {UI_VARIANTS.map((variant) => {
+              const nyxVariant =
+                variant.value === "bold"
+                  ? ("laser" as const)
+                  : variant.value === "motion"
+                    ? ("cosmic" as const)
+                    : ("liquid" as const);
+              const nyxColor =
+                variant.value === "bold"
+                  ? "#f97316"
+                  : variant.value === "motion"
+                    ? "#a855f7"
+                    : "#6366f1";
+              const isActive = uiVariant === variant.value;
+              return (
+                <GlowCard
+                  key={variant.value}
+                  variant={nyxVariant}
+                  liquidColor={nyxColor}
+                  laserColor={nyxColor}
+                  intensity={isActive ? 1.0 : 0.55}
+                  allowCustomBackground
+                  className={cn(
+                    "p-0 rounded-[1.1rem] border transition-all duration-300",
+                    isActive
+                      ? "border-primary/40 shadow-[0_14px_36px_-22px_color-mix(in_oklch,var(--primary)_68%,transparent)]"
+                      : "border-white/8",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => applyUiVariant(variant.value)}
+                    className="w-full px-4 py-3 text-left"
+                    aria-pressed={isActive}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium">{variant.label}</span>
+                      <span className="chat-control-pill rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                        {isActive ? "Active" : "Preview"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">{variant.description}</p>
+                  </button>
+                </GlowCard>
+              );
+            })}
           </div>
         </div>
 

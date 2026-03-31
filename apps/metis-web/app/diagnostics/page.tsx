@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { AlertCircle, CheckCircle2, ClipboardCopy, Loader2, RotateCcw, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GlowCard } from "@/components/ui/glow-card";
 import { AnimatedLucideIcon } from "@/components/ui/animated-lucide-icon";
 import { PageChrome } from "@/components/shell/page-chrome";
 import {
@@ -96,11 +97,19 @@ function SettingPill({ label, value }: { label: string; value: unknown }) {
 
 function SummaryMetric({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
-    <div className="glass-settings-pane rounded-[1rem] px-3 py-3">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-base font-semibold text-foreground">{value}</p>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">{caption}</p>
-    </div>
+    <GlowCard
+      variant="liquid"
+      liquidColor="#6366f1"
+      intensity={0.65}
+      allowCustomBackground
+      className="p-0 rounded-[1rem] border border-white/10"
+    >
+      <div className="px-3 py-3">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+        <p className="mt-2 text-base font-semibold text-foreground">{value}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{caption}</p>
+      </div>
+    </GlowCard>
   );
 }
 

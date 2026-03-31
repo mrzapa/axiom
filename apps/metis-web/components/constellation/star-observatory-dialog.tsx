@@ -33,7 +33,7 @@ import {
   buildFacultyAnchoredPlacement,
   getConstellationPlacementDecision,
 } from "@/lib/constellation-brain";
-import { CONSTELLATION_FACULTIES, getAutoStarFaculty, isAutonomousStar } from "@/lib/constellation-home";
+import { CONSTELLATION_FACULTIES, getAutoStarFaculty, getFacultyColor, isAutonomousStar } from "@/lib/constellation-home";
 import type {
   LearningRoute,
   LearningRouteStep,
@@ -181,6 +181,146 @@ function resolveDefaultStage(
     return "growing";
   }
   return "seed";
+}
+
+function StarMiniPreview({
+  primaryDomainId,
+  relatedDomainIds,
+  stage,
+  size,
+}: {
+  primaryDomainId?: string;
+  relatedDomainIds?: string[];
+  stage?: UserStarStage;
+  size?: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const DPR = Math.min(typeof window !== "undefined" ? (window.devicePixelRatio ?? 1) : 1, 2);
+    const PX = 96;
+    canvas.width = PX * DPR;
+    canvas.height = PX * DPR;
+    canvas.style.width = `${PX}px`;
+    canvas.style.height = `${PX}px`;
+    ctx.scale(DPR, DPR);
+
+    const cx = PX / 2;
+    const cy = PX / 2;
+    const [r, g, b] = getFacultyColor(primaryDomainId);
+    const relatedColors = (relatedDomainIds ?? []).slice(0, 2).map((id) => getFacultyColor(id));
+    const sz = Math.max(3.5, Math.min(7.5, (size ?? 1.2) * 3.2));
+    const hasDiffraction = stage === "integrated" || stage === "growing";
+    let startTime: number | null = null;
+
+    function draw(ts: number) {
+      if (!startTime) startTime = ts;
+      const elapsed = ts - startTime;
+      ctx!.clearRect(0, 0, PX, PX);
+
+      ctx!.save();
+      ctx!.beginPath();
+      ctx!.arc(cx, cy, PX / 2, 0, Math.PI * 2);
+      ctx!.clip();
+
+      ctx!.fillStyle = "rgb(8,11,20)";
+      ctx!.fillRect(0, 0, PX, PX);
+
+      const twinkle = 0.85 + Math.sin(elapsed * 0.002) * 0.1 + Math.cos(elapsed * 0.0014) * 0.05;
+
+      // Outer halo
+      const haloR = sz * 5.8;
+      const halo = ctx!.createRadialGradient(cx, cy, sz * 0.3, cx, cy, haloR);
+      halo.addColorStop(0, `rgba(${r},${g},${b},${0.22 * twinkle})`);
+      halo.addColorStop(0.55, `rgba(${r},${g},${b},${0.07 * twinkle})`);
+      halo.addColorStop(1, "rgba(0,0,0,0)");
+      ctx!.fillStyle = halo;
+      ctx!.beginPath();
+      ctx!.arc(cx, cy, haloR, 0, Math.PI * 2);
+      ctx!.fill();
+
+      // Secondary colour halos
+      relatedColors.forEach(([sr, sg, sb], i) => {
+        const drift = i % 2 === 0 ? 1 : -1;
+        const accentR = haloR * 0.72;
+        const ox = cx + drift * sz * 0.9;
+        const oy = cy - sz * 0.5;
+        const ag = ctx!.createRadialGradient(ox, oy, sz * 0.1, cx, cy, accentR);
+        ag.addColorStop(0, `rgba(${sr},${sg},${sb},${0.10 * twinkle})`);
+        ag.addColorStop(1, "rgba(0,0,0,0)");
+        ctx!.fillStyle = ag;
+        ctx!.beginPath();
+        ctx!.arc(cx, cy, accentR, 0, Math.PI * 2);
+        ctx!.fill();
+      });
+
+      // Aura
+      const auraR = sz * 3.4;
+      const aura = ctx!.createRadialGradient(cx, cy, sz * 0.2, cx, cy, auraR);
+      aura.addColorStop(0, `rgba(${r},${g},${b},${0.24 * twinkle})`);
+      aura.addColorStop(1, "rgba(0,0,0,0)");
+      ctx!.fillStyle = aura;
+      ctx!.beginPath();
+      ctx!.arc(cx, cy, auraR, 0, Math.PI * 2);
+      ctx!.fill();
+
+      // Diffraction spikes
+      if (hasDiffraction) {
+        const spikeLen = sz * 5.5;
+        const spikeAngle = elapsed * 0.00004;
+        ctx!.save();
+        ctx!.translate(cx, cy);
+        ctx!.rotate(spikeAngle);
+        ctx!.strokeStyle = `rgba(${r},${g},${b},${0.28 * twinkle})`;
+        ctx!.lineWidth = 0.85;
+        ctx!.beginPath();
+        ctx!.moveTo(-spikeLen, 0);
+        ctx!.lineTo(spikeLen, 0);
+        ctx!.moveTo(0, -spikeLen * 0.76);
+        ctx!.lineTo(0, spikeLen * 0.76);
+        ctx!.stroke();
+        ctx!.restore();
+      }
+
+      // Star body
+      const coreR2 = Math.round(r * 0.7 + 255 * 0.3);
+      const coreG2 = Math.round(g * 0.82 + 210 * 0.18);
+      const coreB2 = Math.round(b * 0.7 + 230 * 0.3);
+      const bodyGrad = ctx!.createRadialGradient(cx - sz * 0.35, cy - sz * 0.38, sz * 0.12, cx, cy, sz * 1.45);
+      bodyGrad.addColorStop(0, `rgba(255,255,255,${0.97 * twinkle})`);
+      bodyGrad.addColorStop(0.16, `rgba(${coreR2},${coreG2},${coreB2},${0.98 * twinkle})`);
+      bodyGrad.addColorStop(0.52, `rgba(${r},${g},${b},${0.82 * twinkle})`);
+      bodyGrad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx!.fillStyle = bodyGrad;
+      ctx!.beginPath();
+      ctx!.arc(cx, cy, sz * 1.45, 0, Math.PI * 2);
+      ctx!.fill();
+
+      // Bright white core
+      const coreGrad = ctx!.createRadialGradient(cx, cy, 0, cx, cy, sz * 0.82);
+      coreGrad.addColorStop(0, `rgba(255,255,255,${twinkle})`);
+      coreGrad.addColorStop(0.6, `rgba(255,255,255,${0.6 * twinkle})`);
+      coreGrad.addColorStop(1, "rgba(255,255,255,0)");
+      ctx!.fillStyle = coreGrad;
+      ctx!.beginPath();
+      ctx!.arc(cx, cy, sz * 0.82, 0, Math.PI * 2);
+      ctx!.fill();
+
+      ctx!.restore();
+      rafRef.current = requestAnimationFrame(draw);
+    }
+
+    rafRef.current = requestAnimationFrame(draw);
+    return () => { cancelAnimationFrame(rafRef.current); };
+  }, [primaryDomainId, relatedDomainIds, stage, size]);
+
+  return <canvas ref={canvasRef} style={{ display: "block", borderRadius: "50%" }} />;
 }
 
 export function StarDetailsPanel({
@@ -706,18 +846,17 @@ export function StarDetailsPanel({
                 )}
               </div>
 
-              <div className="rounded-full border border-[#d6b361]/30 bg-[#d6b361]/10 px-4 py-2 text-right">
-                <div className="text-[11px] uppercase tracking-[0.28em] text-[#d6b361]">Star</div>
-                <div className="mt-1 text-sm font-medium text-white">
-                  {labelDraft.trim() || activeStar.label || (entryMode === "new" ? "Unnamed arrival" : "Mapped star")}
-                </div>
-                <div className="mt-1 text-[11px] tracking-[0.18em] text-slate-300">
-                  {effectiveStage}
-                  {" · "}
-                  {attachedManifestPaths.length > 0
-                    ? `${attachedManifestPaths.length} attached`
-                    : "No attachments yet"}
-                </div>
+              <div className="shrink-0 overflow-hidden rounded-full border border-[#d6b361]/30 ring-1 ring-white/5">
+                <StarMiniPreview
+                  primaryDomainId={primaryDomainIdDraft || activeStar.primaryDomainId}
+                  relatedDomainIds={
+                    relatedDomainIdsDraft
+                      ? relatedDomainIdsDraft.split(",").map((s) => s.trim()).filter(Boolean)
+                      : activeStar.relatedDomainIds
+                  }
+                  stage={effectiveStage}
+                  size={activeStar.size}
+                />
               </div>
             </div>
 

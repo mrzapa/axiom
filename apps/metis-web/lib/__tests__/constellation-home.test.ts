@@ -109,6 +109,25 @@ describe("isAddableBackgroundStar", () => {
     // Should still pass because there are existing user stars
     expect(isAddableBackgroundStar(star, nodes, userStars, WIDTH, HEIGHT, false)).toBe(true);
   });
+
+  it("rejects star within exclusion buffer of a secondary constellation star", () => {
+    const star = makeStar({ nx: 0.93, ny: 0.15 });
+    // Secondary constellation star at pixel (907, 120) → normalized (0.907, 0.120)
+    // Distance ≈ 0.038 < ADDABLE_NODE_BUFFER (0.04) → should reject
+    const nodes: ConstellationNodePoint[] = [{ x: 907, y: 120 }];
+
+    expect(isAddableBackgroundStar(star, nodes, [], WIDTH, HEIGHT)).toBe(false);
+  });
+
+  it("accepts star just outside exclusion buffer of every constellation star", () => {
+    const star = makeStar({ nx: 0.92, ny: 0.12 });
+    // Secondary constellation star at pixel (867, 65) → normalized (0.867, 0.065)
+    // Distance ≈ 0.076 > ADDABLE_NODE_BUFFER (0.04) → should accept
+    const nodes: ConstellationNodePoint[] = [{ x: 867, y: 65 }];
+    const userStars = [makeUserStar({ x: 0.2, y: 0.2 })];
+
+    expect(isAddableBackgroundStar(star, nodes, userStars, WIDTH, HEIGHT)).toBe(true);
+  });
 });
 
 describe("normalizeUserStar", () => {
