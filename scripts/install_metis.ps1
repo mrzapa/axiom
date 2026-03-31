@@ -27,11 +27,14 @@
       METIS_BRANCH       — branch          (default: main)
       METIS_PYTHON       — python binary   (default: python)
 #>
-[CmdletBinding()]
 param(
-    [ValidateSet("install", "reinstall", "uninstall", "update")]
     [string]$Action = "install"
 )
+
+if ($Action -notin @("install", "reinstall", "uninstall", "update")) {
+    Write-Error "Invalid -Action '$Action'. Valid values: install, reinstall, uninstall, update"
+    exit 1
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -480,7 +483,7 @@ finally {
         `$headAfter = Receive-Job -Job `$gitUpdateJob -Wait -AutoRemoveJob -ErrorAction SilentlyContinue
         if (-not [string]::IsNullOrEmpty(`$headAfter) -and `$headAfter -ne `$headBefore) {
             Set-Content -Path `$rebuildMarker -Value "" -ErrorAction SilentlyContinue
-            Write-Host "METIS updated ($(`$headAfter.Substring(0, [Math]::Min(7, `$headAfter.Length)))). Run 'metis' again to apply." -ForegroundColor Cyan
+            Write-Host "METIS updated (`$(`$headAfter.Substring(0, [Math]::Min(7, `$headAfter.Length)))). Run 'metis' again to apply." -ForegroundColor Cyan
         }
     }
 }
