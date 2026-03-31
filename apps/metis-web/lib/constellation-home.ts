@@ -42,6 +42,13 @@ export interface WorldBounds {
   bottom: number;
 }
 
+export interface ConstellationShape {
+  /** Offsets from anchor star (star[0]) in normalized canvas coordinates. star[0] is always {dx:0, dy:0}. */
+  stars: ReadonlyArray<{ readonly dx: number; readonly dy: number }>;
+  /** Index pairs into stars[] forming the stick-figure lines. */
+  edges: ReadonlyArray<readonly [number, number]>;
+}
+
 export interface ConstellationFacultyMetadata {
   id: string;
   label: string;
@@ -49,6 +56,7 @@ export interface ConstellationFacultyMetadata {
   angle: number;
   x: number;
   y: number;
+  shape: ConstellationShape;
 }
 
 export interface ConstellationFieldStar {
@@ -104,6 +112,7 @@ function createConstellationFaculty(
   label: string,
   description: string,
   angle: number,
+  shape: ConstellationShape,
 ): ConstellationFacultyMetadata {
   return {
     id,
@@ -112,21 +121,66 @@ function createConstellationFaculty(
     angle,
     x: CONSTELLATION_FACULTY_CENTER_X + Math.cos(angle) * CONSTELLATION_FACULTY_RING_RADIUS,
     y: CONSTELLATION_FACULTY_CENTER_Y + Math.sin(angle) * CONSTELLATION_FACULTY_RING_RADIUS,
+    shape,
   };
 }
 
 export const CONSTELLATION_FACULTIES: ConstellationFacultyMetadata[] = [
-  createConstellationFaculty("perception", "Perception", "Sensory intake, pattern detection, and direct observation.", -Math.PI / 2),
-  createConstellationFaculty("knowledge", "Knowledge", "Structured facts, concepts, and durable associations.", -Math.PI / 2 + (Math.PI * 2) / 11),
-  createConstellationFaculty("memory", "Memory", "Retention, recall, and context continuity.", -Math.PI / 2 + (Math.PI * 4) / 11),
-  createConstellationFaculty("reasoning", "Reasoning", "Inference, logic, and evidence-driven judgment.", -Math.PI / 2 + (Math.PI * 6) / 11),
-  createConstellationFaculty("skills", "Skills", "Procedural capability, practiced technique, and execution fluency.", -Math.PI / 2 + (Math.PI * 8) / 11),
-  createConstellationFaculty("strategy", "Strategy", "Planning, tradeoffs, and directional choice.", -Math.PI / 2 + (Math.PI * 10) / 11),
-  createConstellationFaculty("personality", "Personality", "Style, temperament, and expressive posture.", -Math.PI / 2 + (Math.PI * 12) / 11),
-  createConstellationFaculty("values", "Values", "Principles, priorities, and constraints.", -Math.PI / 2 + (Math.PI * 14) / 11),
-  createConstellationFaculty("synthesis", "Synthesis", "Cross-domain integration and meaning-making.", -Math.PI / 2 + (Math.PI * 16) / 11),
-  createConstellationFaculty("autonomy", "Autonomy", "Independent intent, self-direction, and self-governance.", -Math.PI / 2 + (Math.PI * 18) / 11),
-  createConstellationFaculty("emergence", "Emergence", "Novel capability, adaptation, and new structure from existing parts.", -Math.PI / 2 + (Math.PI * 20) / 11),
+  // Perception (top) — Perseus-inspired 6-star arc chain
+  createConstellationFaculty("perception", "Perception", "Sensory intake, pattern detection, and direct observation.", -Math.PI / 2, {
+    stars: [{dx:0,dy:0},{dx:-0.080,dy:0.032},{dx:-0.140,dy:0.008},{dx:0.068,dy:-0.024},{dx:0.120,dy:0.040},{dx:-0.040,dy:-0.040}],
+    edges: [[0,1],[1,2],[0,3],[3,4],[0,5]],
+  }),
+  // Knowledge (upper-right) — Auriga-inspired 5-star pentagon
+  createConstellationFaculty("knowledge", "Knowledge", "Structured facts, concepts, and durable associations.", -Math.PI / 2 + (Math.PI * 2) / 11, {
+    stars: [{dx:0,dy:0},{dx:0.060,dy:0},{dx:0.080,dy:0.060},{dx:0.020,dy:0.100},{dx:-0.040,dy:0.060}],
+    edges: [[0,1],[1,2],[2,3],[3,4],[4,0]],
+  }),
+  // Memory (right) — Draco-inspired 5-star winding chain
+  createConstellationFaculty("memory", "Memory", "Retention, recall, and context continuity.", -Math.PI / 2 + (Math.PI * 4) / 11, {
+    stars: [{dx:0,dy:0},{dx:0.040,dy:-0.040},{dx:0.068,dy:-0.100},{dx:0.020,dy:-0.140},{dx:-0.056,dy:-0.060}],
+    edges: [[0,1],[1,2],[2,3],[0,4]],
+  }),
+  // Reasoning (lower-right) — Hercules-inspired 6-star keystone + spurs
+  createConstellationFaculty("reasoning", "Reasoning", "Inference, logic, and evidence-driven judgment.", -Math.PI / 2 + (Math.PI * 6) / 11, {
+    stars: [{dx:0,dy:0},{dx:-0.040,dy:-0.064},{dx:-0.072,dy:-0.040},{dx:-0.040,dy:0.056},{dx:0,dy:0.100},{dx:0.040,dy:-0.092}],
+    edges: [[0,1],[1,2],[2,3],[3,0],[0,4],[1,5]],
+  }),
+  // Skills (lower) — Gemini-inspired 5-star twin chain
+  createConstellationFaculty("skills", "Skills", "Procedural capability, practiced technique, and execution fluency.", -Math.PI / 2 + (Math.PI * 8) / 11, {
+    stars: [{dx:0,dy:0},{dx:-0.060,dy:-0.024},{dx:-0.044,dy:0.068},{dx:0.028,dy:0.080},{dx:-0.016,dy:0.120}],
+    edges: [[0,1],[0,3],[1,2],[2,4],[3,4]],
+  }),
+  // Strategy (bottom) — Ursa Major Big Dipper 7-star bowl + handle
+  createConstellationFaculty("strategy", "Strategy", "Planning, tradeoffs, and directional choice.", -Math.PI / 2 + (Math.PI * 10) / 11, {
+    stars: [{dx:0,dy:0},{dx:0.060,dy:-0.012},{dx:0.060,dy:0.056},{dx:0,dy:0.044},{dx:-0.048,dy:0.020},{dx:-0.100,dy:-0.008},{dx:-0.140,dy:-0.040}],
+    edges: [[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]],
+  }),
+  // Personality (lower-left) — Lyra-inspired 5-star apex + parallelogram
+  createConstellationFaculty("personality", "Personality", "Style, temperament, and expressive posture.", -Math.PI / 2 + (Math.PI * 12) / 11, {
+    stars: [{dx:0,dy:0},{dx:-0.036,dy:0.072},{dx:0.036,dy:0.072},{dx:-0.036,dy:0.108},{dx:0.036,dy:0.108}],
+    edges: [[0,1],[0,2],[1,2],[1,3],[2,4],[3,4]],
+  }),
+  // Values (left) — Boötes-inspired 6-star kite
+  createConstellationFaculty("values", "Values", "Principles, priorities, and constraints.", -Math.PI / 2 + (Math.PI * 14) / 11, {
+    stars: [{dx:0,dy:0},{dx:-0.040,dy:-0.060},{dx:0.040,dy:-0.060},{dx:-0.044,dy:-0.128},{dx:0.040,dy:-0.128},{dx:0,dy:-0.168}],
+    edges: [[0,1],[0,2],[1,3],[2,4],[3,4],[3,5],[4,5]],
+  }),
+  // Synthesis (upper-left) — Andromeda-inspired 5-star chain + branches
+  createConstellationFaculty("synthesis", "Synthesis", "Cross-domain integration and meaning-making.", -Math.PI / 2 + (Math.PI * 16) / 11, {
+    stars: [{dx:0,dy:0},{dx:-0.040,dy:-0.060},{dx:-0.072,dy:-0.100},{dx:-0.040,dy:0.072},{dx:0,dy:0.100}],
+    edges: [[0,1],[1,2],[0,3],[0,4]],
+  }),
+  // Autonomy (upper-left) — Cygnus Northern Cross 5-star
+  createConstellationFaculty("autonomy", "Autonomy", "Independent intent, self-direction, and self-governance.", -Math.PI / 2 + (Math.PI * 18) / 11, {
+    stars: [{dx:0,dy:0},{dx:0,dy:0.072},{dx:-0.060,dy:0.072},{dx:0.060,dy:0.072},{dx:0,dy:0.140}],
+    edges: [[0,1],[1,2],[1,3],[1,4]],
+  }),
+  // Emergence (upper) — Cassiopeia W/M 5-star zigzag
+  createConstellationFaculty("emergence", "Emergence", "Novel capability, adaptation, and new structure from existing parts.", -Math.PI / 2 + (Math.PI * 20) / 11, {
+    stars: [{dx:0,dy:0},{dx:-0.060,dy:-0.040},{dx:-0.120,dy:0},{dx:0.060,dy:-0.040},{dx:0.120,dy:0}],
+    edges: [[2,1],[1,0],[0,3],[3,4]],
+  }),
 ];
 
 export function getFacultyColor(facultyId?: string): ConstellationFacultyColor {

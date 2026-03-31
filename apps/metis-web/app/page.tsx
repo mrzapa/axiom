@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  LandingStarfieldWebgl,
-  type LandingStarfieldFrame,
-  type LandingWebglStar,
-} from "@/components/home/landing-starfield-webgl";
+import dynamic from "next/dynamic";
+import type { LandingStarfieldFrame, LandingWebglStar } from "@/components/home/landing-starfield-webgl.types";
+
+const LandingStarfieldWebgl = dynamic(
+  () =>
+    import("@/components/home/landing-starfield-webgl").then(
+      (m) => ({ default: m.LandingStarfieldWebgl }),
+    ),
+  { ssr: false, loading: () => null },
+);
 import { StarDetailsPanel } from "@/components/constellation/star-observatory-dialog";
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { deleteIndex, fetchIndexes, previewLearningRoute } from "@/lib/api";
@@ -147,7 +152,7 @@ interface NodeData extends ConstellationNodePoint {
   anchorY: number;
   baseSize: number;
   brightness: number; targetBrightness: number;
-  concept: FacultyConcept; connections: number[];
+  concept: FacultyConcept;
   awakenDelay: number; parallax: number;
   hoverBoost: number; targetHoverBoost: number;
   _labelBottom: number;
@@ -2095,7 +2100,7 @@ export default function Home() {
       anchorY: concept.faculty.y,
       baseSize: 1.5 + Math.random() * 1.5,
       brightness: 0.15, targetBrightness: 0.15,
-      concept, connections: [],
+      concept,
       awakenDelay: 2000 + Math.random() * 1500,
       parallax: 0.015,
       hoverBoost: 0,
@@ -2159,12 +2164,6 @@ export default function Home() {
       zoomFactor: backgroundZoomRef.current,
     });
     syncStaticNodeHitZones();
-    nodes.forEach((n, i) => {
-      const dists = nodes.map((m, j) => ({ idx: j, d: Math.hypot(n.anchorX - m.anchorX, n.anchorY - m.anchorY) }))
-        .filter(d => d.idx !== i).sort((a, b) => a.d - b.d);
-      n.connections = dists.slice(0, i === 0 ? 5 : 3).map(d => d.idx);
-    });
-
     /* dust */
     const dust: DustData[] = [];
     for (let i = 0; i < 40; i++) dust.push(makeDust(W, H));
@@ -2325,6 +2324,14 @@ export default function Home() {
         };
       });
 
+      const constellationCameraScale = getConstellationCameraScale(backgroundCamera.zoomFactor);
+      const allConstellationStarPx = nodes.flatMap((node) =>
+        node.concept.faculty.shape.stars.map((shapeStar) => ({
+          x: node.x + shapeStar.dx * W * constellationCameraScale,
+          y: node.y + shapeStar.dy * H * constellationCameraScale,
+        }))
+      );
+
       const scale = getBackgroundCameraScale(backgroundCamera.zoomFactor);
       const nextVisibleStars = visibleStarsRef.current;
       let visibleStarCount = 0;
@@ -2385,7 +2392,7 @@ export default function Home() {
           (userStar) => getStarManifestPaths(userStar).length > 0,
         );
         const hasUserContent = hasLinkedSourceContent || hasSessionIndexedContentRef.current;
-        star.isAddable = isAddableBackgroundStar(star, nodes, projectedUserStars, W, H, hasUserContent);
+        star.isAddable = isAddableBackgroundStar(star, allConstellationStarPx, projectedUserStars, W, H, hasUserContent);
         nextVisibleStars[visibleStarCount] = star;
         visibleStarCount += 1;
       });
@@ -2766,6 +2773,63 @@ export default function Home() {
       });
     }
 
+    function drawPolarisMetis(ts: number) {
+      const polarisCam = readBackgroundCamera();
+      const projected = projectConstellationPoint(
+        { x: CORE_CENTER_X, y: CORE_CENTER_Y },
+        W,
+        H,
+        polarisCam,
+      );
+      const ppx = projected.x;
+      const ppy = projected.y;
+      const pulse = reducedMotion ? 1 : 0.88 + Math.sin(ts * 0.00209) * 0.12;
+      const nodeGalaxyScale = getZoomResponsiveNodeScale(backgroundZoomRef.current);
+      const coreR = 5 * nodeGalaxyScale;
+
+      // Outer gold glow
+      const outerGrad = ctx!.createRadialGradient(ppx, ppy, 0, ppx, ppy, 44 * nodeGalaxyScale);
+      outerGrad.addColorStop(0, `rgba(255,240,180,${0.14 * pulse})`);
+      outerGrad.addColorStop(0.5, `rgba(220,190,80,${0.06 * pulse})`);
+      outerGrad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx!.fillStyle = outerGrad;
+      ctx!.beginPath(); ctx!.arc(ppx, ppy, 44 * nodeGalaxyScale, 0, Math.PI * 2); ctx!.fill();
+
+      // Mid corona
+      const midGrad = ctx!.createRadialGradient(ppx, ppy, 0, ppx, ppy, 20 * nodeGalaxyScale);
+      midGrad.addColorStop(0, `rgba(255,252,220,${0.32 * pulse})`);
+      midGrad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx!.fillStyle = midGrad;
+      ctx!.beginPath(); ctx!.arc(ppx, ppy, 20 * nodeGalaxyScale, 0, Math.PI * 2); ctx!.fill();
+
+      // 6-point diffraction spikes (very slowly rotating)
+      const spikeAngle = ts * 0.00008;
+      ctx!.save();
+      ctx!.strokeStyle = `rgba(255,240,160,${0.48 * pulse})`;
+      ctx!.lineWidth = 0.85;
+      for (let ii = 0; ii < 6; ii++) {
+        const a = spikeAngle + (Math.PI / 3) * ii;
+        ctx!.beginPath();
+        ctx!.moveTo(ppx + Math.cos(a) * coreR * 1.2, ppy + Math.sin(a) * coreR * 1.2);
+        ctx!.lineTo(ppx + Math.cos(a) * 28 * nodeGalaxyScale, ppy + Math.sin(a) * 28 * nodeGalaxyScale);
+        ctx!.stroke();
+      }
+      ctx!.restore();
+
+      // Core disk
+      ctx!.beginPath(); ctx!.arc(ppx, ppy, coreR, 0, Math.PI * 2);
+      ctx!.fillStyle = `rgba(255,252,230,${0.96 * pulse})`; ctx!.fill();
+      ctx!.beginPath(); ctx!.arc(ppx, ppy, coreR * 0.4, 0, Math.PI * 2);
+      ctx!.fillStyle = "rgba(255,255,255,1)"; ctx!.fill();
+
+      // METIS label
+      const fontSize = Math.round(10 + nodeGalaxyScale * 4);
+      ctx!.font = buildCanvasFont(fontSize, NODE_LABEL_FONT_FAMILY, "600");
+      ctx!.textAlign = "center";
+      ctx!.fillStyle = `rgba(255,235,140,${0.72 * pulse})`;
+      ctx!.fillText("METIS", ppx, ppy - coreR - 10 * nodeGalaxyScale);
+    }
+
     function drawNodes(t: number) {
       const aNode = activeNodeRef.current;
       const hasAddCandidate = hoveredAddCandidateRef.current !== null;
@@ -2797,26 +2861,46 @@ export default function Home() {
         const hoverScale = enhancedHoverMotion ? n.hoverBoost * 2.6 : 0;
         const s = (n.baseSize * 2.9 + proximity * 2.6 + (i === aNode ? 1.35 : 0) + hoverScale) * nodeGalaxyScale;
 
-        if (proximity > 0.05 || i === aNode || nodeAwakenProg > 0.5 || ragFacultyHighlighted) {
-          const lineAlpha = Math.max(
-            proximity * 0.25,
-            nodeAwakenProg * 0.06,
-            i === aNode ? 0.2 : 0,
-            ragFacultyHighlighted ? 0.22 + ragPulseStrength * 0.42 : 0,
-          );
-          n.connections.forEach(ci => {
-            const cn = nodes[ci];
-            const cpx = cn.x + (mouse.x - W / 2) * cn.parallax;
-            const cpy = cn.y + (mouse.y - H / 2) * cn.parallax;
-            const ragLineHighlighted = ragPulseStrength > 0
-              && (ragPulseState?.facultyIds.has(n.concept.faculty.id) || ragPulseState?.facultyIds.has(cn.concept.faculty.id));
-            const ragBoost = ragLineHighlighted ? ragPulseStrength : 0;
-            ctx!.beginPath(); ctx!.moveTo(px, py); ctx!.lineTo(cpx, cpy);
-            ctx!.strokeStyle = `rgba(${r},${g},${bl},${Math.min(0.9, lineAlpha * (0.68 + ragBoost * 0.74))})`;
+        // Intra-constellation stick-figure lines
+        const cScale = getConstellationCameraScale(backgroundZoomRef.current);
+        const edgeAlpha = Math.max(
+          nodeAwakenProg * 0.18,
+          i === aNode ? 0.28 : proximity * 0.30,
+          ragFacultyHighlighted ? 0.26 + ragPulseStrength * 0.40 : 0,
+        );
+        if (edgeAlpha > 0.02) {
+          n.concept.faculty.shape.edges.forEach(([si, sj]) => {
+            const sa = n.concept.faculty.shape.stars[si];
+            const sb = n.concept.faculty.shape.stars[sj];
+            const ragBoost = ragFacultyHighlighted ? ragPulseStrength : 0;
+            ctx!.beginPath();
+            ctx!.moveTo(px + sa.dx * W * cScale, py + sa.dy * H * cScale);
+            ctx!.lineTo(px + sb.dx * W * cScale, py + sb.dy * H * cScale);
+            ctx!.strokeStyle = `rgba(${r},${g},${bl},${Math.min(0.85, edgeAlpha * (0.72 + ragBoost * 0.70))})`;
             ctx!.lineWidth = lineWidth + ragBoost * 1.2;
             ctx!.stroke();
           });
         }
+
+        // Secondary constellation stars (shape.stars[1..])
+        n.concept.faculty.shape.stars.slice(1).forEach((shapeStar) => {
+          const spx = px + shapeStar.dx * W * cScale;
+          const spy = py + shapeStar.dy * H * cScale;
+          const ss = s * 0.55;
+          if (b > 0.18 || nodeAwakenProg > 0.3) {
+            const sg = ctx!.createRadialGradient(spx, spy, 0, spx, spy, ss * 9);
+            sg.addColorStop(0, `rgba(${r},${g},${bl},${b * 0.06})`);
+            sg.addColorStop(1, "rgba(0,0,0,0)");
+            ctx!.fillStyle = sg;
+            ctx!.beginPath(); ctx!.arc(spx, spy, ss * 9, 0, Math.PI * 2); ctx!.fill();
+          }
+          ctx!.beginPath(); ctx!.arc(spx, spy, ss, 0, Math.PI * 2);
+          ctx!.fillStyle = `rgba(${r},${g},${bl},${Math.max(0.55, b)})`;
+          ctx!.fill();
+          ctx!.beginPath(); ctx!.arc(spx, spy, Math.max(0.7, ss * 0.38), 0, Math.PI * 2);
+          ctx!.fillStyle = "rgba(255,255,255,0.82)";
+          ctx!.fill();
+        });
         if (b > 0.25 || n.hoverBoost > 0.1) {
           const grad = ctx!.createRadialGradient(px, py, 0, px, py, s * 12);
           grad.addColorStop(0, `rgba(${r},${g},${bl},${b * 0.08 + n.hoverBoost * 0.12})`);
@@ -3038,6 +3122,7 @@ export default function Home() {
       }
       drawNebulae();
       drawDust();
+      drawPolarisMetis(ts);
       drawNodes(ts);
       drawUserStarEdges(ts);
       drawAddCandidatePreview(ts);
@@ -3850,16 +3935,6 @@ export default function Home() {
       </div>
 
       <section id="build-map" className="metis-build-section">
-        <div className="metis-build-intro">
-          <div className="metis-section-kicker">Build map</div>
-          <h2 className="metis-section-title">Turn uploads into stars with a METIS brain pass.</h2>
-          <p className="metis-section-copy">
-            Seed indexed sources directly into orbit, then open any star&apos;s details to add
-            more files, notes, and grounded chat. <span className="metis-inline-accent">Each star keeps its own attached sources</span>,
-            so every attached source stays filed near the faculty it should strengthen.
-          </p>
-        </div>
-
         <div className="metis-build-toolbar">
           <div className="metis-build-stats" aria-live="polite">
             <div className="metis-build-stat">{starCountLabel}</div>

@@ -191,7 +191,7 @@ function Wait-ForUrl {
         [string]`$Label,
         [string]`$Url,
         [System.Diagnostics.Process]`$Process,
-        [int]`$Attempts = 60
+        [int]`$Attempts = 300
     )
 
     for (`$attempt = 0; `$attempt -lt `$Attempts; `$attempt++) {
@@ -208,10 +208,10 @@ function Wait-ForUrl {
                 return `$false
             }
         }
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 100
     }
 
-    Write-Host "`$Label did not respond within `$(`$Attempts / 2) seconds." -ForegroundColor Yellow
+    Write-Host "`$Label did not respond within `$(`$Attempts / 10) seconds." -ForegroundColor Yellow
     return `$false
 }
 
@@ -292,46 +292,70 @@ function Stop-ChildProcess {
     }
 }
 
+`$headBefore = `$null
+`$gitUpdateJob = `$null
+`$needsBuild = -not (Test-Path (Join-Path `$webDir "index.html"))
+`$rebuildMarker = Join-Path `$webDir ".needs-rebuild"
+
+# Apply pending rebuild from a previous background update.
+if (Test-Path `$rebuildMarker) {
+    `$needsBuild = `$true
+    Remove-Item `$rebuildMarker -ErrorAction SilentlyContinue
+}
+
 if (Test-Path (Join-Path `$metisDir ".git")) {
     `$headBefore = git -C `$metisDir rev-parse HEAD 2>`$null
-    git -C `$metisDir fetch origin `$branch 2>`$null
-    git -C `$metisDir checkout `$branch 2>`$null
-    git -C `$metisDir pull origin `$branch --ff-only 2>`$null
-    if (`$LASTEXITCODE -ne 0) {
-        Write-Host "Local changes prevented fast-forward pull. Resetting to origin/`$branch..." -ForegroundColor Yellow
-        git -C `$metisDir reset --hard "origin/`$branch" 2>`$null
-    }
-    `$headAfter = git -C `$metisDir rev-parse HEAD 2>`$null
 
-    `$needsBuild = (-not (Test-Path (Join-Path `$webDir "index.html"))) -or (`$headBefore -ne `$headAfter)
-
-    if (`$needsBuild -and (Get-Command "node" -ErrorAction SilentlyContinue)) {
-        `$webAppDir = Join-Path `$metisDir "apps\metis-web"
-        if (Test-Path (Join-Path `$webAppDir "package.json")) {
-            Write-Host "Rebuilding web UI..."
-            Push-Location `$webAppDir
-            try {
-                npm install --silent
-                if (`$LASTEXITCODE -ne 0) {
-                    throw [System.InvalidOperationException]::new("npm install failed while rebuilding web UI.")
-                }
-
-                npm run build
-                if (`$LASTEXITCODE -ne 0) {
-                    throw [System.InvalidOperationException]::new("npm run build failed while rebuilding web UI.")
-                }
-
-                if (-not (Test-Path (Join-Path `$webDir "index.html"))) {
-                    throw [System.InvalidOperationException]::new("Web UI build completed but `$webDir\index.html was not generated.")
-                }
-
-                Write-Host "Web UI rebuilt successfully."
-                Write-Host $TurbopackRootNote -ForegroundColor DarkGray
-            } catch {
-                Write-Host "Web UI rebuild failed - using cached version." -ForegroundColor Yellow
-            } finally {
-                Pop-Location
+    if (-not `$needsBuild) {
+        # Existing build — run git update in background so servers start immediately.
+        `$gitUpdateJob = Start-Job -ScriptBlock {
+            param(`$dir, `$br)
+            git -C `$dir fetch origin `$br 2>`$null
+            git -C `$dir checkout `$br 2>`$null
+            git -C `$dir pull origin `$br --ff-only 2>`$null
+            if (`$LASTEXITCODE -ne 0) {
+                git -C `$dir reset --hard "origin/`$br" 2>`$null
             }
+            git -C `$dir rev-parse HEAD 2>`$null
+        } -ArgumentList `$metisDir, `$branch
+    } else {
+        # No existing build or rebuild pending — sync git update before starting.
+        git -C `$metisDir fetch origin `$branch 2>`$null
+        git -C `$metisDir checkout `$branch 2>`$null
+        git -C `$metisDir pull origin `$branch --ff-only 2>`$null
+        if (`$LASTEXITCODE -ne 0) {
+            Write-Host "Local changes prevented fast-forward pull. Resetting to origin/`$branch..." -ForegroundColor Yellow
+            git -C `$metisDir reset --hard "origin/`$branch" 2>`$null
+        }
+    }
+}
+
+if (`$needsBuild -and (Get-Command "node" -ErrorAction SilentlyContinue)) {
+    `$webAppDir = Join-Path `$metisDir "apps\metis-web"
+    if (Test-Path (Join-Path `$webAppDir "package.json")) {
+        Write-Host "Rebuilding web UI..."
+        Push-Location `$webAppDir
+        try {
+            npm install --silent
+            if (`$LASTEXITCODE -ne 0) {
+                throw [System.InvalidOperationException]::new("npm install failed while rebuilding web UI.")
+            }
+
+            npm run build
+            if (`$LASTEXITCODE -ne 0) {
+                throw [System.InvalidOperationException]::new("npm run build failed while rebuilding web UI.")
+            }
+
+            if (-not (Test-Path (Join-Path `$webDir "index.html"))) {
+                throw [System.InvalidOperationException]::new("Web UI build completed but `$webDir\index.html was not generated.")
+            }
+
+            Write-Host "Web UI rebuilt successfully."
+            Write-Host $TurbopackRootNote -ForegroundColor DarkGray
+        } catch {
+            Write-Host "Web UI rebuild failed - using cached version." -ForegroundColor Yellow
+        } finally {
+            Pop-Location
         }
     }
 }
@@ -451,6 +475,14 @@ finally {
     Stop-ChildProcess -Process `$webProcess -Label "web UI server"
     Stop-ChildProcess -Process `$apiProcess -Label "API server"
     Remove-Item `$apiStdOut, `$apiStdErr, `$webStdOut, `$webStdErr -ErrorAction SilentlyContinue
+
+    if (`$null -ne `$gitUpdateJob) {
+        `$headAfter = Receive-Job -Job `$gitUpdateJob -Wait -AutoRemoveJob -ErrorAction SilentlyContinue
+        if (-not [string]::IsNullOrEmpty(`$headAfter) -and `$headAfter -ne `$headBefore) {
+            Set-Content -Path `$rebuildMarker -Value "" -ErrorAction SilentlyContinue
+            Write-Host "METIS updated ($(`$headAfter.Substring(0, [Math]::Min(7, `$headAfter.Length)))). Run 'metis' again to apply." -ForegroundColor Cyan
+        }
+    }
 }
 "@ | Set-Content -Path $LauncherPs1 -Encoding UTF8
 

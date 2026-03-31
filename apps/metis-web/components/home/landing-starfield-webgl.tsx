@@ -3,26 +3,9 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { MutableRefObject } from "react";
-import type { LandingStarRenderTier } from "@/lib/landing-stars/landing-star-types";
-import type { StellarProfile } from "@/lib/landing-stars/types";
+import type { LandingWebglStar, LandingStarfieldFrame, LandingStarRenderTier } from "./landing-starfield-webgl.types";
 
-export interface LandingWebglStar {
-  addable: boolean;
-  apparentSize: number;
-  brightness: number;
-  id: string;
-  profile: StellarProfile;
-  renderTier: LandingStarRenderTier;
-  x: number;
-  y: number;
-}
-
-export interface LandingStarfieldFrame {
-  height: number;
-  revision: number;
-  stars: LandingWebglStar[];
-  width: number;
-}
+export type { LandingWebglStar, LandingStarfieldFrame } from "./landing-starfield-webgl.types";
 
 interface LandingStarfieldWebglProps {
   className?: string;
