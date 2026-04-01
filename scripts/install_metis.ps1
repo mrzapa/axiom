@@ -783,7 +783,7 @@ Write-Host "=== METIS Installer ===" -ForegroundColor Cyan
 Write-Host ""
 
 switch ($Action) {
-    "install"   { Invoke-Install -IsReinstall $false }
+    "install"   { Invoke-Uninstall; Invoke-Install -IsReinstall $true }
     "reinstall" { Invoke-Install -IsReinstall $true  }
     "uninstall" { Invoke-Uninstall }
     "update"    { Invoke-Update }

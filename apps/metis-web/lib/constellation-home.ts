@@ -2,8 +2,8 @@
 
 import type { UserStar } from "@/lib/constellation-types";
 
-export const CORE_CENTER_X = 0.56;
-export const CORE_CENTER_Y = 0.43;
+export const CORE_CENTER_X = 0.5;
+export const CORE_CENTER_Y = 0.5;
 export const CORE_EXCLUSION_RADIUS = 0.21;
 export const ADD_CANDIDATE_HIT_RADIUS_PX = 26;
 export const MOBILE_ADD_CANDIDATE_HIT_RADIUS_PX = 38;
