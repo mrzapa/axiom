@@ -707,3 +707,31 @@ class AssistantCompanionService:
             "related_node_ids": sorted({node_id for node_id in related_node_ids if node_id}),
             "context_lines": context_lines,
         }
+
+    def capture_skill_candidate(
+        self,
+        *,
+        db_path: "pathlib.Path",
+        query_text: str,
+        trace_json: str,
+        convergence_score: float,
+        min_convergence: float = 0.90,
+        min_iterations: int = 2,
+        trace_iterations: int = 0,
+    ) -> bool:
+        """Save a successful agentic run as a skill candidate if it meets quality thresholds.
+
+        Returns True if saved, False if below threshold.
+        """
+        import pathlib
+        from metis_app.services.skill_repository import SkillRepository
+        if convergence_score < min_convergence or trace_iterations < min_iterations:
+            return False
+        repo = SkillRepository(skills_dir=None)
+        repo.save_candidate(
+            db_path=db_path,
+            query_text=query_text,
+            trace_json=trace_json,
+            convergence_score=convergence_score,
+        )
+        return True

@@ -44,6 +44,34 @@ def test_iteration_complete_event_has_trace_fields():
     assert "convergence_score" in event
 
 
+def test_companion_capture_saves_above_threshold(tmp_path):
+    from metis_app.services.assistant_companion import AssistantCompanionService
+    companion = AssistantCompanionService.__new__(AssistantCompanionService)  # bypass __init__
+    db_path = tmp_path / "skill_candidates.db"
+    saved = companion.capture_skill_candidate(
+        db_path=db_path,
+        query_text="test query",
+        trace_json='{"ok": true}',
+        convergence_score=0.96,
+        trace_iterations=2,
+    )
+    assert saved is True
+
+
+def test_companion_capture_skips_below_threshold(tmp_path):
+    from metis_app.services.assistant_companion import AssistantCompanionService
+    companion = AssistantCompanionService.__new__(AssistantCompanionService)
+    db_path = tmp_path / "skill_candidates.db"
+    saved = companion.capture_skill_candidate(
+        db_path=db_path,
+        query_text="test query",
+        trace_json='{}',
+        convergence_score=0.50,  # below min_convergence=0.90
+        trace_iterations=2,
+    )
+    assert saved is False
+
+
 def test_list_candidates_returns_top_unreviewed(tmp_path, repo):
     db_path = tmp_path / "skill_candidates.db"
     for i in range(5):
