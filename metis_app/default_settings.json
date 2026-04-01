@@ -63,7 +63,9 @@
     "trigger_on_completed_run": true,
     "allow_automatic_writes": true,
     "autonomous_research_enabled": false,
-    "autonomous_research_provider": "tavily"
+    "autonomous_research_provider": "tavily",
+    "autonomous_research_concurrency": 1,
+    "autonomous_research_request_delay_ms": 500
   },
   "skills": {
     "enabled": {}
