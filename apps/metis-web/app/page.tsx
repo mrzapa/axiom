@@ -2537,6 +2537,7 @@ export default function Home() {
         return;
       }
 
+      const selectedStarId = selectedUserStarIdRef.current;
       const renderTimeMs = getRenderEpochMs(ts);
       const ragPulseState = ragPulseStateRef.current;
       const ragPulseStrength = getHomeRagPulseStrength(ragPulseState, renderTimeMs);
@@ -2568,10 +2569,15 @@ export default function Home() {
           const alphaMultiplier = Math.max(0, Math.min(1, Math.min(from.fadeIn, to.fadeIn) * edgeBreath));
           const ragHighlighted = ragPulseStrength > 0
             && (ragPulseState?.starIds.has(star.id) || ragPulseState?.starIds.has(linkedStarId));
+          const selectedEdge = selectedStarId !== null
+            && (star.id === selectedStarId || linkedStarId === selectedStarId);
+          if (!selectedEdge && !ragHighlighted) {
+            return;
+          }
           const ragBoost = ragHighlighted ? ragPulseStrength : 0;
           const gradient = ctx!.createLinearGradient(from.target.x, from.target.y, to.target.x, to.target.y);
-          gradient.addColorStop(0, `rgba(${from.mixed[0]},${from.mixed[1]},${from.mixed[2]},${(0.21 + ragBoost * 0.34) * alphaMultiplier})`);
-          gradient.addColorStop(1, `rgba(${to.mixed[0]},${to.mixed[1]},${to.mixed[2]},${(0.21 + ragBoost * 0.34) * alphaMultiplier})`);
+          gradient.addColorStop(0, `rgba(${from.mixed[0]},${from.mixed[1]},${from.mixed[2]},${(0.15 + ragBoost * 0.34) * alphaMultiplier})`);
+          gradient.addColorStop(1, `rgba(${to.mixed[0]},${to.mixed[1]},${to.mixed[2]},${(0.15 + ragBoost * 0.34) * alphaMultiplier})`);
           ctx!.strokeStyle = gradient;
           ctx!.lineWidth = 0.95 + ragBoost * 1.35;
           ctx!.beginPath();
@@ -3112,11 +3118,11 @@ export default function Home() {
       }
       drawNebulae();
       drawDust();
-      drawPolarisMetis(ts);
       drawNodes(ts);
       drawUserStarEdges(ts);
       drawAddCandidatePreview(ts);
       drawUserStars(ts);
+      drawPolarisMetis(ts);
       projectedUserStarTargetsRef.current = projectedUserStarTargets;
       animFrame = requestAnimationFrame(render);
     }
