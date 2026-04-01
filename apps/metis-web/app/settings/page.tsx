@@ -96,16 +96,6 @@ const KG_QUERY_MODES = ["hybrid", "vector", "keyword"];
 const COMPREHENSION_DEPTHS = ["Standard", "Deep", "Exhaustive"];
 const UI_VARIANTS = [
   {
-    value: "bold",
-    label: "Bolder",
-    description: "Higher contrast, stronger depth, louder controls.",
-  },
-  {
-    value: "refined",
-    label: "Premium",
-    description: "Same language, quieter surfacing and subtler lift.",
-  },
-  {
     value: "motion",
     label: "Motion",
     description: "More obvious transitions with reduced-motion fallback.",
@@ -372,7 +362,7 @@ export default function SettingsPage() {
   const [assistantSaving, setAssistantSaving] = useArrowState(false);
   const [assistantSaveError, setAssistantSaveError] = useArrowState<string | null>(null);
   const [assistantSaved, setAssistantSaved] = useArrowState(false);
-  const [uiVariant, setUiVariant] = useArrowState<UiVariant>("refined");
+  const [uiVariant, setUiVariant] = useArrowState<UiVariant>("motion");
   const [searchQuery, setSearchQuery] = useArrowState("");
 
   const form = useForm<FormValues>({
@@ -439,9 +429,11 @@ export default function SettingsPage() {
   useEffect(() => {
     if (typeof document === "undefined") return;
     const current = document.documentElement.dataset.uiVariant;
-    if (current === "refined" || current === "motion" || current === "bold") {
+    if (current === "motion") {
       setUiVariant(current);
+      return;
     }
+    applyUiVariant("motion");
   }, [setUiVariant]);
 
   function applyUiVariant(nextVariant: UiVariant) {
@@ -692,28 +684,16 @@ export default function SettingsPage() {
               Switch the live treatment for panes, toggles, sliders, and the chat composer.
             </p>
           </div>
-          <div className="grid gap-2 md:grid-cols-3">
+          <div className="grid gap-2 md:max-w-sm">
             {UI_VARIANTS.map((variant) => {
-              const nyxVariant =
-                variant.value === "bold"
-                  ? ("laser" as const)
-                  : variant.value === "motion"
-                    ? ("cosmic" as const)
-                    : ("liquid" as const);
-              const nyxColor =
-                variant.value === "bold"
-                  ? "#f97316"
-                  : variant.value === "motion"
-                    ? "#a855f7"
-                    : "#6366f1";
               const isActive = uiVariant === variant.value;
               return (
                 <GlowCard
                   key={variant.value}
-                  variant={nyxVariant}
-                  liquidColor={nyxColor}
-                  laserColor={nyxColor}
-                  intensity={isActive ? 1.0 : 0.55}
+                  variant="cosmic"
+                  liquidColor="#a855f7"
+                  laserColor="#a855f7"
+                  intensity={1.0}
                   allowCustomBackground
                   className={cn(
                     "p-0 rounded-[1.1rem] border transition-all duration-300",
@@ -722,20 +702,15 @@ export default function SettingsPage() {
                       : "border-white/8",
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => applyUiVariant(variant.value)}
-                    className="w-full px-4 py-3 text-left"
-                    aria-pressed={isActive}
-                  >
+                  <div className="w-full px-4 py-3 text-left">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-medium">{variant.label}</span>
                       <span className="chat-control-pill rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                        {isActive ? "Active" : "Preview"}
+                        Active
                       </span>
                     </div>
                     <p className="mt-2 text-xs leading-5 text-muted-foreground">{variant.description}</p>
-                  </button>
+                  </div>
                 </GlowCard>
               );
             })}

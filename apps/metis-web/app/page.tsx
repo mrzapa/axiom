@@ -2326,10 +2326,15 @@ export default function Home() {
 
       const constellationCameraScale = getConstellationCameraScale(backgroundCamera.zoomFactor);
       const allConstellationStarPx = nodes.flatMap((node) =>
-        node.concept.faculty.shape.stars.map((shapeStar) => ({
-          x: node.x + shapeStar.dx * W * constellationCameraScale,
-          y: node.y + shapeStar.dy * H * constellationCameraScale,
-        }))
+        node.concept.faculty.shape.stars.map((shapeStar) => {
+          const anchorX = node.x + (mouse.x - W / 2) * node.parallax;
+          const anchorY = node.y + (mouse.y - H / 2) * node.parallax;
+
+          return {
+            x: anchorX + shapeStar.dx * W * constellationCameraScale,
+            y: anchorY + shapeStar.dy * H * constellationCameraScale,
+          };
+        })
       );
 
       const scale = getBackgroundCameraScale(backgroundCamera.zoomFactor);
@@ -2538,43 +2543,6 @@ export default function Home() {
       const edgeBreath = reducedMotion
         ? 1
         : 1 + USER_STAR_EDGE_BREATH_AMPLITUDE * Math.sin((Math.PI * 2 * ts) / USER_STAR_EDGE_BREATH_PERIOD_MS);
-
-      currentUserStars.forEach((star) => {
-        const projectedState = projectedUserStarRenderState.get(star.id);
-        if (!projectedState) {
-          return;
-        }
-
-        const { fadeIn, mixed, target } = projectedState;
-        const px = target.x;
-        const py = target.y;
-        const edgeNodes = getPreviewConnectionNodes(
-          {
-            nx: px / W,
-            ny: py / H,
-          },
-          nodes,
-          W,
-          H,
-        );
-
-        edgeNodes.forEach((node, index) => {
-          const ragHighlighted = ragPulseStrength > 0
-            && (ragPulseState?.starIds.has(star.id) || ragPulseState?.facultyIds.has(node.concept.faculty.id));
-          const ragBoost = ragHighlighted ? ragPulseStrength : 0;
-          const alphaMultiplier = Math.max(0, Math.min(1, fadeIn * edgeBreath));
-          const [facultyR, facultyG, facultyB] = getFacultyColor(node.concept.faculty.id);
-          const grad = ctx!.createLinearGradient(node._sx, node._sy, px, py);
-          grad.addColorStop(0, `rgba(${facultyR},${facultyG},${facultyB},${(0.19 + ragBoost * 0.32) * alphaMultiplier})`);
-          grad.addColorStop(1, `rgba(${mixed[0]},${mixed[1]},${mixed[2]},${(0.25 + ragBoost * 0.36) * alphaMultiplier})`);
-          ctx!.strokeStyle = grad;
-          ctx!.lineWidth = (index === 0 ? 1.05 : 0.7) + ragBoost * (index === 0 ? 1.6 : 1.1);
-          ctx!.beginPath();
-          ctx!.moveTo(node._sx, node._sy);
-          ctx!.lineTo(px, py);
-          ctx!.stroke();
-        });
-      });
 
       const renderedLinks = new Set<string>();
       currentUserStars.forEach((star) => {
@@ -2935,9 +2903,31 @@ export default function Home() {
       }
 
       const backgroundCamera = readBackgroundCamera();
-      const previewNodes = getPreviewConnectionNodes(candidate, nodes, W, H);
       const candidatePoint = getCandidateConstellationPoint(candidate, backgroundCamera);
       const previewInfluence = inferConstellationFaculty(candidatePoint);
+      const primaryNode = nodes.find(
+        (node) => node.concept.faculty.id === previewInfluence.primary.faculty.id,
+      );
+      const cScale = getConstellationCameraScale(backgroundZoomRef.current);
+      const previewNodes = primaryNode
+        ? getPreviewConnectionNodes(
+            candidate,
+            primaryNode.concept.faculty.shape.stars
+              .map((shapeStar) => {
+                const anchorX = primaryNode.x + (mouse.x - W / 2) * primaryNode.parallax;
+                const anchorY = primaryNode.y + (mouse.y - H / 2) * primaryNode.parallax;
+
+                return {
+                  _sx: anchorX + shapeStar.dx * W * cScale,
+                  _sy: anchorY + shapeStar.dy * H * cScale,
+                  x: anchorX + shapeStar.dx * W * cScale,
+                  y: anchorY + shapeStar.dy * H * cScale,
+                };
+              }),
+            W,
+            H,
+          )
+        : [];
       const previewColors = getInfluenceColors(
         previewInfluence.primary.faculty.id,
         previewInfluence.bridgeSuggestion ? [previewInfluence.bridgeSuggestion.faculty.id] : undefined,
