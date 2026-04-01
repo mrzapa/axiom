@@ -272,11 +272,21 @@ def stream_rag_answer(
         agentic_max_iterations = max(
             1, int(settings.get("agentic_max_iterations", 2) or 2)
         )
+        agentic_iteration_budget = max(
+            1, int(settings.get("agentic_iteration_budget", agentic_max_iterations) or agentic_max_iterations)
+        )
+        agentic_convergence_threshold = float(
+            settings.get("agentic_convergence_threshold", 0.95) or 0.95
+        )
 
         accumulated_context = query_result.context_block
         accumulated_sources = list(sources)
 
         if agentic_mode:
+            _prev_draft_embedding: list[float] = []
+            _iterations_used: int = 0
+            _last_convergence_score: float = 0.0
+
             # Generate an initial non-streaming draft used only for self-critique.
             _draft_prompt = (
                 f"{_system_instructions(settings)}\n\n"
@@ -291,12 +301,12 @@ def stream_rag_answer(
                 ])
             )
 
-            for iteration in range(1, agentic_max_iterations + 1):
+            for iteration in range(1, agentic_iteration_budget + 1):
                 yield _emit({
                     "type": "iteration_start",
                     "run_id": run_id,
                     "iteration": iteration,
-                    "total_iterations": agentic_max_iterations,
+                    "total_iterations": agentic_iteration_budget,
                 })
 
                 gap_queries = _identify_gaps(question, current_draft, accumulated_context, llm)
@@ -362,7 +372,7 @@ def stream_rag_answer(
 
                 # Re-synthesise a draft for the next gap-analysis cycle
                 # (only needed when further iterations remain).
-                if iteration < agentic_max_iterations:
+                if iteration < agentic_iteration_budget:
                     _refined_prompt = (
                         f"{_system_instructions(settings)}\n\n"
                         "Answer the user's question using ONLY the CONTEXT below. "
@@ -376,6 +386,23 @@ def stream_rag_answer(
                             {"type": "human", "content": question},
                         ])
                     )
+                    # --- Sotaku-inspired convergence detection ---
+                    _current_emb = _embed_text(current_draft, settings)
+                    if _prev_draft_embedding:
+                        _last_convergence_score = _cosine_similarity(
+                            _prev_draft_embedding, _current_emb
+                        )
+                        if _last_convergence_score >= agentic_convergence_threshold:
+                            _iterations_used = iteration
+                            yield _emit({
+                                "type": "iteration_converged",
+                                "run_id": run_id,
+                                "iteration": iteration,
+                                "convergence_score": round(_last_convergence_score, 4),
+                            })
+                            break
+                    _prev_draft_embedding = _current_emb
+                _iterations_used = iteration
 
             # After all iterations, expose accumulated sources for the final answer.
             sources = accumulated_sources
