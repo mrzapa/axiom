@@ -13,7 +13,7 @@ const LandingStarfieldWebgl = dynamic(
     ),
   { ssr: false, loading: () => null },
 );
-import { StarDetailsPanel } from "@/components/constellation/star-observatory-dialog";
+import { FacultyConceptPanel, StarDetailsPanel } from "@/components/constellation/star-observatory-dialog";
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { deleteIndex, fetchIndexes, previewLearningRoute } from "@/lib/api";
 import {
@@ -822,12 +822,9 @@ export default function Home() {
   const [learningRoutePreviewStarId, setLearningRoutePreviewStarId] = useState<string | null>(null);
   const [learningRouteLoading, setLearningRouteLoading] = useState(false);
   const [learningRouteError, setLearningRouteError] = useState<string | null>(null);
+  const [selectedConceptFaculty, setSelectedConceptFaculty] = useState<FacultyConcept | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const conceptCardRef = useRef<HTMLDivElement>(null);
   const starTooltipCardRef = useRef<HTMLDivElement>(null);
-  const cLabelRef = useRef<HTMLDivElement>(null);
-  const cTitleRef = useRef<HTMLDivElement>(null);
-  const cDescRef = useRef<HTMLDivElement>(null);
   const starTooltipDomainRef = useRef<HTMLDivElement>(null);
   const starTooltipTitleRef = useRef<HTMLDivElement>(null);
   const starTooltipDescRef = useRef<HTMLDivElement>(null);
@@ -877,7 +874,6 @@ export default function Home() {
     width: 0,
   });
   const optimisticIndexKeysRef = useRef<Set<string>>(new Set());
-  const conceptHideTimeoutRef = useRef<number | null>(null);
   const starTooltipHideTimeoutRef = useRef<number | null>(null);
   const toastDismissTimeoutRef = useRef<number | null>(null);
   const zoomInteractionTimeoutRef = useRef<number | null>(null);
@@ -960,9 +956,6 @@ export default function Home() {
   }, [userStars]);
 
   useEffect(() => () => {
-    if (conceptHideTimeoutRef.current !== null) {
-      window.clearTimeout(conceptHideTimeoutRef.current);
-    }
     if (starTooltipHideTimeoutRef.current !== null) {
       window.clearTimeout(starTooltipHideTimeoutRef.current);
     }
@@ -1200,20 +1193,8 @@ export default function Home() {
   );
 
   const closeConcept = useCallback(() => {
-    if (conceptHideTimeoutRef.current !== null) {
-      window.clearTimeout(conceptHideTimeoutRef.current);
-      conceptHideTimeoutRef.current = null;
-    }
-
     activeNodeRef.current = -1;
-    const el = conceptCardRef.current;
-    if (el) {
-      el.classList.remove("active");
-      conceptHideTimeoutRef.current = window.setTimeout(() => {
-        el.style.display = "none";
-        conceptHideTimeoutRef.current = null;
-      }, 400);
-    }
+    setSelectedConceptFaculty(null);
   }, []);
 
   const closeStarTooltip = useCallback(() => {
@@ -2071,26 +2052,8 @@ export default function Home() {
     }
 
     function showConceptAtNode(idx: number) {
-      const c = nodes[idx].concept;
-      if (cLabelRef.current) cLabelRef.current.textContent = c.label;
-      if (cTitleRef.current) cTitleRef.current.textContent = c.title;
-      if (cDescRef.current) cDescRef.current.textContent = c.desc;
       activeNodeRef.current = idx;
-      const card = conceptCardRef.current;
-      if (!card) return;
-      if (conceptHideTimeoutRef.current !== null) {
-        window.clearTimeout(conceptHideTimeoutRef.current);
-        conceptHideTimeoutRef.current = null;
-      }
-      let cx = nodes[idx]._sx + 24;
-      let cy = nodes[idx]._sy - 60;
-      if (cx + 280 > W) cx = nodes[idx]._sx - 300;
-      if (cy < 20) cy = 20;
-      if (cy + 200 > H) cy = H - 220;
-      card.style.left = cx + "px";
-      card.style.top = cy + "px";
-      card.style.display = "block";
-      requestAnimationFrame(() => card.classList.add("active"));
+      setSelectedConceptFaculty(nodes[idx].concept);
     }
 
     /* nodes */
@@ -3482,14 +3445,8 @@ export default function Home() {
         hoverStartRef.current = hover >= 0 ? performance.now() : 0;
         hoverExpandedRef.current = false;
       }
-      if (
-        enhancedHoverMotion &&
-        hover >= 0 &&
-        !hoverExpandedRef.current &&
-        performance.now() - hoverStartRef.current >= HOVER_EXPAND_DELAY_MS
-      ) {
+      if (hover >= 0 && !hoverExpandedRef.current && performance.now() - hoverStartRef.current >= HOVER_EXPAND_DELAY_MS) {
         hoverExpandedRef.current = true;
-        showConceptAtNode(hover);
       }
     }
 
@@ -4102,13 +4059,11 @@ export default function Home() {
         onSetLearningRouteStepStatus={handleSetLearningRouteStepStatus}
       />
 
-      {/* Concept tooltip card */}
-      <div ref={conceptCardRef} className="metis-concept-card" id="conceptCard">
-        <button className="metis-c-close" onClick={closeConcept}>×</button>
-        <div ref={cLabelRef} className="metis-c-label" />
-        <div ref={cTitleRef} className="metis-c-title" />
-        <div ref={cDescRef} className="metis-c-desc" />
-      </div>
+      <FacultyConceptPanel
+        open={selectedConceptFaculty !== null}
+        onClose={closeConcept}
+        concept={selectedConceptFaculty}
+      />
 
       {/* Star tooltip card */}
       <div ref={starTooltipCardRef} className="metis-star-tooltip" id="starTooltipCard">

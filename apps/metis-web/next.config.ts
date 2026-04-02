@@ -5,6 +5,12 @@ import { fileURLToPath } from "node:url";
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
+  webpack(config) {
+    // Enable async WebAssembly so onnxruntime-web (used by @huggingface/transformers)
+    // can load its WASM kernels in the browser Web Worker.
+    config.experiments = { ...config.experiments, asyncWebAssembly: true };
+    return config;
+  },
   // output: 'export' enables static HTML export for production Tauri desktop bundling (WOR-13).
   // `next dev` is unaffected; `next build` will write static files to `out/`.
   output: "export",
