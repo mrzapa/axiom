@@ -1,0 +1,666 @@
+plan_id: agent-native-impl-20260402
+variant: a
+objective: |
+  Incorporate patterns from BuilderIO/agent-native into the METIS local-first RAG workspace.
+  Implement four integration surfaces in priority order:
+  1. Application-state store (Python SQLite KV service + FastAPI + Litestar routes + frontend poll hook)
+  2. Polling sync endpoint (GET /v1/poll?since=<version>) bundled with route tasks
+  3. Structured chat bridge (ActionPayload typed payloads in handleDirectSend / handleRagSend)
+  4. Agent-native bridge skill (SKILL.md documenting agent-native patterns for the METIS agentic loop)
+created_at: "2026-04-02T00:00:00Z"
+created_by: gem-planner
+complexity: medium
+status: completed
+research_confidence: high
+
+plan_metrics:
+  wave_1_task_count: 3
+  total_dependencies: 15
+  risk_score: medium
+
+tldr: |
+  Nine tasks across three waves implement agent-native state sharing in METIS.
+  Wave 1 builds three independent foundations: the Python AppStateService, the skill
+  document, and TypeScript API wrappers. Wave 2 wires those foundations into both
+  FastAPI and Litestar backends, adds the polling hook, and extends the chat bridge.
+  Wave 3 adds pytest coverage and a final review. Existing SSE streaming is untouched.
+
+open_questions:
+  - Should AppStateService share rag_sessions.db or write to a separate app_state.db?
+    (Separate file avoids WAL contention; confirmed constraint is SQLite only.)
+  - Is @agent-native/core npm package needed on the frontend, or pure fetch wrappers suffice?
+    (Plan assumes pure fetch wrappers to avoid unknown server/client boundary constraints.)
+  - Should the poll version counter be in-memory (resets on restart) or persisted in SQLite?
+    (Plan uses SQLite-backed counter for durability across server restarts.)
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "SQLite WAL contention between SessionRepository and AppStateService if they share rag_sessions.db under concurrent RAG workloads"
+      likelihood: medium
+      impact: medium
+      mitigation: "Write AppStateService to a separate app_state.db file; both use WAL mode + PRAGMA busy_timeout=30000 to avoid deadlocks."
+    - scenario: "Litestar backend drifts from FastAPI — routes added to FastAPI but not Litestar, breaking METIS_API_BACKEND=litestar users"
+      likelihood: medium
+      impact: medium
+      mitigation: "task-05 is explicitly parallel to task-04 and uses identical AppStateService; wave-3 review validates parity."
+    - scenario: "XSS via raw app_state values rendered into the DOM without escaping"
+      likelihood: low
+      impact: high
+      mitigation: "Frontend hook returns raw JSON values rendered only through React text nodes (no dangerouslySetInnerHTML); task-09 review enforces this."
+  assumptions:
+    - Both FastAPI and Litestar receive identical new routes (AGENTS.md constraint).
+    - AppStateService is session-scoped; no cross-session reads are possible via the API.
+    - The poll version counter is a monotonic INTEGER column in app_state.db, not an in-memory counter.
+    - No npm packages are added; frontend integration uses plain fetch wrappers in lib/api.ts.
+    - Existing SSE streaming path (metis_app/engine/streaming.py) is not modified.
+
+implementation_specification:
+  code_structure: |
+    New Python service (metis_app/services/app_state_service.py) owns all SQLite I/O.
+    Backend routes are thin adapters that call the service; no business logic in route handlers.
+    FastAPI routes live in a new metis_app/api/app_state.py module registered in app.py.
+    Litestar routes live in a new metis_app/api_litestar/routes/app_state.py module registered in app.py.
+    Frontend: new hook (hooks/use-app-state-poller.ts) + wrappers appended to lib/api.ts.
+    ActionPayload interface is defined in lib/api.ts and imported by page.tsx.
+    The skill document (skills/agent-native-bridge/SKILL.md) is self-contained.
+  affected_areas:
+    - metis_app/services/ (new AppStateService)
+    - metis_app/api/ (new module + registration)
+    - metis_app/api_litestar/routes/ (new module + registration)
+    - apps/metis-web/lib/api.ts (new exported functions + interface)
+    - apps/metis-web/hooks/ (new hook file)
+    - apps/metis-web/app/chat/page.tsx (ActionPayload injection)
+    - skills/agent-native-bridge/ (new skill directory + SKILL.md)
+    - tests/ (new test file)
+  component_details:
+    - component: AppStateService
+      responsibility: |
+        SQLite-backed ephemeral KV store. Tables: app_state (session_id TEXT, key TEXT,
+        value TEXT, version INTEGER, updated_at TEXT, PRIMARY KEY (session_id, key));
+        version_counter (id INTEGER PRIMARY KEY, version INTEGER DEFAULT 0).
+        Exposes read(), write(), delete(), list(), get_version() methods.
+        write() atomically increments version_counter.version.
+      interfaces:
+        - "read(session_id: str, key: str) -> str | None"
+        - "write(session_id: str, key: str, value: str) -> int  # returns new version"
+        - "delete(session_id: str, key: str) -> None"
+        - "list(session_id: str) -> list[dict]  # [{key, value, version, updated_at}]"
+        - "get_version() -> int"
+    - component: FastAPI app_state routes (metis_app/api/app_state.py)
+      responsibility: |
+        Expose GET/POST/DELETE /v1/app-state/{session_id}/{key},
+        GET /v1/app-state/{session_id}, and GET /v1/poll?since=<version>.
+        Delegates entirely to AppStateService; enforces _require_token guard.
+      interfaces:
+        - "GET /v1/app-state/{session_id} -> list[AppStateEntry]"
+        - "GET /v1/app-state/{session_id}/{key} -> AppStateEntry"
+        - "POST /v1/app-state/{session_id}/{key} body:{value:str} -> {version:int}"
+        - "DELETE /v1/app-state/{session_id}/{key} -> {ok:bool}"
+        - "GET /v1/poll?since=<int> -> {version:int, changed:bool}"
+    - component: Litestar app_state routes (metis_app/api_litestar/routes/app_state.py)
+      responsibility: Mirror of FastAPI routes using Litestar handler decorators.
+      interfaces:
+        - "Identical URL surface as FastAPI app_state routes above"
+    - component: useAppStatePoller (apps/metis-web/hooks/use-app-state-poller.ts)
+      responsibility: |
+        React hook that polls GET /v1/poll?since=<version> every 2 s.
+        On changed=true, re-fetches /v1/app-state/{sessionId}.
+        Returns {appState: Record<string,string>, version: number}.
+      interfaces:
+        - "useAppStatePoller(sessionId: string | null, intervalMs?: number): AppStatePollerResult"
+    - component: ActionPayload + API wrappers (apps/metis-web/lib/api.ts additions)
+      responsibility: |
+        Export ActionPayload interface; export getAppState(), setAppState(),
+        deleteAppState(), pollSync() fetch wrappers.
+      interfaces:
+        - "interface ActionPayload { action_type: string; payload: Record<string, unknown>; session_id?: string }"
+        - "getAppState(sessionId: string, key?: string): Promise<AppStateEntry | AppStateEntry[]>"
+        - "setAppState(sessionId: string, key: string, value: string): Promise<{version: number}>"
+        - "deleteAppState(sessionId: string, key: string): Promise<{ok: boolean}>"
+        - "pollSync(since: number): Promise<{version: number; changed: boolean}>"
+    - component: Chat bridge extension (apps/metis-web/app/chat/page.tsx)
+      responsibility: |
+        handleDirectSend and handleRagSend optionally accept ActionPayload.
+        When action_type is present, prepend structured context block to the
+        message string before passing to queryDirect / queryRagStream.
+      interfaces:
+        - "handleDirectSend(prompt: string, action?: ActionPayload): Promise<void>"
+        - "handleRagSend(prompt: string, action?: ActionPayload): Promise<void>"
+    - component: agent-native-bridge skill (skills/agent-native-bridge/SKILL.md)
+      responsibility: |
+        SKILL.md with YAML frontmatter instructing the METIS agentic loop on how to
+        use writeAppState() and structured action payloads during RAG iterations.
+      interfaces:
+        - "Triggers on keywords: app state, agent state, poll, structured action"
+        - "runtime_overrides: agentic_mode: true"
+  dependencies:
+    - component: FastAPI app_state routes
+      relationship: imports and instantiates AppStateService
+    - component: Litestar app_state routes
+      relationship: imports and instantiates AppStateService
+    - component: useAppStatePoller hook
+      relationship: calls pollSync() and getAppState() from lib/api.ts
+    - component: chat bridge extension
+      relationship: uses ActionPayload interface imported from lib/api.ts
+    - component: AppStateService
+      relationship: uses sqlite3 stdlib; writes to app_state.db at repo root
+  integration_points:
+    - "metis_app/api/app.py: import app_state router and include_router() at /v1 prefix"
+    - "metis_app/api_litestar/app.py: add app_state.router to Router list"
+    - "apps/metis-web/app/chat/page.tsx: import useAppStatePoller and ActionPayload; wire into ChatPanel props"
+
+contracts:
+  - from_task: task-01
+    to_task: task-04
+    interface: AppStateService class
+    format: "Python class in metis_app.services.app_state_service; constructor takes db_path kwarg defaulting to repo_root/app_state.db"
+  - from_task: task-01
+    to_task: task-05
+    interface: AppStateService class
+    format: "Identical import path: from metis_app.services.app_state_service import AppStateService"
+  - from_task: task-03
+    to_task: task-06
+    interface: "pollSync, getAppState functions exported from lib/api.ts"
+    format: "TypeScript async functions returning typed response objects"
+  - from_task: task-03
+    to_task: task-07
+    interface: "ActionPayload interface exported from lib/api.ts"
+    format: "TypeScript interface { action_type: string; payload: Record<string, unknown>; session_id?: string }"
+  - from_task: task-04
+    to_task: task-08
+    interface: "FastAPI app_state routes mountable via create_app()"
+    format: "Importable from metis_app.api.app via create_app(); follows test_api_sessions.py fixture pattern"
+  - from_task: task-05
+    to_task: task-08
+    interface: "Litestar app_state routes parity assertion"
+    format: "test_api_app_state.py parametrizes over both test clients"
+
+tasks:
+  # ─── WAVE 1 — Independent foundations ──────────────────────────────────────
+  - id: task-01
+    title: "Python AppStateService — SQLite-backed KV store (Surface 1 core)"
+    description: |
+      Create metis_app/services/app_state_service.py.
+      Implement AppStateService class with:
+        - SQLite file at repo_root/app_state.db (separate from rag_sessions.db to avoid WAL contention)
+        - init_db() creates tables: app_state (session_id, key, value, version INTEGER, updated_at)
+          and version_counter (id INTEGER PRIMARY KEY, version INTEGER DEFAULT 0, CHECK (id=1))
+        - PRAGMA journal_mode=WAL + busy_timeout=30000 (matching session_repository.py pattern)
+        - read(session_id, key) -> str | None
+        - write(session_id, key, value) -> int  [atomically increments version_counter.version; returns new version]
+        - delete(session_id, key) -> None
+        - list(session_id) -> list[dict]  [{key, value, version, updated_at}]
+        - get_version() -> int
+      Values are stored as TEXT; callers are responsible for JSON serialization.
+      Use parameterized SQL throughout (no f-string interpolation in SQL).
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 120
+    focus_area: metis_app/services/
+    tech_stack:
+      - Python 3.11
+      - sqlite3 stdlib
+    test_coverage: "Covered by task-08"
+    files_modified:
+      - path: "metis_app/services/app_state_service.py"
+        change: "Create new file — AppStateService class with full SQLite KV implementation"
+    verification:
+      - "AppStateService can be imported without error"
+      - "write() returns incremented version integer"
+      - "read() returns None for missing keys (not raises)"
+      - "list() returns empty list for unknown session_id (not raises)"
+      - "Parameterized SQL used in all methods (grep for f-string in SQL)"
+    acceptance_criteria:
+      - "All five public methods implemented and match contracts section signatures"
+      - "Uses WAL mode and busy_timeout matching session_repository.py"
+      - "No SQL built with string interpolation"
+      - "write() is atomic: version increment and KV upsert in one transaction"
+    failure_modes:
+      - scenario: "Version counter row missing on fresh DB causes get_version() KeyError"
+        likelihood: low
+        impact: medium
+        mitigation: "init_db() inserts the sentinel row with INSERT OR IGNORE; get_version() returns 0 if absent"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+
+  - id: task-02
+    title: "Agent-native bridge SKILL.md (Surface 4)"
+    description: |
+      Create skills/agent-native-bridge/SKILL.md.
+      YAML frontmatter fields (matching summary-blinkist/SKILL.md as template):
+        id: agent-native-bridge
+        name: Agent-Native Bridge
+        description: Enables the METIS agentic loop to persist and read ephemeral
+          state via the application_state KV store and emit structured action payloads.
+        enabled_by_default: false
+        priority: 80
+        triggers:
+          keywords: [app state, agent state, poll, structured action, writeAppState, sendToAgentChat]
+          modes: [Research]
+        runtime_overrides:
+          agentic_mode: true
+      Markdown body sections:
+        ## Overview — explains agent-native six-rule philosophy applied to METIS
+        ## writeAppState — how the agentic loop calls POST /v1/app-state/{session_id}/{key}
+        ## readAppState — how the loop reads back state between iterations
+        ## Structured Actions — how to emit ActionPayload-compatible messages to the chat bridge
+        ## Polling — how the frontend poll hook at /v1/poll detects state changes
+        ## Security — session-scoped access only; never cross-session reads; escape values before render
+    wave: 1
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies: []
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: skills/agent-native-bridge/
+    tech_stack:
+      - YAML
+      - Markdown
+    test_coverage: null
+    files_modified:
+      - path: "skills/agent-native-bridge/SKILL.md"
+        change: "Create new skill document with YAML frontmatter and agent-native integration instructions"
+    verification:
+      - "YAML frontmatter is valid (no syntax errors)"
+      - "id field matches directory name (agent-native-bridge)"
+      - "All six sections present in markdown body"
+    acceptance_criteria:
+      - "Skill loads without error via metis_app/services/skill_repository.py"
+      - "Keywords trigger on: app state, structured action, poll"
+      - "runtime_overrides.agentic_mode is true"
+    failure_modes: []
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+
+  - id: task-03
+    title: "TypeScript API wrappers + ActionPayload interface (Surface 3 types, Surface 1 client)"
+    description: |
+      Append to apps/metis-web/lib/api.ts (do not replace existing exports).
+      Add:
+        1. interface ActionPayload { action_type: string; payload: Record<string, unknown>; session_id?: string }
+        2. interface AppStateEntry { session_id: string; key: string; value: string; version: number; updated_at: string }
+        3. async function getAppState(sessionId: string, key?: string): Promise<AppStateEntry | AppStateEntry[]>
+           — GET /v1/app-state/{sessionId} or /v1/app-state/{sessionId}/{key}
+        4. async function setAppState(sessionId: string, key: string, value: string): Promise<{version: number}>
+           — POST /v1/app-state/{sessionId}/{key} body: {value}
+        5. async function deleteAppState(sessionId: string, key: string): Promise<{ok: boolean}>
+           — DELETE /v1/app-state/{sessionId}/{key}
+        6. async function pollSync(since: number): Promise<{version: number; changed: boolean}>
+           — GET /v1/poll?since={since}
+      All functions use the existing apiFetch() helper (line 934 in api.ts) and respect
+      the auth header pattern already established in that file.
+      Export all items at module level.
+    wave: 1
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies: []
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: apps/metis-web/lib/
+    tech_stack:
+      - TypeScript
+      - Next.js App Router
+    test_coverage: null
+    files_modified:
+      - path: "apps/metis-web/lib/api.ts"
+        change: "Append ActionPayload + AppStateEntry interfaces and five async fetch functions"
+    verification:
+      - "No TypeScript compile errors in api.ts after additions"
+      - "All six new exports visible in module (tsc --noEmit passes)"
+      - "apiFetch() is used; no raw fetch() calls introduced"
+    acceptance_criteria:
+      - "ActionPayload interface exported with correct shape"
+      - "pollSync() calls GET /v1/poll?since=<number>"
+      - "setAppState() sends value as JSON body not query param"
+      - "Backward compatible — no existing exports modified"
+    failure_modes:
+      - scenario: "Appended code creates a TypeScript type error referencing apiFetch internal signature"
+        likelihood: low
+        impact: low
+        mitigation: "Read apiFetch signature (line 934) before appending; match its overload pattern"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+
+  # ─── WAVE 2 — Dependent wiring ─────────────────────────────────────────────
+  - id: task-04
+    title: "FastAPI routes — /v1/app-state/* + /v1/poll (Surfaces 1 & 2, FastAPI backend)"
+    description: |
+      Create metis_app/api/app_state.py as a FastAPI APIRouter.
+      Routes:
+        GET /v1/app-state/{session_id}         → list(session_id)
+        GET /v1/app-state/{session_id}/{key}   → read(session_id, key) or 404
+        POST /v1/app-state/{session_id}/{key}  → write(session_id, key, body.value); returns {version}
+        DELETE /v1/app-state/{session_id}/{key}→ delete(session_id, key); returns {ok: true}
+        GET /v1/poll?since=<int>               → {version: get_version(), changed: get_version() > since}
+      All routes guarded by Depends(_require_token) matching existing app.py pattern.
+      Request/response bodies use Pydantic models (AppStateSetRequest, AppStateEntry, PollResponse).
+      Dependency: get_app_state_service() returns a singleton AppStateService(db_path=default).
+      Register the router in metis_app/api/app.py:
+        from . import app_state as _app_state
+        app.include_router(_app_state.router, prefix="/v1", dependencies=[Depends(_require_token)])
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - task-01
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 120
+    focus_area: metis_app/api/
+    tech_stack:
+      - Python 3.11
+      - FastAPI
+      - Pydantic v2
+    test_coverage: "Covered by task-08"
+    files_modified:
+      - path: "metis_app/api/app_state.py"
+        change: "Create new FastAPI APIRouter with all five app-state and poll endpoints"
+      - path: "metis_app/api/app.py"
+        change: "Import and register app_state router at /v1 prefix"
+    verification:
+      - "GET /v1/poll?since=0 returns {version: int, changed: bool} (200)"
+      - "POST /v1/app-state/test-session/foo body={value:'bar'} returns {version: N}"
+      - "GET /v1/app-state/test-session/foo returns {key:'foo', value:'bar', ...}"
+      - "GET /v1/app-state/test-session/missing returns 404"
+      - "All routes appear in /docs Swagger UI"
+    acceptance_criteria:
+      - "All five routes operational with test client (FastAPI TestClient)"
+      - "Existing routes unaffected (test_api_sessions.py still passes)"
+      - "_require_token dependency wired to all new routes"
+      - "Pydantic models validate input (e.g. value field required on POST)"
+    failure_modes:
+      - scenario: "Router prefix double-registration conflict with existing /v1 routes"
+        likelihood: low
+        impact: medium
+        mitigation: "Use include_router() with prefix='/v1' and unique path segments; test with /docs to verify no collisions"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: true
+
+  - id: task-05
+    title: "Litestar routes — /v1/app-state/* + /v1/poll (Surfaces 1 & 2, Litestar backend)"
+    description: |
+      Create metis_app/api_litestar/routes/app_state.py using Litestar handler decorators.
+      Mirror identical URL surface as task-04:
+        @get("/app-state/{session_id}")
+        @get("/app-state/{session_id}/{key}")
+        @post("/app-state/{session_id}/{key}")
+        @delete("/app-state/{session_id}/{key}")
+        @get("/poll")
+      Use require_token_guard from common.py (matching existing Litestar pattern).
+      Use Pydantic DTOs for request/response (or dataclasses matching Litestar convention in other routes/).
+      Import AppStateService from metis_app.services.app_state_service (same as task-04).
+      Register router in metis_app/api_litestar/app.py: add Router(path="/v1", route_handlers=[...app_state...])
+      to the existing router list in create_app().
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - task-01
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 120
+    focus_area: metis_app/api_litestar/
+    tech_stack:
+      - Python 3.11
+      - Litestar
+      - Pydantic v2
+    test_coverage: "Covered by task-08 (parametrize over both backends)"
+    files_modified:
+      - path: "metis_app/api_litestar/routes/app_state.py"
+        change: "Create new Litestar route handlers mirroring task-04 FastAPI surface"
+      - path: "metis_app/api_litestar/app.py"
+        change: "Register app_state router in create_app() Router list"
+    verification:
+      - "Litestar TestClient: GET /v1/poll?since=0 returns 200 with {version, changed}"
+      - "POST /v1/app-state/s/k returns 201 or 200 with {version}"
+      - "DELETE /v1/app-state/s/k returns 200 with {ok:true}"
+      - "require_token_guard applied to all handlers"
+    acceptance_criteria:
+      - "URL surface identical to FastAPI variant (same paths, same verbs)"
+      - "Existing Litestar tests unaffected (test_api_litestar.py still passes)"
+      - "require_token_guard wired to all new handlers"
+    failure_modes:
+      - scenario: "Litestar route parameter syntax differs from FastAPI (e.g. {session_id:str} vs {session_id})"
+        likelihood: low
+        impact: low
+        mitigation: "Check existing routes/ files (e.g. sessions.py) for correct Litestar path parameter style before writing"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: true
+
+  - id: task-06
+    title: "Frontend polling hook — useAppStatePoller (Surface 1 poll hook)"
+    description: |
+      Create apps/metis-web/hooks/use-app-state-poller.ts.
+      Hook signature: useAppStatePoller(sessionId: string | null, intervalMs = 2000)
+      Behavior:
+        - Maintains local version ref (starts at 0).
+        - On mount (and when sessionId changes), immediately fetches /v1/app-state/{sessionId}
+          and stores initial version from the latest entry's version field.
+        - Sets up setInterval at intervalMs calling pollSync(currentVersion).
+        - On changed=true, calls getAppState(sessionId) and updates state.
+        - Clears interval on unmount or sessionId change.
+        - Returns { appState: Record<string, string>, version: number, isLoading: boolean }.
+      Uses pollSync() and getAppState() from lib/api.ts (task-03 contract).
+      Use useCallback / useRef to avoid stale-closure bugs (follow use-arrow-state.ts pattern).
+      Guard: when sessionId is null, skip polling (return empty appState).
+    wave: 2
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - task-03
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: apps/metis-web/hooks/
+    tech_stack:
+      - TypeScript
+      - React 18
+    test_coverage: null
+    files_modified:
+      - path: "apps/metis-web/hooks/use-app-state-poller.ts"
+        change: "Create new React hook for polling /v1/poll and syncing app_state"
+    verification:
+      - "No TypeScript compile errors in the hook file"
+      - "Interval is cleared on unmount (useEffect cleanup)"
+      - "sessionId=null does not trigger any fetch"
+    acceptance_criteria:
+      - "Hook returns { appState, version, isLoading } with correct TypeScript types"
+      - "Polling interval uses intervalMs parameter (default 2000)"
+      - "pollSync version ref is a useRef (not useState) to avoid re-render loop"
+    failure_modes:
+      - scenario: "Stale closure captures old sessionId after session switch"
+        likelihood: medium
+        impact: low
+        mitigation: "Use useRef for version and sessionId tracking; restart interval in useEffect dependency array on [sessionId] change"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+
+  - id: task-07
+    title: "Chat bridge — ActionPayload injection into handleDirectSend / handleRagSend (Surface 3)"
+    description: |
+      Modify apps/metis-web/app/chat/page.tsx.
+      Changes:
+        1. Import ActionPayload from '@/lib/api' (added in task-03).
+        2. Extend handleDirectSend signature to:
+             handleDirectSend(prompt: string, action?: ActionPayload): Promise<void>
+           When action is present, prepend a structured context block to prompt:
+             "[AGENT ACTION: {action.action_type}]\n{JSON.stringify(action.payload, null, 2)}\n\n{prompt}"
+           Pass enriched prompt to queryDirect() unchanged.
+        3. Extend handleRagSend signature identically:
+             handleRagSend(prompt: string, action?: ActionPayload): Promise<void>
+           Same context-prefix logic before passing to queryRagStream().
+        4. Pass handleDirectSend and handleRagSend down to ChatPanel component; if ChatPanel
+           already exposes onSend / onDirectSend props, update those prop types to accept the
+           optional second argument (or keep backward compat by wrapping with a no-arg closure
+           if ChatPanel is not in scope of this plan).
+      No change to the SSE streaming path; only the prompt string is modified upstream.
+    wave: 2
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - task-03
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 40
+    focus_area: apps/metis-web/app/chat/
+    tech_stack:
+      - TypeScript
+      - React 18
+    test_coverage: null
+    files_modified:
+      - path: "apps/metis-web/app/chat/page.tsx"
+        change: "Import ActionPayload; extend handleDirectSend + handleRagSend with optional action second arg"
+    verification:
+      - "No TypeScript compile errors in page.tsx after changes"
+      - "handleDirectSend called without action arg still works (backward compatible)"
+      - "When action is provided, prompt includes [AGENT ACTION: ...] prefix"
+    acceptance_criteria:
+      - "ActionPayload second param is optional (? modifier)"
+      - "Existing callers of handleDirectSend / handleRagSend compile without changes"
+      - "JSON.stringify is used for action.payload (not template literal concatenation)"
+    failure_modes:
+      - scenario: "ChatPanel prop types reject the extended handleDirectSend signature"
+        likelihood: low
+        impact: low
+        mitigation: "Check ChatPanel's onSend prop type before editing page.tsx; use a wrapping closure if ChatPanel props are not in scope"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+
+  # ─── WAVE 3 — Quality gates ─────────────────────────────────────────────────
+  - id: task-08
+    title: "Pytest tests — AppStateService + FastAPI + Litestar routes"
+    description: |
+      Create tests/test_api_app_state.py.
+      Test cases (using pytest fixtures matching test_api_sessions.py pattern):
+        Fixture: app_state_service(tmp_path) — AppStateService(db_path=tmp_path/'app_state.db'); init_db()
+        Fixture: fastapi_client(app_state_service) — TestClient(create_app()); override get_app_state_service
+        Service unit tests:
+          test_write_returns_incrementing_version
+          test_read_returns_none_for_missing_key
+          test_list_returns_all_keys_for_session
+          test_delete_removes_key
+          test_get_version_returns_current_counter
+          test_write_increments_version_atomically
+        FastAPI integration tests (via fastapi_client fixture):
+          test_post_app_state_returns_200
+          test_get_app_state_key_returns_value
+          test_get_app_state_missing_key_returns_404
+          test_delete_app_state_returns_ok
+          test_poll_returns_changed_true_after_write
+          test_poll_returns_changed_false_when_no_write
+        Litestar parity smoke test:
+          test_litestar_poll_returns_200 (basic smoke test; full parity not required)
+      All tests use tmp_path to avoid writing to repo root app_state.db.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - task-01
+      - task-04
+      - task-05
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 200
+    focus_area: tests/
+    tech_stack:
+      - Python 3.11
+      - pytest
+      - FastAPI TestClient
+    test_coverage: "100% of AppStateService methods; all five FastAPI route handlers"
+    files_modified:
+      - path: "tests/test_api_app_state.py"
+        change: "Create new pytest test module covering service unit tests and route integration tests"
+    verification:
+      - "pytest tests/test_api_app_state.py exits 0 with no failures"
+      - "All 13 test functions present and passing"
+    acceptance_criteria:
+      - "No test writes to repo root (all use tmp_path)"
+      - "test_poll_returns_changed_true_after_write validates version increment"
+      - "FastAPI dependency override pattern matches test_api_sessions.py template"
+    failure_modes:
+      - scenario: "AppStateService singleton in FastAPI app holds state between tests"
+        likelihood: medium
+        impact: medium
+        mitigation: "Use dependency_overrides in fixture to inject a fresh tmp_path AppStateService per test; ensure no module-level singleton"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+
+  - id: task-09
+    title: "Code review — security, parity, backward compat"
+    description: |
+      Full review pass across all task outputs. Review checklist:
+        Security:
+          [ ] All SQL in AppStateService uses parameterized queries (no f-strings in SQL)
+          [ ] No cross-session reads possible via API (session_id is path param, not body)
+          [ ] Frontend app_state values rendered via React text nodes only (no innerHTML)
+          [ ] DELETE endpoint scoped to session_id: no wildcard deletes
+        Parity:
+          [ ] FastAPI and Litestar surfaces have identical paths, methods, and response shapes
+          [ ] Both backends import the same AppStateService (shared service, not duplicated logic)
+        Backward compatibility:
+          [ ] Existing SSE streaming tests pass (test_engine_streaming.py)
+          [ ] Existing session API tests pass (test_api_sessions.py)
+          [ ] handleDirectSend / handleRagSend callable without action arg
+          [ ] No existing lib/api.ts exports modified or renamed
+        Skill:
+          [ ] skills/agent-native-bridge/SKILL.md loads via skill_repository without error
+          [ ] YAML frontmatter valid; enabled_by_default: false (opt-in only)
+    wave: 3
+    agent: gem-reviewer
+    priority: high
+    status: pending
+    dependencies:
+      - task-01
+      - task-02
+      - task-03
+      - task-04
+      - task-05
+      - task-06
+      - task-07
+      - task-08
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: null
+    files_modified: []
+    verification:
+      - "All checklist items confirmed"
+      - "No new security issues identified"
+    acceptance_criteria:
+      - "Zero OWASP-critical findings"
+      - "FastAPI/Litestar parity confirmed"
+      - "All regression tests pass"
+    failure_modes:
+      - scenario: "Litestar implementation has subtle path mismatch (e.g. /app_state vs /app-state)"
+        likelihood: low
+        impact: medium
+        mitigation: "Review task-05 route path strings against task-04; flag for re-implementation if mismatch found"
+    requires_review: true
+    review_depth: full
+    review_security_sensitive: true
+    task_type: null
+    audience: null
+    coverage_matrix: []
