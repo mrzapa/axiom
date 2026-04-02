@@ -2277,3 +2277,80 @@ export async function triggerAutonomousResearch(): Promise<{ ok: boolean; result
   if (!res.ok) throw new Error(`autonomous trigger: ${res.status}`);
   return res.json() as Promise<{ ok: boolean; result?: unknown }>;
 }
+
+// ─── Agent-Native Bridge ────────────────────────────────────────────────────
+
+export interface ActionPayload {
+  action_type: string;
+  payload: Record<string, unknown>;
+  session_id?: string;
+}
+
+export interface AppStateEntry {
+  session_id: string;
+  key: string;
+  value: string;
+  version: number;
+  updated_at: string;
+}
+
+export async function getAppState(
+  sessionId: string,
+  key?: string,
+): Promise<AppStateEntry | AppStateEntry[]> {
+  const url = key
+    ? `${await getApiBase()}/v1/app-state/${encodeURIComponent(sessionId)}/${encodeURIComponent(key)}`
+    : `${await getApiBase()}/v1/app-state/${encodeURIComponent(sessionId)}`;
+  const res = await apiFetch(url);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to get app state (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function setAppState(
+  sessionId: string,
+  key: string,
+  value: string,
+): Promise<{ version: number }> {
+  const res = await apiFetch(
+    `${await getApiBase()}/v1/app-state/${encodeURIComponent(sessionId)}/${encodeURIComponent(key)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    },
+  );
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to set app state (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function deleteAppState(
+  sessionId: string,
+  key: string,
+): Promise<{ ok: boolean }> {
+  const res = await apiFetch(
+    `${await getApiBase()}/v1/app-state/${encodeURIComponent(sessionId)}/${encodeURIComponent(key)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to delete app state (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function pollSync(since: number): Promise<{ version: number; changed: boolean }> {
+  const res = await apiFetch(
+    `${await getApiBase()}/v1/poll?since=${encodeURIComponent(String(since))}`,
+  );
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to poll sync (${res.status}): ${detail}`);
+  }
+  return res.json();
+}

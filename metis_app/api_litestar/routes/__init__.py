@@ -1,5 +1,6 @@
 """Litestar route modules."""
 
+from . import app_state
 from . import assistant
 from . import autonomous
 from . import core
@@ -15,6 +16,7 @@ from . import sessions
 from . import settings
 
 __all__ = [
+	"app_state",
 	"assistant",
 	"autonomous",
 	"core",

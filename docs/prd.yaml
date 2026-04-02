@@ -1,0 +1,71 @@
+version: 1
+updated_at: "2026-04-02T00:00:00Z"
+
+features:
+  - id: agent-native-integration
+    title: Agent-Native Integration
+    status: planned
+    plan_id: agent-native-impl-20260402
+    description: |
+      Incorporate BuilderIO/agent-native patterns into the METIS local-first RAG workspace.
+      Adds ephemeral application state sharing between the Python backend agentic loop
+      and the Next.js frontend via a SQLite-backed KV store, a lightweight polling sync
+      endpoint, a typed structured chat bridge, and a skill document.
+    priority: high
+    surfaces:
+      - id: app-state-store
+        title: Application-State Store
+        description: |
+          SQLite-backed ephemeral KV store (session_id, key, value, version).
+          Backend: AppStateService + GET/POST/DELETE /v1/app-state/* routes in both FastAPI and Litestar.
+          Frontend: useAppStatePoller React hook + getAppState/setAppState/deleteAppState API wrappers.
+        status: planned
+        constraints:
+          - "Session-scoped only — no cross-session reads"
+          - "Parameterized SQL only — no string interpolation in queries"
+          - "SQLite WAL mode; separate app_state.db file (not rag_sessions.db)"
+      - id: polling-sync
+        title: Polling Sync Endpoint
+        description: |
+          GET /v1/poll?since=<version> returns {version: int, changed: bool}.
+          Global monotonic version counter incremented on every app_state write.
+          Frontend polls every 2 s via useAppStatePoller hook.
+        status: planned
+        constraints:
+          - "Bundled with app-state-store routes (not a standalone router)"
+          - "Poll interval configurable via hook param (default 2000 ms)"
+      - id: structured-chat-bridge
+        title: Structured Chat Bridge
+        description: |
+          ActionPayload TypeScript interface {action_type, payload, session_id?}.
+          handleDirectSend() and handleRagSend() in chat/page.tsx accept optional ActionPayload.
+          When present, a structured context prefix is prepended to the prompt before API dispatch.
+          Matches agent-native's sendToAgentChat() pattern.
+        status: planned
+        constraints:
+          - "Backward compatible — existing callers work without the second arg"
+          - "No SSE streaming path changes"
+      - id: agent-native-bridge-skill
+        title: Agent-Native Bridge Skill
+        description: |
+          skills/agent-native-bridge/SKILL.md documents how the METIS agentic loop
+          uses writeAppState(), readAppState(), and structured actions during RAG iterations.
+          enabled_by_default: false (opt-in).
+        status: planned
+        constraints:
+          - "opt-in only (enabled_by_default: false)"
+          - "Triggers only on keywords: app state, agent state, poll, structured action"
+
+decisions:
+  - id: separate-db-file
+    decision: "Use a separate app_state.db instead of sharing rag_sessions.db"
+    rationale: "Avoids SQLite WAL contention when AppStateService and SessionRepository write concurrently under agentic RAG workloads."
+    date: "2026-04-02"
+  - id: no-npm-package
+    decision: "Do not install @agent-native/core npm package"
+    rationale: "Server/client boundary constraints are unknown; plain fetch wrappers in lib/api.ts provide equivalent functionality with zero dependency risk."
+    date: "2026-04-02"
+  - id: sqlite-backed-version-counter
+    decision: "Poll version counter persisted in SQLite (not in-memory)"
+    rationale: "In-memory counter resets on server restart, causing all clients to re-fetch unnecessarily. SQLite counter survives restarts."
+    date: "2026-04-02"

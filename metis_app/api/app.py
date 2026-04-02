@@ -41,6 +41,7 @@ from metis_app.services.trace_store import TraceStore
 from metis_app.services.workspace_orchestrator import WorkspaceOrchestrator
 from metis_app.utils.feature_flags import FeatureFlag, get_feature_statuses
 
+from . import app_state as _app_state
 from . import gguf as _gguf
 from . import features as _features
 from . import heretic as _heretic
@@ -247,6 +248,7 @@ def create_app() -> FastAPI:
 
     # Protected routers — require token when METIS_API_TOKEN is set
     _auth = [Depends(_require_token)]
+    app.include_router(_app_state.router, dependencies=_auth)
     app.include_router(_sessions.router, dependencies=_auth)
     app.include_router(_settings.router, dependencies=_auth)
     app.include_router(_logs.router, dependencies=_auth)

@@ -21,6 +21,7 @@ from .common import (
     require_token_guard,
 )
 from .routes import (
+    app_state,
     assistant,
     autonomous,
     core,
@@ -59,6 +60,7 @@ def create_app() -> Litestar:
         path="",
         guards=[require_token_guard],
         route_handlers=[
+            app_state.router,
             assistant.router,
             autonomous.router,
             core.router,

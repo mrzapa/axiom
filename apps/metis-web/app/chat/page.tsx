@@ -8,7 +8,7 @@ import { EvidencePanel } from "@/components/chat/evidence-panel";
 import { Badge } from "@/components/ui/badge";
 import { PageChrome } from "@/components/shell/page-chrome";
 import { createSession, fetchSession, fetchSettings, queryDirect, queryKnowledgeSearch, queryRagStream, submitRunAction, updateSettings } from "@/lib/api";
-import type { RetrievalFallback, SessionSummary, TraceEvent } from "@/lib/api";
+import type { ActionPayload, RetrievalFallback, SessionSummary, TraceEvent } from "@/lib/api";
 import type { RagStreamEvent } from "@/lib/api";
 import {
   getChatActionStatusFromResult,
@@ -581,13 +581,16 @@ export default function ChatPage() {
   );
 
   const handleDirectSend = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, action?: ActionPayload) => {
+      const enrichedPrompt = action
+        ? `[AGENT ACTION: ${action.action_type}]\n${JSON.stringify(action.payload, null, 2)}\n\n${prompt}`
+        : prompt;
       setIsSending(true);
 
       appendMessages([
         createMessage({
           role: "user",
-          content: prompt,
+          content: enrichedPrompt,
           ts: new Date().toISOString(),
           run_id: "",
           sources: [],
@@ -605,7 +608,7 @@ export default function ChatPage() {
           setArtifactRuntimeEnabled(resolveArtifactRuntimeEnabled(settings));
         }
 
-        const result = await queryDirect(prompt, settingsRef.current, sessionId ?? undefined);
+        const result = await queryDirect(enrichedPrompt, settingsRef.current, sessionId ?? undefined);
         appendCompletedRunMessage(
           createMessage({
             role: "assistant",
@@ -1041,7 +1044,10 @@ export default function ChatPage() {
   );
 
   const handleRagSend = useCallback(
-    async (question: string) => {
+    async (question: string, action?: ActionPayload) => {
+      const enrichedQuestion = action
+        ? `[AGENT ACTION: ${action.action_type}]\n${JSON.stringify(action.payload, null, 2)}\n\n${question}`
+        : question;
       if (!activeIndexPath || isStreamingRag) {
         return;
       }
@@ -1050,7 +1056,7 @@ export default function ChatPage() {
       publishResumableRun(null);
       setLatestFallback(null);
 
-      const sessionId = await autoCreateSession(question);
+      const sessionId = await autoCreateSession(enrichedQuestion);
       const isKnowledgeSearch = selectedRagMode === KNOWLEDGE_SEARCH_MODE;
 
       const userMessageTs = new Date().toISOString();
@@ -1059,7 +1065,7 @@ export default function ChatPage() {
       appendMessages([
         createMessage({
           role: "user",
-          content: question,
+          content: enrichedQuestion,
           ts: userMessageTs,
           run_id: "",
           sources: [],
@@ -1079,7 +1085,7 @@ export default function ChatPage() {
           }
 
           const ragSettings = { ...settingsRef.current, selected_mode: selectedRagMode };
-          const result = await queryKnowledgeSearch(activeIndexPath, question, ragSettings, {
+          const result = await queryKnowledgeSearch(activeIndexPath, enrichedQuestion, ragSettings, {
             runId,
             sessionId,
           });
@@ -1147,7 +1153,7 @@ export default function ChatPage() {
         liveTraceEvents: [],
         manifestPath: activeIndexPath,
         pendingSources: [],
-        question,
+        question: enrichedQuestion,
         runId,
         sessionId,
         userMessageTs,
