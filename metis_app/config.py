@@ -95,6 +95,12 @@ class Config:
     agentic_mode: bool = False
     agentic_max_iterations: int = 2
 
+    # Smart model routing — used for Research synthesis, Evidence Pack output
+    smart_llm_provider: str = ""
+    smart_llm_model: str = ""
+    smart_llm_temperature: float = 0.0
+    smart_llm_max_tokens: int = 2048
+
     # UI defaults
     theme: str = "space_dust"
     output_style: str = "Default answer"

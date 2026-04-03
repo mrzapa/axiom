@@ -226,6 +226,54 @@ def create_llm(settings: dict[str, Any]) -> Any:
     return llm
 
 
+def create_smart_llm(settings: dict[str, Any]) -> Any:
+    """Construct and return an LLM for intelligence-sensitive workflows.
+
+    Uses ``smart_llm_provider`` / ``smart_llm_model`` from *settings* when
+    set, falling back transparently to ``create_llm(settings)`` otherwise.
+    Intended for Research-mode final synthesis and Evidence Pack output.
+
+    Parameters
+    ----------
+    settings:
+        Same flat settings dict as accepted by ``create_llm``.
+
+    Returns
+    -------
+    An object with ``.invoke(messages)`` — same protocol as ``create_llm``.
+    """
+    smart_provider = str(settings.get("smart_llm_provider", "") or "").strip()
+    smart_model = str(settings.get("smart_llm_model", "") or "").strip()
+
+    if not smart_provider and not smart_model:
+        _log.info("create_smart_llm: no smart model configured, using primary")
+        return create_llm(settings)
+
+    smart_settings = dict(settings)
+    if smart_provider:
+        smart_settings["llm_provider"] = smart_provider
+    if smart_model:
+        smart_settings["llm_model"] = smart_model
+        smart_settings["llm_model_custom"] = ""
+
+    raw_temp = settings.get("smart_llm_temperature")
+    smart_settings["llm_temperature"] = (
+        float(raw_temp) if raw_temp is not None
+        else float(settings.get("llm_temperature", 0.0))
+    )
+    raw_max = settings.get("smart_llm_max_tokens")
+    smart_settings["llm_max_tokens"] = (
+        int(raw_max) if raw_max is not None
+        else int(settings.get("llm_max_tokens", 2048))
+    )
+
+    _log.info(
+        "create_smart_llm: using smart model %s/%s",
+        smart_settings["llm_provider"], smart_settings["llm_model"],
+    )
+    return create_llm(smart_settings)
+
+
 # ---------------------------------------------------------------------------
 # Private per-provider constructors
 # ---------------------------------------------------------------------------

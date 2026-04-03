@@ -38,6 +38,8 @@ RUNTIME_OVERRIDE_KEYS = {
     "output_style",
     "system_instructions_append",
     "citation_policy_append",
+    "swarm_n_personas",
+    "swarm_n_rounds",
 }
 APPEND_OVERRIDE_KEYS = {"system_instructions_append", "citation_policy_append"}
 SCALAR_OVERRIDE_KEYS = RUNTIME_OVERRIDE_KEYS - APPEND_OVERRIDE_KEYS
@@ -150,7 +152,7 @@ def parse_skill_file(path: str | pathlib.Path) -> SkillDefinition:
     for key, value in dict(overrides_raw).items():
         if key not in RUNTIME_OVERRIDE_KEYS:
             continue
-        if key in {"retrieval_k", "top_k", "agentic_max_iterations"}:
+        if key in {"retrieval_k", "top_k", "agentic_max_iterations", "swarm_n_personas", "swarm_n_rounds"}:
             try:
                 runtime_overrides[key] = int(value)
             except (TypeError, ValueError):

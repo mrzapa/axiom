@@ -19,7 +19,7 @@ from metis_app.services.stream_events import normalize_stream_event
 from metis_app.services.vector_store import resolve_vector_store
 from metis_app.services.index_service import cosine_similarity as _cosine_similarity
 from metis_app.utils.embedding_providers import create_embeddings
-from metis_app.utils.llm_providers import create_llm
+from metis_app.utils.llm_providers import create_llm, create_smart_llm
 from metis_app.utils.mock_embeddings import MockEmbeddings
 
 log = logging.getLogger(__name__)
@@ -102,6 +102,101 @@ def _identify_gaps(
         return result[:3]
     except Exception:  # noqa: BLE001
         return []
+
+
+def _classify_source_tiers(
+    question: str,
+    sources: list[dict[str, Any]],
+    llm: Any,
+) -> list[str]:
+    """Classify each source as Supporting, Contested, or Refuting (Evidence Pack).
+
+    Issues a single batched LLM call. Falls back to "Supporting" for all on
+    any failure.
+    """
+    if not sources:
+        return []
+    snippets = []
+    for i, src in enumerate(sources):
+        snippet = str(src.get("snippet") or src.get("text") or src.get("content") or "")[:400]
+        snippets.append(f"[{i + 1}] {snippet}")
+
+    system_prompt = (
+        "You are an evidence-tier classifier. "
+        "For each numbered passage, classify it relative to the claim or question below "
+        "as exactly one of: Supporting, Contested, or Refuting. "
+        "Supporting: the passage directly confirms or supports the claim. "
+        "Contested: the passage is mixed, nuanced, or only partially relevant. "
+        "Refuting: the passage contradicts or argues against the claim. "
+        'Return ONLY a JSON array of tier labels in order, e.g. ["Supporting", "Contested"].'
+    )
+    user_prompt = (
+        f"Question/Claim: {question}\n\nPassages:\n"
+        + "\n\n".join(snippets)
+        + "\n\nClassify each passage:"
+    )
+    try:
+        raw = _response_text(
+            llm.invoke([
+                {"type": "system", "content": system_prompt},
+                {"type": "human", "content": user_prompt},
+            ])
+        )
+        start, end = raw.find("["), raw.rfind("]") + 1
+        if start >= 0 and end > start:
+            tiers = json.loads(raw[start:end])
+            valid = {"Supporting", "Contested", "Refuting"}
+            if isinstance(tiers, list) and len(tiers) == len(sources):
+                return [t if t in valid else "Contested" for t in tiers]
+    except Exception:  # noqa: BLE001
+        pass
+    return ["Supporting"] * len(sources)
+
+
+def _format_swarm_report(report: dict[str, Any]) -> str:
+    """Format a SimulationReport dict into a readable markdown answer string."""
+    lines: list[str] = []
+
+    summary = str(report.get("document_summary") or "")
+    if summary:
+        lines.append(f"**Document Overview**\n{summary}\n")
+
+    topics = list(report.get("topics") or [])
+    if topics:
+        lines.append(f"**Topics Simulated:** {', '.join(topics)}\n")
+
+    agents = list(report.get("agents") or [])
+    if agents:
+        lines.append(f"**{len(agents)} Personas Generated:**")
+        for a in agents:
+            name = str(a.get("name") or "Agent")
+            stance = str(a.get("stance_summary") or "")
+            lines.append(f"• **{name}**: {stance}")
+        lines.append("")
+
+    consensus = list(report.get("consensus_topics") or [])
+    contested = list(report.get("contested_topics") or [])
+    if consensus:
+        lines.append(f"**Consensus Topics** (strong agreement): {', '.join(consensus)}")
+    if contested:
+        lines.append(f"**Contested Topics** (significant disagreement): {', '.join(contested)}")
+    if consensus or contested:
+        lines.append("")
+
+    rounds = list(report.get("rounds") or [])
+    if rounds:
+        last_round = rounds[-1]
+        posts = list(last_round.get("posts") or [])
+        if posts:
+            lines.append(
+                f"**Final Round ({last_round.get('round_num', len(rounds))}) Highlights:**"
+            )
+            for post in posts[:4]:
+                agent_name = str(post.get("agent_name") or "Agent")
+                text = str(post.get("text") or "")
+                lines.append(f"\n*{agent_name}*: {text}")
+
+    return "\n".join(lines).strip()
 
 
 def _dedup_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -195,10 +290,20 @@ def stream_rag_answer(
         for stage in retrieval_plan.stages:
             payload = dict(stage.payload or {})
             if stage.stage_type == "retrieval_complete":
+                # For Evidence Pack mode, classify each source into belief tiers.
+                _ret_sources = list(payload.get("sources") or [])
+                _ep_mode = str(settings.get("selected_mode", "") or "")
+                if _ep_mode == "Evidence Pack" and _ret_sources:
+                    try:
+                        _tiers = _classify_source_tiers(question, _ret_sources, llm)
+                        for _i, _src in enumerate(_ret_sources):
+                            _src["belief_tier"] = _tiers[_i] if _i < len(_tiers) else "Contested"
+                    except Exception:  # noqa: BLE001
+                        pass
                 yield _emit({
                     "type": "retrieval_complete",
                     "run_id": run_id,
-                    "sources": list(payload.get("sources") or []),
+                    "sources": _ret_sources,
                     "context_block": str(payload.get("context_block") or ""),
                     "top_score": float(payload.get("top_score", 0.0) or 0.0),
                 })
@@ -277,6 +382,74 @@ def stream_rag_answer(
 
         accumulated_context = query_result.context_block
         accumulated_sources = list(sources)
+
+        # ------------------------------------------------------------------
+        # Simulation mode – run swarm persona simulation instead of the
+        # standard agentic RAG loop.
+        # ------------------------------------------------------------------
+        _mode = str(settings.get("selected_mode", "Q&A") or "Q&A")
+        if _mode == "Simulation":
+            from metis_app.services.swarm_service import stream_swarm_simulation  # noqa: PLC0415
+
+            n_personas = max(1, int(settings.get("swarm_n_personas", 8) or 8))
+            n_rounds = max(1, int(settings.get("swarm_n_rounds", 4) or 4))
+
+            for swarm_event in stream_swarm_simulation(
+                context_text=accumulated_context,
+                settings=settings,
+                n_personas=n_personas,
+                n_rounds=n_rounds,
+            ):
+                etype = swarm_event.get("event", "")
+                if etype == "persona_created":
+                    yield _emit({
+                        "type": "persona_created",
+                        "run_id": run_id,
+                        "agent": swarm_event.get("agent", {}),
+                    })
+                elif etype == "simulation_round_start":
+                    yield _emit({
+                        "type": "simulation_round_start",
+                        "run_id": run_id,
+                        "round": swarm_event.get("round", 0),
+                        "total": swarm_event.get("total", n_rounds),
+                    })
+                elif etype == "belief_shift":
+                    yield _emit({
+                        "type": "belief_shift",
+                        "run_id": run_id,
+                        "agent_id": swarm_event.get("agent_id", ""),
+                        "agent_name": swarm_event.get("agent_name", ""),
+                        "topic": swarm_event.get("topic", ""),
+                        "delta": swarm_event.get("delta", 0.0),
+                        "prev_stance": swarm_event.get("prev_stance", 0.0),
+                        "new_stance": swarm_event.get("new_stance", 0.0),
+                    })
+                elif etype == "simulation_round":
+                    yield _emit({
+                        "type": "simulation_round",
+                        "run_id": run_id,
+                        "round": swarm_event.get("round", {}),
+                    })
+                elif etype == "simulation_complete":
+                    report_dict = dict(swarm_event.get("report") or {})
+                    answer_text = _format_swarm_report(report_dict)
+                    yield _emit({
+                        "type": "simulation_complete",
+                        "run_id": run_id,
+                        "report": report_dict,
+                    })
+                    final_artifacts = extract_arrow_artifacts(settings)
+                    yield _emit({
+                        "type": "final",
+                        "run_id": run_id,
+                        "answer_text": answer_text,
+                        "sources": sources,
+                        "fallback": retrieval_plan.fallback.to_dict(),
+                        "strategy_fingerprint": "swarm_simulation",
+                        **({"artifacts": final_artifacts} if final_artifacts else {}),
+                    })
+            return
 
         if agentic_mode:
             _prev_draft_embedding: list[float] = []
@@ -362,9 +535,33 @@ def stream_rag_answer(
                     break  # No new evidence found — stop the loop.
 
                 new_context_block = "\n\n".join(new_context_parts)
-                # Guard against runaway context growth.
+                # Sliding-window compaction: on iteration 3+, LLM-compress the
+                # oldest half of accumulated context instead of hard-truncating.
                 candidate = accumulated_context + "\n\n" + new_context_block
-                accumulated_context = candidate[:_MAX_CONTEXT_CHARS]
+                if iteration >= 3 and len(candidate) > _MAX_CONTEXT_CHARS:
+                    _split = len(accumulated_context) // 2
+                    _old_half = accumulated_context[:_split]
+                    _new_half = accumulated_context[_split:]
+                    try:
+                        _compact = _response_text(
+                            llm.invoke([
+                                {
+                                    "type": "system",
+                                    "content": (
+                                        "You are a concise summariser. Compress the following "
+                                        "retrieved context into a dense 200-word factual summary. "
+                                        "Preserve all entity names, dates, and key claims. "
+                                        "Return only the summary, no preamble."
+                                    ),
+                                },
+                                {"type": "human", "content": _old_half[:4000]},
+                            ])
+                        )
+                        accumulated_context = _compact + "\n\n" + _new_half + "\n\n" + new_context_block
+                    except Exception:  # noqa: BLE001
+                        accumulated_context = candidate[:_MAX_CONTEXT_CHARS]
+                else:
+                    accumulated_context = candidate[:_MAX_CONTEXT_CHARS]
                 accumulated_sources = _dedup_sources(
                     accumulated_sources + iteration_new_sources
                 )
@@ -466,6 +663,11 @@ def stream_rag_answer(
             # After all iterations, expose accumulated sources for the final answer.
             sources = accumulated_sources
 
+        # Use smart model for final synthesis when configured (Research/Evidence Pack)
+        _smart_modes = {"Research", "Evidence Pack"}
+        _mode = str(settings.get("selected_mode", "Q&A") or "Q&A")
+        synthesis_llm = create_smart_llm(settings) if _mode in _smart_modes else llm
+
         # ------------------------------------------------------------------
         # Final streaming synthesis using all accumulated context.
         # ------------------------------------------------------------------
@@ -488,16 +690,16 @@ def stream_rag_answer(
         ]
 
         answer_parts: list[str] = []
-        if hasattr(llm, "stream"):
+        if hasattr(synthesis_llm, "stream"):
             # LangChain streaming path — yields chunk objects with partial content
-            for chunk in llm.stream(messages):
+            for chunk in synthesis_llm.stream(messages):
                 text = _response_text(chunk)
                 if text:
                     answer_parts.append(text)
                     yield _emit({"type": "token", "run_id": run_id, "text": text})
         else:
             # Non-streaming fallback — emit a single token event with the full answer
-            answer = _response_text(llm.invoke(messages))
+            answer = _response_text(synthesis_llm.invoke(messages))
             answer_parts.append(answer)
             yield _emit({"type": "token", "run_id": run_id, "text": answer})
 
