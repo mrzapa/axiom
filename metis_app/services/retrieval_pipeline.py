@@ -330,6 +330,7 @@ def execute_retrieval_plan(
                 final_result.sources, question, settings
             )
             if _mces_snippets:
+<<<<<<< HEAD
                 # Patch each source's snippet with the expanded context window
                 # so the LLM actually receives fuller text.
                 _expanded_map = {
@@ -345,6 +346,8 @@ def execute_retrieval_plan(
                     for _src in final_result.sources
                     if _src.snippet
                 )
+=======
+>>>>>>> 13724ce24d63e1b8978d64a499831e3e3bd6ce88
                 stages.append(
                     RetrievalStage(
                         stage_type="mces_context_expansion",
