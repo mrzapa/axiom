@@ -360,42 +360,29 @@ void main(){
   float ny = uv.y / sphereR;
   float nz = sqrt(max(0.0, 1.0 - nx*nx - ny*ny));
 
-  // Axial tilt — each star has a unique fixed tilt (15°–35°) derived from seed.
-  float tilt = 0.26 + u_seed * 0.35;  // 0.26–0.61 rad (~15°–35°)
-  float cosT = cos(tilt), sinT = sin(tilt);
-  float tnx = nx;
-  float tny = cosT * ny - sinT * nz;
-  float tnz = sinT * ny + cosT * nz;
-
   // Rotate around Y axis over time — slow, clearly visible spin.
   float rotAngle = u_time * 0.08 + u_seed * 6.28318;
   float cosR = cos(rotAngle);
   float sinR = sin(rotAngle);
-  float rx = cosR * tnx + sinR * tnz;
-  float rz = -sinR * tnx + cosR * tnz;
+  float rx = cosR * nx + sinR * nz;
+  float rz = -sinR * nx + cosR * nz;
 
   // Seamless surface UV from the 3D rotated position.
   // XZ-plane projection — no atan() seam, rotation is fully smooth.
   // Pole pinch is invisible because limb darkening blacks out the poles.
   vec2 sphereUV = vec2(rx, rz) * 2.0 + starOff;
 
-  // ── LIVE SURFACE FLOW — plasma convecting independently of sphere rotation ──
-  // Domain-warp sphereUV with a faster clock so the surface visibly boils
-  // and churns while the sphere slowly rotates underneath.
-  float tLive = u_time * 2.5;
-  vec2 surfFlow = vec2(
-    fbm(sphereUV * 2.5 + vec2(u_seed * 5.1,        tLive * 0.07), 4) - 0.5,
-    fbm(sphereUV * 2.5 + vec2(u_seed * 8.3 + 4.7, -tLive * 0.05), 4) - 0.5
-  ) * 0.15;
-  vec2 liveSurfUV = sphereUV + surfFlow;
-
   // === GRANULATION — highly detailed convective cells ===
-  float gran = granulation(liveSurfUV, t);
+  float gran = granulation(sphereUV, t);
+
+  // Modulate: bright granule centres vs dark intergranular lanes
+  // Much higher contrast than before
+  float granMod = 0.72 + gran * 0.56;            // range ~0.72–1.28
 
   // === PLASMA TURBULENCE — organic flow patterns overlaid ===
-  float plasma = plasmaTurbulence(liveSurfUV * 0.7, t);
-  // Wider range so plasma brightness variation is clearly visible
-  float plasmaMod = 0.68 + plasma * 0.64;
+  float plasma = plasmaTurbulence(sphereUV * 0.7, t);
+  // Subtle large-scale brightness variation across the surface
+  float plasmaMod = 0.85 + plasma * 0.3;
 
   // === COLOUR GRADIENT — multi-band temperature mapping ===
   // Hot white core → warm yellow → faculty colour → dark limb
@@ -409,24 +396,13 @@ void main(){
   vec3 midWarm  = mix(warm, fc, 0.35);
   surfCol = mix(surfCol, midWarm, midBand * 0.35);
 
-  // Chromatic granulation: hot granule centres, cool dark lanes — strong contrast.
-  vec3 granHot  = mix(surfCol * 1.25, hot, 0.2);         // brighter, more white-hot
-  vec3 granCool = mix(surfCol * 0.55, fc * 0.45, 0.4);   // darker, more saturated lane colour
-  float granBlend = smoothstep(0.25, 0.75, gran);
+  // Chromatic granulation: hot granule centres, cooler lanes
+  vec3 granHot  = mix(surfCol * 1.15, hot, 0.15);
+  vec3 granCool = mix(surfCol * 0.7, fc * 0.6, 0.3);
+  float granBlend = smoothstep(0.3, 0.7, gran);
   vec3 granColored = mix(granCool, granHot, granBlend);
 
-  // granMod amplified: bright cells get a further boost, dark lanes dimmer.
-  float granModStrong = 0.62 + gran * 0.76;              // range 0.62–1.38
-  vec3 photosphere = granColored * granModStrong * limb * plasmaMod;
-
-  // ── PLASMA FLUX TUBES — visibly flowing bright filaments ─────────────────
-  // Magnetic flux tubes erupting through the photosphere — bright streaks that
-  // flow and evolve with tLive, creating clearly visible plasma movement.
-  float flux1 = warpedFbm(liveSurfUV * 5.0 + vec2(0.0, tLive * 0.10), tLive * 0.18, 5);
-  float flux2 = warpedFbm(liveSurfUV * 7.5 - vec2(tLive * 0.08, u_seed * 3.0), tLive * 0.12, 4);
-  float fluxField = flux1 * 0.6 + flux2 * 0.4;
-  float fluxMask  = pow(max(0.0, fluxField - 0.36), 2.2) * limb;
-  photosphere += mix(hot, warm * 1.5, 0.3) * fluxMask * 0.55;
+  vec3 photosphere = granColored * granMod * limb * plasmaMod;
 
   // === SUNSPOTS (growing + integrated) — more dramatic ===
   if(u_stage >= 1.0){
@@ -483,18 +459,7 @@ void main(){
   }
   chromo += macroSpicule;
 
-  // ── CHROMOSPHERIC FLARES — pulsing eruptions around the limb ──────────────
-  // Two beating sine waves multiply to create irregular flare bursts.
-  float tFlare = u_time * 0.65;
-  float flareNoise = warpedFbm(vec2(angle * 3.5 + u_seed * 5.0, tFlare * 0.35), tFlare * 0.12, 4);
-  float flareErupt = max(0.0, sin(tFlare * 0.58 + u_seed * 6.28))
-                   * max(0.0, sin(tFlare * 0.35 + u_seed * 3.14));
-  float flareRing  = exp(-chromoDist * chromoDist * 450.0)
-                   * smoothstep(0.28, 0.65, flareNoise) * flareErupt;
-  chromo += flareRing * 1.6;
-
-  vec3 chromoCol = mix(fc * 1.2, hot, 0.45) * chromo
-                 + mix(warm * 1.6, hot, 0.65) * flareRing * flareErupt * 0.85;
+  vec3 chromoCol = mix(fc * 1.2, hot, 0.45) * chromo;
 
   /* ===================================================================
      CORONA  (HD filamentary streamers with fine structure)
@@ -553,12 +518,11 @@ void main(){
       float arcWidth = 0.12 + hash(vec2(u_seed, float(k))) * 0.12;
       float arcH = 0.05 + hash(vec2(float(k), u_seed * 3.0)) * 0.10;
       float radialPeak = sphereR + arcH;
-      // Turbulent arc shape with time-varying pulse — each prominence beats independently
+      // Turbulent arc shape
       float turbArc = fbm(vec2(angDiff * 10.0 + u_seed * float(k+1), dist * 15.0 + t * 0.1), 4);
       float arcShape = exp(-angDiff * angDiff / (arcWidth * arcWidth))
                       * exp(-pow(dist - radialPeak - turbArc * 0.015, 2.0) * 180.0);
-      float pulse = 0.55 + 0.45 * abs(sin(u_time * (0.85 + hash(vec2(u_seed, float(k))) * 1.4) + float(k) * 2.09));
-      prom += arcShape * pulse;
+      prom += arcShape * 0.55;
     }
   }
 
@@ -606,17 +570,17 @@ void main(){
   // Diffraction spikes
   col += coronaColor * spikes * 0.65;
 
-  // Core bloom — tight, intense, HDR-hot (reduced so surface detail shows through)
+  // Core bloom — tight, intense, HDR-hot
   float bloom = exp(-dist * dist / 0.009);
-  col += hot * bloom * 0.30;
+  col += hot * bloom * 0.55;
 
   // Second bloom — medium halo
   float bloom2 = exp(-dist * dist / 0.04);
-  col += mix(hot, fc, 0.25) * bloom2 * 0.14;
+  col += mix(hot, fc, 0.25) * bloom2 * 0.18;
 
   // Third bloom — wider atmospheric glow
   float bloom3 = exp(-dist * dist / 0.12);
-  col += mix(hot, fc, 0.5) * bloom3 * 0.05;
+  col += mix(hot, fc, 0.5) * bloom3 * 0.06;
 
   col *= twinkle;
 

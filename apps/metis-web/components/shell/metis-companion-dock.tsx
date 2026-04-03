@@ -63,8 +63,6 @@ export function MetisCompanionDock({
   // can drive the same model without loading a second 2 GB worker.
   const webgpu = useWebGPUCompanionContext();
   const [quickAsk, setQuickAsk] = useState("");
-  const [dockHistory, setDockHistory] = useState<Array<{ role: string; content: string }>>([]);
-  const prevWebGPUStatusRef = useRef<string | null>(null);
   const [thoughts, setThoughts] = useState<CompanionActivityEvent[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -158,15 +156,6 @@ export function MetisCompanionDock({
       researchAbortRef.current?.abort();
     };
   }, []);
-
-  // When WebGPU finishes generating, commit the assistant reply to dockHistory.
-  useEffect(() => {
-    const prev = prevWebGPUStatusRef.current;
-    prevWebGPUStatusRef.current = webgpu.status;
-    if (prev === "generating" && webgpu.status === "ready" && webgpu.output) {
-      setDockHistory((h) => [...h, { role: "assistant", content: webgpu.output }]);
-    }
-  }, [webgpu.status, webgpu.output]);
 
   const latestMemory = useMemo(
     () => snapshot?.memory?.[0] ?? null,
