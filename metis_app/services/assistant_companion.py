@@ -735,3 +735,84 @@ class AssistantCompanionService:
             convergence_score=convergence_score,
         )
         return True
+
+    def _promote_skill_candidates(
+        self,
+        settings: dict[str, Any],
+        *,
+        _db_path: "pathlib.Path | None" = None,
+        _auto_gen_dir: "pathlib.Path | None" = None,
+    ) -> int:
+        """LLM-judge unreviewed skill candidates and promote generalizable ones to .md files.
+
+        Returns count of newly promoted candidates. Silently skips if LLM is unavailable.
+        """
+        from metis_app.services.skill_repository import (
+            SkillRepository,
+            _DEFAULT_CANDIDATES_DB_PATH,
+            _DEFAULT_SKILLS_DIR,
+        )
+        llm_settings = self._resolve_runtime_llm_settings(settings)
+        if llm_settings is None:
+            return 0
+        try:
+            llm = create_llm(llm_settings)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("_promote_skill_candidates: LLM unavailable: %s", exc)
+            return 0
+
+        db_path = _db_path or _DEFAULT_CANDIDATES_DB_PATH
+        auto_gen_dir = _auto_gen_dir or (_DEFAULT_SKILLS_DIR / "auto-generated")
+        repo = SkillRepository(skills_dir=auto_gen_dir.parent)
+        candidates = repo.list_candidates(db_path=db_path, limit=3)
+        promoted_count = 0
+
+        judge_prompt = (
+            "You are a skill extraction assistant. Given a user query answered by "
+            "multi-iteration agentic RAG, decide if it represents a generalizable, "
+            "reusable skill pattern worth capturing. "
+            "Return ONLY compact JSON: "
+            '{"is_generalizable": bool, "skill_name": str, '
+            '"skill_description": str, "confidence": float}'
+        )
+        for candidate in candidates:
+            candidate_id = int(candidate["id"])
+            query_text = str(candidate.get("query_text") or "")
+            try:
+                raw = llm.invoke([
+                    {"type": "system", "content": judge_prompt},
+                    {"type": "human", "content": f"Query: {query_text}"},
+                ])
+                text = str(getattr(raw, "content", raw) or "")
+                start, end = text.find("{"), text.rfind("}") + 1
+                if start == -1 or end <= start:
+                    continue
+                payload = json.loads(text[start:end])
+                if not isinstance(payload, dict):
+                    continue
+                if not bool(payload.get("is_generalizable")) or float(payload.get("confidence") or 0) < 0.7:
+                    continue
+                skill_name = str(payload.get("skill_name") or "auto_skill").strip()
+                skill_description = str(payload.get("skill_description") or "").strip()
+            except Exception as exc:  # noqa: BLE001
+                log.debug("_promote_skill_candidates: judge failed for id=%s: %s", candidate_id, exc)
+                continue
+
+            try:
+                auto_gen_dir.mkdir(parents=True, exist_ok=True)
+                slug = skill_name.lower().replace(" ", "-")
+                md_content = (
+                    f"---\nid: {slug}\nname: {skill_name}\n"
+                    f"description: {skill_description}\nenabled_by_default: false\n"
+                    f"priority: 0\ntriggers:\n  keywords: []\n  modes: []\n"
+                    f"  file_types: []\n  output_styles: []\nruntime_overrides: {{}}\n---\n\n"
+                    f"# {skill_name}\n\n{skill_description}\n\n"
+                    f"*Auto-generated from query:* {query_text}\n"
+                )
+                (auto_gen_dir / f"{candidate_id}.md").write_text(md_content, encoding="utf-8")
+                repo.mark_candidate_promoted(db_path=db_path, candidate_id=candidate_id)
+                promoted_count += 1
+            except Exception as exc:  # noqa: BLE001
+                log.warning("_promote_skill_candidates: write failed for id=%s: %s", candidate_id, exc)
+
+        return promoted_count

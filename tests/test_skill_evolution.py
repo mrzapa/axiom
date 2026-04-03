@@ -89,6 +89,42 @@ def test_list_candidates_returns_top_unreviewed(tmp_path, repo):
     assert scores == sorted(scores, reverse=True)
 
 
+def test_promote_skill_candidates_writes_md_and_marks_promoted(tmp_path):
+    """_promote_skill_candidates writes a .md file and marks the candidate promoted."""
+    import json
+    from unittest.mock import MagicMock, patch
+    from metis_app.services.assistant_companion import AssistantCompanionService
+    from metis_app.services.skill_repository import SkillRepository
+
+    db_path = tmp_path / "skill_candidates.db"
+    auto_gen_dir = tmp_path / "skills" / "auto-generated"
+    repo = SkillRepository(skills_dir=tmp_path / "skills")
+    repo.save_candidate(
+        db_path=db_path, query_text="How does vector search work?",
+        trace_json=json.dumps({"iterations": 3}), convergence_score=0.97,
+    )
+
+    mock_llm = MagicMock()
+    mock_llm.invoke.return_value = MagicMock(content=json.dumps({
+        "is_generalizable": True, "skill_name": "Vector Search Skill",
+        "skill_description": "Explains vector search.", "confidence": 0.9,
+    }))
+
+    companion = AssistantCompanionService.__new__(AssistantCompanionService)
+    with patch("metis_app.services.assistant_companion.create_llm", return_value=mock_llm), \
+         patch.object(companion, "_resolve_runtime_llm_settings", return_value={"llm_provider": "openai"}):
+        count = companion._promote_skill_candidates(
+            settings={}, _db_path=db_path, _auto_gen_dir=auto_gen_dir,
+        )
+
+    assert count == 1
+    md_files = list(auto_gen_dir.glob("*.md"))
+    assert len(md_files) == 1
+    assert "Vector Search Skill" in md_files[0].read_text()
+    # Promoted candidate filtered out
+    assert len(repo.list_candidates(db_path=db_path, limit=10)) == 0
+
+
 def test_iteration_complete_wired_in_wrapped(monkeypatch):
     """_wrapped() must call capture_skill_candidate when iteration_complete fires with iterations_used >= 2."""
     import json
