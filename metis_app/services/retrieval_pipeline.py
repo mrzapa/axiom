@@ -289,6 +289,28 @@ def execute_retrieval_plan(
                     )
                 )
 
+    # --- Monte Carlo Evidence Sampling (MCES) ---
+    # Expands retrieved chunks by re-reading each source file and returning
+    # the best context window around the hit (controlled by enable_mces).
+    if settings.get("enable_mces") and final_result.sources:
+        try:
+            from metis_app.services.monte_carlo_sampler import apply_mces  # noqa: PLC0415
+            _mces_snippets, _expanded_count = apply_mces(
+                final_result.sources, question, settings
+            )
+            if _mces_snippets:
+                stages.append(
+                    RetrievalStage(
+                        stage_type="mces_context_expansion",
+                        payload={
+                            "snippets": _mces_snippets,
+                            "expanded_count": _expanded_count,
+                        },
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass  # MCES is best-effort; never block a query
+
     fallback = _fallback_for_result(final_result, settings)
     stages.append(
         RetrievalStage(

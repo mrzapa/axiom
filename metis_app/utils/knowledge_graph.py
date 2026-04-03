@@ -17,9 +17,13 @@ To enable spaCy extraction, install spaCy and a language model::
 from __future__ import annotations
 
 from collections import Counter, deque
+import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "to", "for", "of", "in", "on", "at", "with",
@@ -195,6 +199,103 @@ def normalise_entities(entities: list[tuple[str, str]]) -> list[tuple[str, str]]
         if canonical and canonical not in _STOPWORDS:
             normalized.append((label, canonical))
     return normalized
+
+
+def llm_extract_entities_and_relations(
+    text: str,
+    llm: Any,
+    *,
+    max_entities: int = 30,
+    max_relations: int = 20,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str, str]]]:
+    """LLM-powered entity and relationship extraction with few-shot examples.
+
+    Sends a structured prompt to the LLM asking it to extract named entities
+    and subject-verb-object triples in JSON format.  Falls back to
+    ``extract_entities_and_relations`` on any failure.
+
+    Parameters
+    ----------
+    text:
+        The document chunk to analyse.
+    llm:
+        Any object with an ``.invoke(messages)`` method returning an object
+        with a ``.content`` attribute (LangChain ``BaseChatModel`` protocol).
+    max_entities:
+        Upper bound on returned entities (most salient first).
+    max_relations:
+        Upper bound on returned relation triples.
+
+    Returns
+    -------
+    entities:
+        List of ``(entity_type, entity_text)`` tuples.
+    relations:
+        List of ``(subject, predicate, object)`` triples.
+    """
+    _FEW_SHOT = (
+        'Example 1\n'
+        'Input: "Apple Inc. acquired Shazam in 2018 for $400 million. Tim Cook announced the deal."\n'
+        'Output: {"entities": [{"type": "ORG", "text": "Apple Inc."}, {"type": "ORG", "text": "Shazam"}, '
+        '{"type": "PERSON", "text": "Tim Cook"}], "relations": [{"subject": "Apple Inc.", "predicate": "acquired", '
+        '"object": "Shazam"}, {"subject": "Tim Cook", "predicate": "announced", "object": "deal"}]}\n\n'
+        'Example 2\n'
+        'Input: "The GDPR regulation came into force in May 2018 across all EU member states."\n'
+        'Output: {"entities": [{"type": "OTHER", "text": "GDPR"}, {"type": "GPE", "text": "EU"}], '
+        '"relations": [{"subject": "GDPR", "predicate": "applies_to", "object": "EU member states"}]}'
+    )
+
+    system = (
+        "You are a precise information-extraction assistant.\n"
+        "Extract named entities and subject-predicate-object relationships from the text.\n\n"
+        "Entity types: PERSON, ORG, GPE, PRODUCT, CONCEPT, EVENT, OTHER.\n\n"
+        "Rejection rules — do NOT include:\n"
+        "  - stopwords or pronouns (it, they, this, that, …)\n"
+        "  - generic verbs: is, are, have, has, had, be, been, being, do, does, did\n"
+        "  - single-character tokens\n"
+        "  - numbers-only strings\n\n"
+        f"Return at most {max_entities} entities and {max_relations} relations, "
+        "most salient first.\n\n"
+        "Output ONLY valid JSON in this exact schema, no prose, no markdown fences:\n"
+        '{"entities": [{"type": "<TYPE>", "text": "<text>"}], '
+        '"relations": [{"subject": "<subj>", "predicate": "<pred>", "object": "<obj>"}]}\n\n'
+        + _FEW_SHOT
+    )
+
+    user_text = text[:3000] if len(text) > 3000 else text
+    user = f'Input: "{user_text}"'
+
+    try:
+        response = llm.invoke([
+            {"type": "system", "content": system},
+            {"type": "human", "content": user},
+        ])
+        raw = response.content
+
+        # Strip optional markdown code fences.
+        stripped = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
+        stripped = re.sub(r"```\s*$", "", stripped.strip())
+
+        parsed = json.loads(stripped)
+
+        entities: list[tuple[str, str]] = [
+            (item["type"], item["text"])
+            for item in parsed.get("entities", [])
+            if item.get("text") and item.get("type")
+        ]
+        relations: list[tuple[str, str, str]] = [
+            (r["subject"], r["predicate"], r["object"])
+            for r in parsed.get("relations", [])
+            if r.get("subject") and r.get("predicate") and r.get("object")
+        ]
+
+        entities = normalise_entities(entities)
+        relations = glean_relationships(relations)
+        return entities, relations
+
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("llm_extract_entities_and_relations fell back to heuristic: %s", exc)
+        return extract_entities_and_relations(text)
 
 
 

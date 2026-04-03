@@ -28,6 +28,10 @@ MODE_ALIASES = {
     "tutor": "Tutor",
     "research": "Research",
     "evidence pack": "Evidence Pack",
+    "simulation": "Simulation",
+    "simulate": "Simulation",
+    "swarm": "Simulation",
+    "impact simulation": "Simulation",
 }
 
 MODE_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -36,6 +40,7 @@ MODE_DEFAULTS: dict[str, dict[str, Any]] = {
     "Tutor": {"retrieve_k": 24, "final_k": 6, "mmr_lambda": 0.55, "retrieval_mode": "hierarchical", "agentic_mode": True, "max_iterations": 2},
     "Research": {"retrieve_k": 42, "final_k": 12, "mmr_lambda": 0.4, "retrieval_mode": "hierarchical", "agentic_mode": True, "max_iterations": 3},
     "Evidence Pack": {"retrieve_k": 35, "final_k": 10, "mmr_lambda": 0.5, "retrieval_mode": "hierarchical", "agentic_mode": True, "max_iterations": 3},
+    "Simulation": {"retrieve_k": 30, "final_k": 8, "mmr_lambda": 0.45, "retrieval_mode": "hierarchical", "agentic_mode": False, "max_iterations": 1},
 }
 
 MODE_PROMPT_PACKS = {
@@ -58,6 +63,12 @@ MODE_PROMPT_PACKS = {
     "Evidence Pack": (
         "Mode: Evidence Pack. Build a structured timeline and narrative with exhaustive citations, ensuring "
         "every factual statement is explicitly grounded."
+    ),
+    "Simulation": (
+        "Mode: Simulation. Generate diverse AI personas from the document context and simulate "
+        "their reactions across multiple rounds. Track stance, confidence, and trust shifts. "
+        "Produce a structured report showing who thinks what, how beliefs evolved, and which "
+        "topics reached consensus vs. remained contested."
     ),
 }
 
