@@ -317,10 +317,10 @@ class AssistantCompanionService:
         status.latest_why = memory_entry.why
         self.repository.update_status(status)
 
+        import threading
+
         # Spawn autonomous research in background daemon thread if enabled
         if policy.autonomous_research_enabled and _orchestrator is not None:
-            import threading
-
             def _research_task() -> None:
                 try:
                     result = _orchestrator.run_autonomous_research(active_settings)
@@ -345,6 +345,17 @@ class AssistantCompanionService:
                     log.warning("autonomous_research background task failed: %s", _exc)
 
             threading.Thread(target=_research_task, daemon=True).start()
+
+        # Spawn skill candidate promotion in background daemon thread
+        if trigger == "completed_run" and policy.allow_automatic_writes:
+            def _promote_task() -> None:
+                try:
+                    count = self._promote_skill_candidates(active_settings)
+                    if count:
+                        log.debug("Promoted %d skill candidate(s).", count)
+                except Exception as _exc:
+                    log.warning("_promote_skill_candidates background task failed: %s", _exc)
+            threading.Thread(target=_promote_task, daemon=True).start()
 
         return {
             "ok": True,

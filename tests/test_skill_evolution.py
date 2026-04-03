@@ -89,6 +89,64 @@ def test_list_candidates_returns_top_unreviewed(tmp_path, repo):
     assert scores == sorted(scores, reverse=True)
 
 
+def test_reflect_spawns_promote_thread_on_completed_run(monkeypatch):
+    """reflect() must spawn _promote_skill_candidates in a daemon thread for completed_run
+    when allow_automatic_writes is True."""
+    import time
+    from unittest.mock import MagicMock, patch
+    from metis_app.services.assistant_companion import AssistantCompanionService
+
+    promote_calls = []
+
+    companion = AssistantCompanionService.__new__(AssistantCompanionService)
+    companion.repository = MagicMock()
+    companion.repository.get_status.return_value = MagicMock(
+        paused=False, last_reflection_at=None, to_payload=lambda: {},
+        state="", last_reflection_trigger="", latest_summary="", latest_why="",
+    )
+    companion.session_repo = None
+    companion.trace_store = MagicMock(read_run_events=MagicMock(return_value=[]))
+
+    companion._promote_skill_candidates = lambda settings, **kw: promote_calls.append(settings) or 0
+
+    fake_mem = MagicMock()
+    fake_mem.to_payload = lambda: {}
+    fake_mem.entry_id = "e1"
+    fake_mem.created_at = ""
+    fake_mem.summary = fake_mem.title = fake_mem.why = ""
+    fake_mem.tags = fake_mem.related_node_ids = []
+
+    with patch("metis_app.services.assistant_companion.resolve_assistant_identity",
+               return_value=MagicMock(companion_enabled=True, to_payload=lambda: {})), \
+         patch("metis_app.services.assistant_companion.resolve_assistant_policy",
+               return_value=MagicMock(
+                   reflection_enabled=True, allow_automatic_writes=True,
+                   reflection_cooldown_seconds=0, max_memory_entries=100,
+                   max_playbooks=50, max_brain_links=100,
+                   autonomous_research_enabled=False, trigger_on_completed_run=True,
+               )), \
+         patch("metis_app.services.assistant_companion.resolve_assistant_runtime",
+               return_value=MagicMock(to_payload=lambda: {})), \
+         patch.object(companion, "_ensure_status", return_value=MagicMock(
+             paused=False, last_reflection_at=None, to_payload=lambda: {},
+             state="", last_reflection_trigger="", latest_summary="", latest_why="",
+         )), \
+         patch.object(companion, "_generate_reflection", return_value={
+             "title": "t", "summary": "s", "details": "d", "why": "w",
+             "playbook_title": "pt", "playbook_bullets": [], "confidence": 0.7,
+             "tags": [], "related_node_ids": [], "context_lines": [],
+         }), \
+         patch.object(companion, "_is_duplicate_reflection", return_value=False), \
+         patch("metis_app.services.assistant_companion.AssistantMemoryEntry") as mock_mem_cls, \
+         patch("metis_app.services.assistant_companion.AssistantBrainLink"), \
+         patch("metis_app.services.assistant_companion.settings_store"):
+        mock_mem_cls.create.return_value = fake_mem
+        companion.reflect(trigger="completed_run", settings={}, force=True)
+
+    time.sleep(0.1)
+    assert len(promote_calls) >= 1
+
+
 def test_promote_skill_candidates_writes_md_and_marks_promoted(tmp_path):
     """_promote_skill_candidates writes a .md file and marks the candidate promoted."""
     import json
