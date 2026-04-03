@@ -66,7 +66,7 @@ from metis_app.services.nyx_catalog import (
 )
 from metis_app.services.nyx_runtime import augment_settings_with_nyx, build_nyx_install_actions
 from metis_app.services.session_repository import SessionRepository
-from metis_app.services.skill_repository import SkillRepository
+from metis_app.services.skill_repository import SkillRepository, _DEFAULT_CANDIDATES_DB_PATH
 from metis_app.services.trace_store import TraceStore
 from metis_app.models.parity_types import SkillDefinition
 
@@ -422,6 +422,17 @@ class WorkspaceOrchestrator:
                         item if isinstance(item, EvidenceSource) else EvidenceSource.from_dict(item)
                         for item in list(event.get("sources") or [])
                     ]
+                elif (
+                    event.get("type") == "iteration_complete"
+                    and int(event.get("iterations_used", 0)) >= 2
+                ):
+                    self._assistant_service.capture_skill_candidate(
+                        db_path=_DEFAULT_CANDIDATES_DB_PATH,
+                        query_text=str(event.get("query_text") or ""),
+                        trace_json=json.dumps(event),
+                        convergence_score=float(event.get("convergence_score") or 0.0),
+                        trace_iterations=int(event.get("iterations_used") or 0),
+                    )
                 elif event.get("type") == "final" and session_id:
                     final_sources = [
                         item if isinstance(item, EvidenceSource) else EvidenceSource.from_dict(item)

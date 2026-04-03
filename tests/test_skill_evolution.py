@@ -87,3 +87,41 @@ def test_list_candidates_returns_top_unreviewed(tmp_path, repo):
     # Should be ordered by convergence_score desc
     scores = [c["convergence_score"] for c in candidates]
     assert scores == sorted(scores, reverse=True)
+
+
+def test_iteration_complete_wired_in_wrapped(monkeypatch):
+    """_wrapped() must call capture_skill_candidate when iteration_complete fires with iterations_used >= 2."""
+    import json
+    from unittest.mock import MagicMock, patch
+    from metis_app.services.workspace_orchestrator import WorkspaceOrchestrator
+    from metis_app.services.skill_repository import _DEFAULT_CANDIDATES_DB_PATH
+
+    captured_calls = []
+
+    fake_events = [
+        {"type": "run_started", "run_id": "r1"},
+        {"type": "iteration_complete", "run_id": "r1",
+         "iterations_used": 3, "convergence_score": 0.97, "query_text": "What is RAG?"},
+        {"type": "final", "run_id": "r1", "answer_text": "An answer.", "sources": []},
+    ]
+
+    orchestrator = WorkspaceOrchestrator.__new__(WorkspaceOrchestrator)
+    orchestrator._assistant_service = MagicMock()
+    orchestrator._assistant_service.capture_skill_candidate = lambda **kw: captured_calls.append(kw)
+    orchestrator._assistant_service.reflect = MagicMock(return_value={"ok": True})
+
+    with patch("metis_app.services.workspace_orchestrator.stream_rag_answer", return_value=iter(fake_events)), \
+         patch.object(orchestrator, "_record_trace_event"), \
+         patch.object(orchestrator, "_resolve_nyx_install_actions", return_value=None), \
+         patch.object(orchestrator, "append_message"), \
+         patch.object(orchestrator, "_resolve_query_settings", return_value={}), \
+         patch.object(orchestrator, "_prepare_session_for_query"):
+        from metis_app.engine.querying import RagQueryRequest
+        req = RagQueryRequest(question="What is RAG?", manifest_path="", settings={})
+        list(orchestrator.stream_rag_query(req, session_id="s1"))
+
+    assert len(captured_calls) == 1
+    assert captured_calls[0]["query_text"] == "What is RAG?"
+    assert captured_calls[0]["convergence_score"] == 0.97
+    assert captured_calls[0]["trace_iterations"] == 3
+    assert captured_calls[0]["db_path"] == _DEFAULT_CANDIDATES_DB_PATH
