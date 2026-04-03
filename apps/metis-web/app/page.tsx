@@ -2448,10 +2448,18 @@ export default function Home() {
 
       const landingRenderableStars: LandingWorldStarRenderState[] = nextVisibleStars.map((star) => {
         const profile = getCachedStellarProfile(star.id);
+        const focusStr = starDiveFocusStrengthRef.current;
+        const isFocused = starDiveFocusedStarIdRef.current === star.id;
+        // Dim non-focused stars proportionally to focus strength
+        const dimFactor = focusStr > 0 && !isFocused ? 1 - focusStr * 0.85 : 1;
+        // Grow focused star toward ~60% of viewport height as focus strength → 1
+        const focusedSizeBoost = isFocused && focusStr > 0
+          ? star.baseSize + (H * 0.6 - star.baseSize) * focusStr
+          : star.baseSize;
         const projectedStar: LandingWorldStarRenderState = {
           addable: star.isAddable,
-          apparentSize: star.baseSize,
-          brightness: star.brightness,
+          apparentSize: isFocused ? focusedSizeBoost : star.baseSize,
+          brightness: star.brightness * dimFactor,
           hitRadius: star.hitRadius,
           id: star.id,
           profile,
@@ -3093,9 +3101,15 @@ export default function Home() {
 
       const zoomDelta = backgroundZoomTargetRef.current - backgroundZoomRef.current;
       if (Math.abs(zoomDelta) > 0.0005) {
+        // Accelerate zoom easing above Star Dive threshold (12% → 18%)
+        const zoomEasing = reducedMotion
+          ? 1
+          : backgroundZoomRef.current > STAR_DIVE_ZOOM_THRESHOLD
+            ? 0.18
+            : 0.12;
         backgroundZoomRef.current = reducedMotion
           ? backgroundZoomTargetRef.current
-          : backgroundZoomRef.current + zoomDelta * 0.12;
+          : backgroundZoomRef.current + zoomDelta * zoomEasing;
       } else {
         backgroundZoomRef.current = backgroundZoomTargetRef.current;
       }

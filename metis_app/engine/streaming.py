@@ -282,6 +282,9 @@ def stream_rag_answer(
             _prev_draft_embedding: list[float] = []
             _iterations_used: int = 0
             _last_convergence_score: float = 0.0
+            _total_gap_count: int = 0
+            _all_cited_sources: set[str] = set()
+            _per_iter_cited_sources: list[set[str]] = []
 
             # Generate an initial non-streaming draft used only for self-critique.
             _draft_prompt = (
@@ -313,11 +316,15 @@ def stream_rag_answer(
                 if not gap_queries:
                     break  # Answer is sufficiently complete — stop early.
 
+                _total_gap_count += len(gap_queries)
+                _prior_source_count = len(accumulated_sources)
+
                 yield _emit({
                     "type": "gaps_identified",
                     "run_id": run_id,
                     "gaps": gap_queries,
                     "iteration": iteration,
+                    "strategy_fingerprint": "gap_fill",
                     "detail": {
                         "tool_name": "gap_analyzer",
                         "task_summary": f"Identified {len(gap_queries)} gap(s)",
@@ -361,6 +368,7 @@ def stream_rag_answer(
                 accumulated_sources = _dedup_sources(
                     accumulated_sources + iteration_new_sources
                 )
+                _new_source_count = len(accumulated_sources) - _prior_source_count
 
                 top_iter_score = max(
                     (float(s.get("score") or 0.0) for s in iteration_new_sources),
@@ -373,6 +381,8 @@ def stream_rag_answer(
                     "sources": iteration_new_sources,
                     "context_block": new_context_block,
                     "top_score": top_iter_score,
+                    "retrieval_delta": _new_source_count,
+                    "strategy_fingerprint": "gap_fill",
                     "detail": {
                         "tool_name": "gap_retrieval",
                         "task_summary": f"Retrieved context for {len(gap_queries)} gap(s)",
@@ -396,6 +406,12 @@ def stream_rag_answer(
                             {"type": "human", "content": question},
                         ])
                     )
+                    # Track per-iteration cited sources for diversity calculation
+                    import re as _re
+                    _iter_cited = set(_re.findall(r"\[S\d+\]", current_draft))
+                    _per_iter_cited_sources.append(_iter_cited)
+                    _all_cited_sources.update(_iter_cited)
+
                     # --- Sotaku-inspired convergence detection ---
                     _current_emb = _embed_text(current_draft, settings)
                     if _prev_draft_embedding:
@@ -414,6 +430,26 @@ def stream_rag_answer(
                     _prev_draft_embedding = _current_emb
                 _iterations_used = iteration
 
+            # Compute citation diversity: fraction of total citations that appeared in >1 iteration
+            _total_cited = len(_all_cited_sources)
+            _shared_cited = (
+                len(
+                    _all_cited_sources.intersection(*_per_iter_cited_sources)
+                    if len(_per_iter_cited_sources) > 1
+                    else set()
+                )
+            )
+            _citation_diversity = (
+                round(1.0 - _shared_cited / _total_cited, 4) if _total_cited > 0 else 1.0
+            )
+
+            # Determine strategy fingerprint for the whole run
+            _strategy = (
+                "convergence"
+                if _last_convergence_score >= agentic_convergence_threshold
+                else ("gap_fill" if _iterations_used > 1 else "direct_synthesis")
+            )
+
             # Emit trace event for skill candidate capture
             yield _emit({
                 "type": "iteration_complete",
@@ -421,6 +457,10 @@ def stream_rag_answer(
                 "iterations_used": _iterations_used,
                 "convergence_score": round(_last_convergence_score, 4),
                 "query_text": question,
+                "strategy_fingerprint": _strategy,
+                "citation_count": _total_cited,
+                "citation_diversity_score": _citation_diversity,
+                "gap_count_total": _total_gap_count,
             })
 
             # After all iterations, expose accumulated sources for the final answer.
@@ -462,12 +502,17 @@ def stream_rag_answer(
             yield _emit({"type": "token", "run_id": run_id, "text": answer})
 
         final_artifacts = extract_arrow_artifacts(settings)
+        _final_strategy = (
+            locals().get("_strategy") or
+            ("sub_query_expansion" if len(retrieval_plan.stages) > 1 else "direct_synthesis")
+        )
         yield _emit({
             "type": "final",
             "run_id": run_id,
             "answer_text": "".join(answer_parts),
             "sources": sources,
             "fallback": retrieval_plan.fallback.to_dict(),
+            "strategy_fingerprint": _final_strategy,
             **({"artifacts": final_artifacts} if final_artifacts else {}),
         })
 

@@ -875,6 +875,8 @@ class WorkspaceOrchestrator:
             "iteration_start": "reflection",
             "gaps_identified": "reflection",
             "refinement_retrieval": "retrieval",
+            "iteration_converged": "reflection",
+            "iteration_complete": "reflection",
             "fallback_decision": "fallback",
             "final": "synthesis",
             "error": "error",

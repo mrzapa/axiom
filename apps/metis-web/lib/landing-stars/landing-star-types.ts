@@ -1,4 +1,4 @@
-export type LandingStarRenderTier = "point" | "sprite" | "hero";
+export type LandingStarRenderTier = "point" | "sprite" | "hero" | "closeup";
 
 export interface LandingProjectedStar {
   id: string;
@@ -28,6 +28,7 @@ export type LandingStarRenderItem<TStar extends LandingProjectedStar = LandingPr
   };
 
 export interface LandingStarRenderBatches<TStar extends LandingProjectedStar = LandingProjectedStar> {
+  closeup: Array<LandingStarRenderItem<TStar>>;
   hero: Array<LandingStarRenderItem<TStar>>;
   point: Array<LandingStarRenderItem<TStar>>;
   sprite: Array<LandingStarRenderItem<TStar>>;

@@ -61,7 +61,13 @@ export function classifyLandingStarRenderTier(
   star: LandingProjectedStar,
   zoomFactor: number,
   thresholds?: LandingStarLodThresholds,
+  closeupStarId?: string | null,
 ): LandingStarRenderTier {
+  // Star Dive closeup override — the focused star gets its own tier
+  if (closeupStarId && star.id === closeupStarId) {
+    return "closeup";
+  }
+
   const normalizedThresholds = normalizeThresholds(thresholds);
 
   if (zoomFactor < normalizedThresholds.spriteZoomFactor) {
@@ -91,10 +97,11 @@ export function assignLandingStarRenderTier<TStar extends LandingProjectedStar>(
   star: TStar,
   zoomFactor: number,
   thresholds?: LandingStarLodThresholds,
+  closeupStarId?: string | null,
 ): LandingStarRenderItem<TStar> {
   return {
     ...star,
-    renderTier: classifyLandingStarRenderTier(star, zoomFactor, thresholds),
+    renderTier: classifyLandingStarRenderTier(star, zoomFactor, thresholds, closeupStarId),
   };
 }
 
@@ -102,14 +109,21 @@ export function buildLandingStarRenderPlan<TStar extends LandingProjectedStar>(
   stars: readonly TStar[],
   zoomFactor: number,
   thresholds?: LandingStarLodThresholds,
+  closeupStarId?: string | null,
 ): LandingStarRenderPlan<TStar> {
   const normalizedThresholds = normalizeThresholds(thresholds);
-  const assignedStars = stars.map((star) => assignLandingStarRenderTier(star, zoomFactor, normalizedThresholds));
+  const assignedStars = stars.map((star) => assignLandingStarRenderTier(star, zoomFactor, normalizedThresholds, closeupStarId));
+  const closeupCandidates: Array<LandingStarRenderItem<TStar>> = [];
   const heroCandidates: Array<LandingStarRenderItem<TStar>> = [];
   const spriteCandidates: Array<LandingStarRenderItem<TStar>> = [];
   const pointCandidates: Array<LandingStarRenderItem<TStar>> = [];
 
   for (const star of assignedStars) {
+    if (star.renderTier === "closeup") {
+      closeupCandidates.push(star);
+      continue;
+    }
+
     if (star.renderTier === "hero") {
       heroCandidates.push(star);
       continue;
@@ -140,6 +154,7 @@ export function buildLandingStarRenderPlan<TStar extends LandingProjectedStar>(
       : [];
 
   const batches: LandingStarRenderBatches<TStar> = {
+    closeup: closeupCandidates,
     hero: promotedHeroes,
     point: pointCandidates,
     sprite: [...spriteCandidates, ...demotedHeroes].sort(compareLandingStarRenderPriority),
@@ -148,6 +163,7 @@ export function buildLandingStarRenderPlan<TStar extends LandingProjectedStar>(
   return {
     batches,
     tierCounts: {
+      closeup: batches.closeup.length,
       hero: batches.hero.length,
       point: batches.point.length,
       sprite: batches.sprite.length,
