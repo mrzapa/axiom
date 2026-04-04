@@ -288,9 +288,25 @@ class ChromaVectorStoreAdapter(VectorStoreAdapter):
         from chromadb import PersistentClient
 
         vector_store_dir = target / "chroma"
+        collection_name = _collection_name(bundle.index_id)
+
+        # Stage the manifest/bundle JSON first (atomic dir-swap).  If target
+        # already exists its old chroma/ sub-tree is deleted here, but no
+        # PersistentClient is open at this point so Windows won't object.
+        manifest = persist_index_bundle(
+            bundle,
+            backend=self.backend_name,
+            target_dir=target,
+            vector_store_path=vector_store_dir,
+            collection_name=collection_name,
+            restore_requirements={"python_package": "chromadb"},
+            manifest_metadata={"storage_kind": "chroma-persistent"},
+        )
+
+        # Write chroma vector data after the atomic swap so the directory is
+        # clean and no file locks are held during rmtree.
         vector_store_dir.mkdir(parents=True, exist_ok=True)
         client = PersistentClient(path=str(vector_store_dir))
-        collection_name = _collection_name(bundle.index_id)
         try:
             client.delete_collection(collection_name)
         except Exception:
@@ -315,16 +331,14 @@ class ChromaVectorStoreAdapter(VectorStoreAdapter):
                 embeddings=embeddings,
                 metadatas=metadatas,
             )
+        # Release Chroma's shared file handles so callers can clean up the
+        # directory on Windows without hitting PermissionError.
+        try:
+            from chromadb.api.client import SharedSystemClient
+            SharedSystemClient.clear_system_cache()
+        except Exception:
+            pass
 
-        manifest = persist_index_bundle(
-            bundle,
-            backend=self.backend_name,
-            target_dir=target,
-            vector_store_path=vector_store_dir,
-            collection_name=collection_name,
-            restore_requirements={"python_package": "chromadb"},
-            manifest_metadata={"storage_kind": "chroma-persistent"},
-        )
         return pathlib.Path(manifest.manifest_path)
 
     def query(self, bundle: IndexBundle, question: str, settings: dict[str, Any]) -> QueryResult:
@@ -361,7 +375,15 @@ class ChromaVectorStoreAdapter(VectorStoreAdapter):
             ranked.append(idx)
             scores[idx] = _normalized_distance_score(distances[pos] if pos < len(distances) else None)
         hits = select_hit_indices(bundle, question, ranked, settings)
-        return build_query_result(bundle, question, hits, scores, settings=settings)
+        result = build_query_result(bundle, question, hits, scores, settings=settings)
+        # Release Chroma's shared file handles so the caller can clean up the
+        # index directory on Windows without hitting PermissionError.
+        try:
+            from chromadb.api.client import SharedSystemClient
+            SharedSystemClient.clear_system_cache()
+        except Exception:
+            pass
+        return result
 
 
 class WeaviateVectorStoreAdapter(VectorStoreAdapter):
