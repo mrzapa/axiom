@@ -26,6 +26,9 @@ import { AlertCircle, CheckCircle2, HelpCircle, Info, Loader2, RotateCcw, Search
 import { cn } from "@/lib/utils";
 import { useArrowState } from "@/hooks/use-arrow-state";
 
+const FORECAST_MAX_CONTEXT_LIMIT = 16000;
+const FORECAST_MAX_HORIZON_LIMIT = 1000;
+
 const schema = z.object({
   // ── Core ──────────────────────────────────────────────────────────────────
   llm_provider: z.string().min(1),
@@ -117,8 +120,6 @@ const FORECAST_XREG_MODES = ["xreg + timesfm", "timesfm"];
 const FALLBACK_STRATEGIES = ["synthesize_anyway", "no_answer"];
 const KG_QUERY_MODES = ["hybrid", "vector", "keyword"];
 const COMPREHENSION_DEPTHS = ["Standard", "Deep", "Exhaustive"];
-const FORECAST_MAX_CONTEXT_LIMIT = 16000;
-const FORECAST_MAX_HORIZON_LIMIT = 1000;
 const UI_VARIANTS = [
   {
     value: "motion",
