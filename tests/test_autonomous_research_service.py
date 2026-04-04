@@ -243,3 +243,51 @@ def test_run_batch_threads_progress_cb_to_run():
         )
     )
     assert any(e["phase"] == "scanning" for e in collected)
+
+
+def test_compute_demand_scores_counts_user_indexes_per_faculty():
+    """Non-auto indexes with brain_pass.placement.faculty_id increment demand."""
+    svc = AutonomousResearchService(web_search=MagicMock())
+    indexes = [
+        {
+            "index_id": "user_doc_1",
+            "brain_pass": {"placement": {"faculty_id": "reasoning"}},
+        },
+        {
+            "index_id": "user_doc_2",
+            "brain_pass": {"placement": {"faculty_id": "reasoning"}},
+        },
+        {
+            "index_id": "user_doc_3",
+            "brain_pass": {"placement": {"faculty_id": "knowledge"}},
+        },
+        # auto_ indexes should not count toward demand
+        {
+            "index_id": "auto_reasoning_abc",
+            "brain_pass": {"placement": {"faculty_id": "reasoning"}},
+        },
+    ]
+    scores = svc.compute_demand_scores(indexes)
+    assert scores["reasoning"] == 2
+    assert scores["knowledge"] == 1
+    assert scores.get("perception", 0) == 0
+
+
+def test_compute_demand_scores_ignores_missing_placement():
+    """Indexes without brain_pass.placement.faculty_id are skipped."""
+    svc = AutonomousResearchService(web_search=MagicMock())
+    indexes = [
+        {"index_id": "user_doc_no_faculty", "brain_pass": {}},
+        {"index_id": "user_doc_no_brain_pass"},
+        {"index_id": "user_doc_valid", "brain_pass": {"placement": {"faculty_id": "memory"}}},
+    ]
+    scores = svc.compute_demand_scores(indexes)
+    assert scores.get("memory", 0) == 1
+    assert len([v for v in scores.values() if v > 0]) == 1
+
+
+def test_compute_demand_scores_returns_empty_for_no_user_indexes():
+    """Returns empty dict when no user-placed indexes exist."""
+    svc = AutonomousResearchService(web_search=MagicMock())
+    scores = svc.compute_demand_scores([])
+    assert scores == {}

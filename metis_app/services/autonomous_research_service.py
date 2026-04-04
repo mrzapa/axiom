@@ -201,6 +201,30 @@ class AutonomousResearchService:
         # All faculties are at or above the threshold
         return None
 
+    def compute_demand_scores(self, indexes: list[dict[str, Any]]) -> dict[str, int]:
+        """Count non-auto user indexes per faculty as a demand signal.
+
+        Each user-uploaded index whose brain_pass.placement.faculty_id names a
+        constellation faculty adds 1 demand point. Auto-generated indexes
+        (index_id starts with 'auto_') are excluded — they represent supply,
+        not demand.
+        """
+        scores: dict[str, int] = {}
+        for idx in indexes:
+            index_id = str(idx.get("index_id") or "")
+            if index_id.startswith("auto_"):
+                continue
+            brain_pass = idx.get("brain_pass") or {}
+            if not isinstance(brain_pass, dict):
+                continue
+            placement = brain_pass.get("placement") or {}
+            if not isinstance(placement, dict):
+                continue
+            faculty = str(placement.get("faculty_id") or "").strip()
+            if faculty:
+                scores[faculty] = scores.get(faculty, 0) + 1
+        return scores
+
     def formulate_query(self, faculty_id: str, faculty_desc: str, llm: Any) -> str:
         """Ask the LLM to generate a focused research query for the faculty."""
         from langchain_core.messages import HumanMessage
