@@ -64,6 +64,7 @@ class AutonomousResearchService:
         indexes: list[dict[str, Any]],
         orchestrator: Any,
         progress_cb: Callable[[ProgressEvent], None] | None = None,
+        target_faculty_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Full pipeline. Returns result dict or None if nothing to research.
 
@@ -79,13 +80,17 @@ class AutonomousResearchService:
                 except Exception:  # noqa: BLE001
                     pass
 
-        _emit("scanning", None, "Scanning constellation for faculty gaps…")
-        demand_scores = self.compute_demand_scores(indexes) or None  # {} → None so scan uses FACULTY_ORDER fallback
-        faculty_id = self.scan_faculty_gaps(indexes, demand_scores=demand_scores)
-        if faculty_id is None:
-            _log.debug("autonomous_research: no faculty gaps found, skipping")
-            _emit("skipped", None, "Constellation fully covered, skipping")
-            return None
+        if target_faculty_id is not None:
+            faculty_id = target_faculty_id
+            _emit("targeted", faculty_id, f"Targeting faculty '{faculty_id}' directly…")
+        else:
+            _emit("scanning", None, "Scanning constellation for faculty gaps…")
+            demand_scores = self.compute_demand_scores(indexes) or None  # {} → None so scan uses FACULTY_ORDER fallback
+            faculty_id = self.scan_faculty_gaps(indexes, demand_scores=demand_scores)
+            if faculty_id is None:
+                _log.debug("autonomous_research: no faculty gaps found, skipping")
+                _emit("skipped", None, "Constellation fully covered, skipping")
+                return None
 
         faculty_desc = FACULTY_DESCRIPTIONS.get(faculty_id, faculty_id)
 

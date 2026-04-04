@@ -245,6 +245,55 @@ def test_run_batch_threads_progress_cb_to_run():
     assert any(e["phase"] == "scanning" for e in collected)
 
 
+def test_run_with_target_faculty_id_skips_scan():
+    """run() with target_faculty_id bypasses scan_faculty_gaps and uses the supplied faculty."""
+    svc = AutonomousResearchService(web_search=MagicMock())
+
+    scan_called = []
+    original_scan = svc.scan_faculty_gaps
+    def capturing_scan(*args, **kwargs):
+        scan_called.append(True)
+        return original_scan(*args, **kwargs)
+    svc.scan_faculty_gaps = capturing_scan  # type: ignore[method-assign]
+
+    # All faculties fully covered → normally scan returns None and run() exits early.
+    # With target_faculty_id, run() should skip the scan entirely and proceed to query.
+    fully_covered = [
+        {"index_id": f"auto_{fac}_{i}", "document_count": 1}
+        for fac in ["perception", "knowledge", "memory", "reasoning", "skills",
+                    "strategy", "personality", "values", "synthesis", "autonomy", "emergence"]
+        for i in range(3)
+    ]
+
+    events: list[dict] = []
+    # run() will try to create LLM — patch it to bail at formulation
+    import sys, types
+    fake_lp = types.ModuleType("metis_app.utils.llm_providers")
+    fake_lp.create_llm = lambda s: MagicMock(invoke=MagicMock(return_value=MagicMock(content="")))
+    original = sys.modules.get("metis_app.utils.llm_providers")
+    sys.modules["metis_app.utils.llm_providers"] = fake_lp
+    try:
+        svc.run(
+            settings={},
+            indexes=fully_covered,
+            orchestrator=MagicMock(),
+            target_faculty_id="reasoning",
+            progress_cb=events.append,
+        )
+    finally:
+        if original is None:
+            sys.modules.pop("metis_app.utils.llm_providers", None)
+        else:
+            sys.modules["metis_app.utils.llm_providers"] = original
+
+    # Scan was NOT called
+    assert not scan_called, "scan_faculty_gaps should be skipped when target_faculty_id is set"
+    # The formulating event should mention "reasoning"
+    formulating = [e for e in events if e["phase"] == "formulating"]
+    assert formulating, "Expected a formulating event"
+    assert formulating[0]["faculty_id"] == "reasoning"
+
+
 def test_compute_demand_scores_counts_user_indexes_per_faculty():
     """Non-auto indexes with brain_pass.placement.faculty_id increment demand."""
     svc = AutonomousResearchService(web_search=MagicMock())
