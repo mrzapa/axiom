@@ -2612,6 +2612,28 @@ export default function Home() {
       const renderedLinks = new Set<string>();
       currentUserStars.forEach((star) => {
         const from = projectedUserStarRenderState.get(star.id);
+
+        // --- Faculty connection line (drawn even for stars with no inter-star edges) ---
+        if (from && star.primaryDomainId) {
+          const facultyNode = nodes.find((n) => n.concept.faculty.id === star.primaryDomainId);
+          if (facultyNode) {
+            const [fr, fg, fb] = getFacultyColor(star.primaryDomainId);
+            const alpha = 0.22 * Math.min(1, from.fadeIn);
+            const grad = ctx!.createLinearGradient(from.target.x, from.target.y, facultyNode.x, facultyNode.y);
+            grad.addColorStop(0, `rgba(${fr},${fg},${fb},${alpha})`);
+            grad.addColorStop(1, `rgba(${fr},${fg},${fb},${alpha * 0.4})`);
+            ctx!.strokeStyle = grad;
+            ctx!.lineWidth = 0.7;
+            ctx!.setLineDash([4, 6]);
+            ctx!.beginPath();
+            ctx!.moveTo(from.target.x, from.target.y);
+            ctx!.lineTo(facultyNode.x, facultyNode.y);
+            ctx!.stroke();
+            ctx!.setLineDash([]);
+          }
+        }
+
+        // --- Inter-star edges (existing logic, unchanged) ---
         if (!from || !star.connectedUserStarIds || star.connectedUserStarIds.length === 0) {
           return;
         }
