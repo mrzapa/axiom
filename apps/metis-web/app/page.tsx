@@ -3295,7 +3295,12 @@ export default function Home() {
       if (diveFocusStrength > 0 && !starDivePanSuppressedRef.current) {
         // Acquire or maintain focus target
         if (!starDiveFocusedStarIdRef.current) {
-          const target = findStarDiveFocusTarget(visibleStarsRef.current, W, H);
+          const userStarTargets = userStarsRef.current.flatMap((star) => {
+            const proj = projectedUserStarRenderState.get(star.id);
+            if (!proj) return [];
+            return [{ id: star.id, screenX: proj.target.x, screenY: proj.target.y, brightness: star.size ?? 1 }];
+          });
+          const target = findStarDiveFocusTarget(userStarTargets, W, H);
           if (target) {
             const scale = getBackgroundCameraScale(backgroundCamera.zoomFactor);
             starDiveFocusedStarIdRef.current = target.id;
