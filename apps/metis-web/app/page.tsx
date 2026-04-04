@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { LandingStarfieldFrame, LandingWebglStar } from "@/components/home/landing-starfield-webgl.types";
+import type { StarDiveOverlayView } from "@/components/home/star-dive-overlay";
 
 const LandingStarfieldWebgl = dynamic(
   () =>
@@ -13,10 +14,10 @@ const LandingStarfieldWebgl = dynamic(
     ),
   { ssr: false, loading: () => null },
 );
-const StarCloseupWebgl = dynamic(
+const StarDiveOverlay = dynamic(
   () =>
-    import("@/components/home/star-closeup-webgl").then(
-      (m) => ({ default: m.StarCloseupWebgl }),
+    import("@/components/home/star-dive-overlay").then(
+      (m) => ({ default: m.StarDiveOverlay }),
     ),
   { ssr: false, loading: () => null },
 );
@@ -894,6 +895,7 @@ export default function Home() {
   const starDiveFocusStrengthRef = useRef(0);
   const starDiveFocusWorldPosRef = useRef<Point | null>(null);
   const starDiveFocusProfileRef = useRef<StellarProfile | null>(null);
+  const starDiveOverlayViewRef = useRef<StarDiveOverlayView | null>(null);
   const starDivePanSuppressedRef = useRef(false);
   const starTooltipHideTimeoutRef = useRef<number | null>(null);
   const toastDismissTimeoutRef = useRef<number | null>(null);
@@ -3326,6 +3328,24 @@ export default function Home() {
         starDivePanSuppressedRef.current = false;
       }
 
+      // Project focused star world position to screen coords for StarDiveOverlay
+      if (
+        diveFocusStrength > 0
+        && starDiveFocusWorldPosRef.current
+        && starDiveFocusProfileRef.current
+      ) {
+        const wp = starDiveFocusWorldPosRef.current;
+        const scale = getBackgroundCameraScale(backgroundCamera.zoomFactor);
+        starDiveOverlayViewRef.current = {
+          screenX: (wp.x - backgroundCamera.x) * scale + W / 2,
+          screenY: (wp.y - backgroundCamera.y) * scale + H / 2,
+          focusStrength: diveFocusStrength,
+          profile: starDiveFocusProfileRef.current,
+        };
+      } else {
+        starDiveOverlayViewRef.current = null;
+      }
+
       // Update reactive state (throttled — only when integer percentage changes)
       const roundedStrength = Math.round(diveFocusStrength * 100) / 100;
       if (Math.abs(roundedStrength - starDiveFocusStrength) > 0.009) {
@@ -4037,7 +4057,7 @@ export default function Home() {
         zoomFactor: backgroundZoomTargetRef.current,
       };
       const worldBeforeZoom = screenToWorldPoint(pointer, bounds.width, bounds.height, currentCamera);
-      const zoomMultiplier = Math.exp(e.deltaY * 0.0014);
+      const zoomMultiplier = Math.exp(-e.deltaY * 0.0014);
       const nextZoomFactor = clampBackgroundZoomFactor(currentCamera.zoomFactor * zoomMultiplier);
 
       if (Math.abs(nextZoomFactor - currentCamera.zoomFactor) < 0.0005) {
@@ -4149,10 +4169,8 @@ export default function Home() {
         frameRef={landingStarfieldFrameRef}
       />
 
-      <StarCloseupWebgl
-        className="metis-star-closeup-webgl"
-        focusStrength={starDiveFocusStrength}
-        profile={starDiveFocusProfileRef.current}
+      <StarDiveOverlay
+        viewRef={starDiveOverlayViewRef}
         reducedMotion={prefersReducedMotion()}
       />
 
