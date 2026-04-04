@@ -78,6 +78,7 @@ export function StarDiveOverlay({
 
       if (!view || view.focusStrength < 0.01) {
         canvas!.style.opacity = "0";
+        startTime = null;
         return;
       }
 
@@ -88,6 +89,8 @@ export function StarDiveOverlay({
       const radius = view.focusStrength * 0.30 * window.innerHeight;
       const diameter = Math.round(radius * 2);
       const physSize = Math.round(diameter * DPR);
+
+      if (physSize < 1) return;
 
       if (canvas!.width !== physSize || canvas!.height !== physSize) {
         canvas!.width  = physSize;
