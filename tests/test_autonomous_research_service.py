@@ -442,3 +442,66 @@ def test_run_scanning_event_fires_with_nonempty_detail():
     # The detail should mention demand signals when present
     detail = scanning_events[0]["detail"]
     assert isinstance(detail, str) and len(detail) > 0
+
+
+def test_run_batch_passes_target_faculty_id_to_each_run():
+    """run_batch must pass the correct target_faculty_id to each run() call."""
+    import asyncio as _asyncio
+    svc = AutonomousResearchService(web_search=MagicMock())
+
+    received_faculty_ids: list[str] = []
+
+    def capturing_run(**kwargs):
+        fid = kwargs.get("target_faculty_id")
+        if fid:
+            received_faculty_ids.append(fid)
+        return {"faculty_id": fid, "index_id": f"auto_{fid}_x"}
+
+    svc.run = capturing_run  # type: ignore[method-assign]
+
+    _asyncio.run(
+        svc.run_batch(
+            faculty_ids=["reasoning", "memory", "emergence"],
+            settings={},
+            orchestrator=MagicMock(),
+            concurrency=3,
+            request_delay_ms=0,
+        )
+    )
+
+    assert sorted(received_faculty_ids) == ["emergence", "memory", "reasoning"]
+
+
+def test_run_batch_respects_semaphore_concurrency():
+    """run_batch serialises tasks correctly under concurrency=1."""
+    import asyncio as _asyncio
+    import threading
+
+    svc = AutonomousResearchService(web_search=MagicMock())
+    concurrent_count = [0]
+    max_concurrent = [0]
+    lock = threading.Lock()
+
+    def slow_run(**kwargs):
+        import time
+        with lock:
+            concurrent_count[0] += 1
+            max_concurrent[0] = max(max_concurrent[0], concurrent_count[0])
+        time.sleep(0.02)
+        with lock:
+            concurrent_count[0] -= 1
+        return {"faculty_id": kwargs.get("target_faculty_id"), "index_id": "x"}
+
+    svc.run = slow_run  # type: ignore[method-assign]
+
+    _asyncio.run(
+        svc.run_batch(
+            faculty_ids=["perception", "knowledge", "memory"],
+            settings={},
+            orchestrator=MagicMock(),
+            concurrency=1,
+            request_delay_ms=0,
+        )
+    )
+
+    assert max_concurrent[0] == 1, f"Expected max 1 concurrent, got {max_concurrent[0]}"
