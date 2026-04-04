@@ -31,6 +31,7 @@ const vertexShader = /* glsl */ `
 const fragmentShader = /* glsl */ `
   precision highp float;
 
+  uniform float uAspect;
   uniform float uTime;
   uniform float uFocusStrength;
   uniform float uTemperature;
@@ -97,9 +98,11 @@ const fragmentShader = /* glsl */ `
 
   void main() {
     vec2 uv = vUv * 2.0 - 1.0;   // -1..1 centred
-    float aspect = 1.0;            // fullscreen quad is square in UV
 
-    float dist = length(uv);
+    // Correct for non-square canvas so the star disk is a proper screen-space circle.
+    // Without this, the disk is computed in UV space where x and y have equal weight
+    // but x spans more pixels on a landscape screen, producing a wide oval (potato).
+    float dist = length(vec2(uv.x * uAspect, uv.y));
     float diskRadius = 0.38 * uFocusStrength;
 
     /* ---- Corona (outer glow, always visible once focus starts) ---- */
@@ -111,7 +114,7 @@ const fragmentShader = /* glsl */ `
     vec3 coronaColor = uHaloColor * corona * 0.6;
 
     /* ---- Prominences (noise arcs from the limb) ---- */
-    float angle = atan(uv.y, uv.x);
+    float angle = atan(uv.y, uv.x * uAspect);
     float prominenceNoise = snoise(vec2(angle * 1.5 + uSeed, uTime * 0.12)) * 0.5 + 0.5;
     float prominenceArch = smoothstep(diskRadius, diskRadius + 0.12 * uFocusStrength, dist)
                          * smoothstep(diskRadius + 0.25 * uFocusStrength, diskRadius + 0.06 * uFocusStrength, dist);
@@ -221,6 +224,7 @@ export function StarCloseupWebgl({
       transparent: true,
       depthWrite: false,
       uniforms: {
+        uAspect: { value: 1 },
         uTime: { value: 0 },
         uFocusStrength: { value: 0 },
         uTemperature: { value: 5778 },
@@ -235,6 +239,7 @@ export function StarCloseupWebgl({
       },
     });
     materialRef.current = material;
+    material.uniforms.uAspect.value = container.clientWidth / Math.max(1, container.clientHeight);
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
@@ -255,6 +260,9 @@ export function StarCloseupWebgl({
       const w = container.clientWidth;
       const h = container.clientHeight;
       renderer.setSize(w, h);
+      if (materialRef.current) {
+        materialRef.current.uniforms.uAspect.value = w / Math.max(1, h);
+      }
     }
     window.addEventListener("resize", onResize);
 
@@ -302,7 +310,7 @@ export function StarCloseupWebgl({
       ref={containerRef}
       className={className}
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         pointerEvents: "none",
         opacity: visible ? 1 : 0,
