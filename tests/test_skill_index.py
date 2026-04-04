@@ -59,3 +59,30 @@ def test_skill_summary_format_line():
     assert "demo" in line
     assert "Demo" in line
     assert "Does demo." in line
+
+
+# ---------------------------------------------------------------------------
+# Task 2: system prompt includes skill discovery index
+# ---------------------------------------------------------------------------
+
+from metis_app.services.runtime_resolution import resolve_runtime_settings
+
+
+def test_system_prompt_includes_skill_index(tmp_path):
+    _make_skill(tmp_path, "demo", _SKILL_FM)
+    repo = SkillRepository(skills_dir=tmp_path)
+    enabled = repo.list_valid_skills()
+
+    result = resolve_runtime_settings(
+        {"llm_provider": "mock", "selected_mode": "Q&A"},
+        enabled_skills=enabled,
+        session_skill_state=None,
+        query="what is the weather today",  # does not match skill keywords
+        file_types=[],
+    )
+    prompt = result.system_prompt
+    assert "Available skills:" in prompt
+    assert "demo" in prompt
+    assert "A skill for testing" in prompt
+    # Full body should NOT appear since skill was not triggered/selected
+    assert "Do the demo thing." not in prompt
