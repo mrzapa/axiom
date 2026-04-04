@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AmbientBackdrop } from "@/components/shell/ambient-backdrop";
 import { MetisCompanionDock } from "@/components/shell/metis-companion-dock";
+import { WebGPUCompanionProvider } from "@/lib/webgpu-companion/webgpu-companion-context";
 import { OnboardingStep } from "@/components/shell/onboarding-step";
 import { StatusPill } from "@/components/shell/status-pill";
 import { IndexBuildStudio } from "@/components/library/index-build-studio";
@@ -459,6 +460,7 @@ export default function SetupPage() {
   ];
 
   return (
+    <WebGPUCompanionProvider>
     <div className="relative min-h-screen overflow-hidden">
       <AmbientBackdrop />
 
@@ -597,6 +599,7 @@ export default function SetupPage() {
 
       <MetisCompanionDock className="bottom-24 md:bottom-4" />
     </div>
+    </WebGPUCompanionProvider>
   );
 }
 

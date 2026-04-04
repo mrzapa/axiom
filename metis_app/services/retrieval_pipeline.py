@@ -282,6 +282,7 @@ def execute_retrieval_plan(
             )
 
     effective_queries = [question]
+
     stages: list[RetrievalStage] = [
         RetrievalStage(
             stage_type="retrieval_complete",
