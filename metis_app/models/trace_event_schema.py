@@ -80,6 +80,11 @@ class EventType(Enum):
     ITERATION_START = "iteration_start"
     ITERATION_END = "iteration_end"
 
+    # SEMANTIC OBSERVABILITY events: behavior discovery artifacts
+    GAP_IDENTIFIED = "gap_identified"
+    STRATEGY_FINGERPRINT = "strategy_fingerprint"
+    BEHAVIOR_CLUSTER = "behavior_cluster"
+
     def __str__(self) -> str:
         return self.value
 
@@ -146,6 +151,28 @@ class IterationEventContext(TypedDict, total=False):
     refined_queries: list[str]  # Sub-queries generated
 
 
+class GapEventContext(TypedDict, total=False):
+    """Context dict for GAP_IDENTIFIED events."""
+
+    gap_queries: list[str]  # Targeted retrieval queries for each gap
+    iteration: int
+    strategy_fingerprint: str  # Tactic used: gap_fill, sub_query_expansion, direct_synthesis, fallback
+    prior_source_count: int  # Sources accumulated before this iteration
+    new_source_count: int  # New sources retrieved for these gaps
+    retrieval_delta: int  # new_source_count - prior_source_count
+
+
+class StrategyContext(TypedDict, total=False):
+    """Context dict for STRATEGY_FINGERPRINT events (iteration_complete)."""
+
+    strategy_fingerprint: str
+    iterations_used: int
+    convergence_score: float
+    citation_count: int
+    citation_diversity_score: float  # Fraction of unique citations across all iterations
+    gap_count_total: int  # Sum of gaps identified over all iterations
+
+
 # CATEGORY_MAP: Maps EventType to its category string
 _CATEGORY_MAP: dict[str, str] = {
     EventType.STAGE_START.value: "STAGE",
@@ -161,6 +188,9 @@ _CATEGORY_MAP: dict[str, str] = {
     EventType.CONTENT_REVISED.value: "CONTENT",
     EventType.ITERATION_START.value: "ITERATION",
     EventType.ITERATION_END.value: "ITERATION",
+    EventType.GAP_IDENTIFIED.value: "SEMANTIC",
+    EventType.STRATEGY_FINGERPRINT.value: "SEMANTIC",
+    EventType.BEHAVIOR_CLUSTER.value: "SEMANTIC",
 }
 
 # LIFECYCLE_MAP: Maps EventType to its lifecycle phase
@@ -178,6 +208,9 @@ _LIFECYCLE_MAP: dict[str, str] = {
     EventType.CONTENT_REVISED.value: "atomic",
     EventType.ITERATION_START.value: "start",
     EventType.ITERATION_END.value: "end",
+    EventType.GAP_IDENTIFIED.value: "atomic",
+    EventType.STRATEGY_FINGERPRINT.value: "end",
+    EventType.BEHAVIOR_CLUSTER.value: "atomic",
 }
 
 

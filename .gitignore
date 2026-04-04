@@ -72,3 +72,9 @@ langextract_grounding_*.html
 *.pth
 *.bin
 *.safetensors
+.venv311-forecast/
+.venv311-forecast/
+.venv311-forecast/
+.venv/
+venv/
+__pycache__/

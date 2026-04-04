@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,12 +30,26 @@ const schema = z.object({
   // ── Core ──────────────────────────────────────────────────────────────────
   llm_provider: z.string().min(1),
   llm_model: z.string().min(1),
-  chat_path: z.enum(["RAG", "Direct"]),
+  chat_path: z.enum(["RAG", "Direct", "Forecast"]),
   selected_mode: z.string().min(1),
   output_style: z.string().min(1),
   chat_history_max_turns: z.number().int().min(1, "Min 1").max(50, "Max 50"),
   show_retrieved_context: z.boolean(),
   verbose_mode: z.boolean(),
+  forecast_model_id: z.string().min(1),
+  forecast_max_context: z
+    .number()
+    .int()
+    .min(1, "Min 1")
+    .max(FORECAST_MAX_CONTEXT_LIMIT, `Max ${FORECAST_MAX_CONTEXT_LIMIT}`),
+  forecast_max_horizon: z
+    .number()
+    .int()
+    .min(1, "Min 1")
+    .max(FORECAST_MAX_HORIZON_LIMIT, `Max ${FORECAST_MAX_HORIZON_LIMIT}`),
+  forecast_use_quantiles: z.boolean(),
+  forecast_xreg_mode: z.string().min(1),
+  forecast_force_xreg_cpu: z.boolean(),
   // ── Advanced Retrieval ────────────────────────────────────────────────────
   chunk_size: z.number().int().min(100, "Min 100").max(10000, "Max 10000"),
   chunk_overlap: z.number().int().min(0, "Min 0").max(500, "Max 500"),
@@ -65,8 +79,11 @@ const schema = z.object({
   deepread_mode: z.boolean(),
   build_digest_index: z.boolean(),
   build_comprehension_index: z.boolean(),
+  build_llm_knowledge_graph: z.boolean(),
   comprehension_extraction_depth: z.string().min(1),
   prefer_comprehension_index: z.boolean(),
+  swarm_n_personas: z.number().int().min(1, "Min 1").max(32, "Max 32"),
+  swarm_n_rounds: z.number().int().min(1, "Min 1").max(16, "Max 16"),
   // ── Advanced Graph ────────────────────────────────────────────────────────
   kg_query_mode: z.string().min(1),
   enable_langextract: z.boolean(),
@@ -95,9 +112,13 @@ const RETRIEVAL_MODES = ["flat", "mmr", "hybrid", "hierarchical"];
 const SEARCH_TYPES = ["similarity", "mmr"];
 const OUTPUT_STYLES = ["Default answer", "Concise", "Detailed", "Bullet points"];
 const SKILL_MODES = ["Q&A", "Summary", "Tutor", "Research", "Evidence Pack", "Knowledge Search"];
+const FORECAST_SELECTED_MODE = "Forecast";
+const FORECAST_XREG_MODES = ["xreg + timesfm", "timesfm"];
 const FALLBACK_STRATEGIES = ["synthesize_anyway", "no_answer"];
 const KG_QUERY_MODES = ["hybrid", "vector", "keyword"];
 const COMPREHENSION_DEPTHS = ["Standard", "Deep", "Exhaustive"];
+const FORECAST_MAX_CONTEXT_LIMIT = 16000;
+const FORECAST_MAX_HORIZON_LIMIT = 1000;
 const UI_VARIANTS = [
   {
     value: "motion",
@@ -177,6 +198,12 @@ const FORM_DEFAULT_VALUES: FormValues = {
   chat_history_max_turns: 6,
   show_retrieved_context: false,
   verbose_mode: false,
+  forecast_model_id: "google/timesfm-2.5-200m-pytorch",
+  forecast_max_context: FORECAST_MAX_CONTEXT_LIMIT,
+  forecast_max_horizon: FORECAST_MAX_HORIZON_LIMIT,
+  forecast_use_quantiles: true,
+  forecast_xreg_mode: "xreg + timesfm",
+  forecast_force_xreg_cpu: true,
   chunk_size: 1000,
   chunk_overlap: 100,
   parent_chunk_size: 2800,
@@ -206,8 +233,11 @@ const FORM_DEFAULT_VALUES: FormValues = {
   deepread_mode: false,
   build_digest_index: true,
   build_comprehension_index: false,
+  build_llm_knowledge_graph: false,
   comprehension_extraction_depth: "Standard",
   prefer_comprehension_index: true,
+  swarm_n_personas: 8,
+  swarm_n_rounds: 4,
   kg_query_mode: "hybrid",
   enable_langextract: false,
   enable_structured_extraction: false,
@@ -236,6 +266,12 @@ const SEARCH_INDEX = [
   { tab: "core", label: "History turns", description: "Number of past conversation turns included in each new request." },
   { tab: "core", label: "Show retrieved context", description: "Display the retrieved document chunks alongside answers in chat." },
   { tab: "core", label: "Verbose mode", description: "Log additional diagnostic information to the server console." },
+  { tab: "core", label: "Forecast model ID", description: "TimesFM checkpoint to use for Forecast chat mode." },
+  { tab: "core", label: "Forecast max context", description: "Maximum historical points passed into each TimesFM forecast run." },
+  { tab: "core", label: "Forecast max horizon", description: "Upper bound for forecast steps in Forecast mode." },
+  { tab: "core", label: "Forecast quantiles", description: "Include uncertainty bands like p10 and p90 in forecast artifacts." },
+  { tab: "core", label: "Forecast XReg mode", description: "Covariate execution mode used when dynamic or static regressors are mapped." },
+  { tab: "core", label: "Forecast force CPU", description: "Force XReg covariate runs onto CPU for stability, especially on Windows." },
   // ── Retrieval ──
   { tab: "retrieval", label: "Chunk size", description: "Token size of each ingested document chunk." },
   { tab: "retrieval", label: "Chunk overlap", description: "Overlap between consecutive chunks to avoid cutting context mid-sentence." },
@@ -265,11 +301,14 @@ const SEARCH_INDEX = [
   { tab: "retrieval", label: "Build comprehension index", description: "Build a deep comprehension index for richer retrieval (slower to build)." },
   { tab: "retrieval", label: "Comprehension depth", description: "How deeply to analyse documents when building the comprehension index." },
   { tab: "retrieval", label: "Prefer comprehension index", description: "Use the comprehension index when both indexes are available." },
+  { tab: "retrieval", label: "Swarm personas", description: "Number of AI personas used in swarm simulation queries." },
+  { tab: "retrieval", label: "Swarm rounds", description: "Number of debate rounds in swarm simulation before synthesising the final answer." },
   // ── Graph ──
   { tab: "graph", label: "Knowledge graph query mode", description: "hybrid combines vector + keyword; vector uses embeddings only; keyword uses BM25 only." },
   { tab: "graph", label: "Language extraction", description: "Enable language-aware extraction pipeline for multi-lingual documents." },
   { tab: "graph", label: "Structured extraction", description: "Extract structured data (tables, entities) from documents during ingestion." },
   { tab: "graph", label: "Recursive retrieval", description: "Recursively follow graph edges to retrieve additional related context." },
+  { tab: "graph", label: "LLM knowledge graph enrichment", description: "Use the LLM to extract entities and relations during indexing for a richer knowledge graph." },
   // ── Memory ──
   { tab: "memory", label: "Citation v2", description: "Use the improved citation pipeline with claim-level source mapping." },
   { tab: "memory", label: "Claim-level grounding", description: "Post-process answers to verify and fix citation anchors at the claim level." },
@@ -388,6 +427,12 @@ export default function SettingsPage() {
       chat_history_max_turns: 6,
       show_retrieved_context: false,
       verbose_mode: false,
+      forecast_model_id: "google/timesfm-2.5-200m-pytorch",
+      forecast_max_context: FORECAST_MAX_CONTEXT_LIMIT,
+      forecast_max_horizon: FORECAST_MAX_HORIZON_LIMIT,
+      forecast_use_quantiles: true,
+      forecast_xreg_mode: "xreg + timesfm",
+      forecast_force_xreg_cpu: true,
       // Advanced Retrieval
       chunk_size: 1000,
       chunk_overlap: 100,
@@ -416,8 +461,11 @@ export default function SettingsPage() {
       deepread_mode: false,
       build_digest_index: true,
       build_comprehension_index: false,
+      build_llm_knowledge_graph: false,
       comprehension_extraction_depth: "Standard",
       prefer_comprehension_index: true,
+      swarm_n_personas: 8,
+      swarm_n_rounds: 4,
       // Advanced Graph
       kg_query_mode: "hybrid",
       enable_langextract: false,
@@ -439,6 +487,16 @@ export default function SettingsPage() {
     },
   });
 
+  const applyUiVariant = useCallback((nextVariant: UiVariant) => {
+    setUiVariant(nextVariant);
+    document.documentElement.dataset.uiVariant = nextVariant;
+    try {
+      window.localStorage.setItem("metis-ui-variant", nextVariant);
+    } catch {
+      // Ignore storage failures and keep the in-memory selection.
+    }
+  }, [setUiVariant]);
+
   useEffect(() => {
     if (typeof document === "undefined") return;
     const current = document.documentElement.dataset.uiVariant;
@@ -447,17 +505,7 @@ export default function SettingsPage() {
       return;
     }
     applyUiVariant("motion");
-  }, [setUiVariant]);
-
-  function applyUiVariant(nextVariant: UiVariant) {
-    setUiVariant(nextVariant);
-    document.documentElement.dataset.uiVariant = nextVariant;
-    try {
-      window.localStorage.setItem("metis-ui-variant", nextVariant);
-    } catch {
-      // Ignore storage failures and keep the in-memory selection.
-    }
-  }
+  }, [applyUiVariant, setUiVariant]);
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = form;
   const assistantForm = useForm<AssistantFormValues>({
@@ -474,16 +522,28 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchSettings()
       .then((raw) => {
+        const rawChatPath = String(raw.chat_path ?? "");
         reset({
           // Core
           llm_provider: (raw.llm_provider as string) ?? "anthropic",
           llm_model: (raw.llm_model as string) ?? "claude-opus-4-6",
-          chat_path: ((raw.chat_path as string) === "Direct" ? "Direct" : "RAG"),
+          chat_path:
+            rawChatPath === "Direct"
+              ? "Direct"
+              : rawChatPath === "Forecast"
+                ? "Forecast"
+                : "RAG",
           selected_mode: (raw.selected_mode as string) ?? "Q&A",
           output_style: (raw.output_style as string) ?? "Default answer",
           chat_history_max_turns: (raw.chat_history_max_turns as number) ?? 6,
           show_retrieved_context: (raw.show_retrieved_context as boolean) ?? false,
           verbose_mode: (raw.verbose_mode as boolean) ?? false,
+          forecast_model_id: (raw.forecast_model_id as string) ?? "google/timesfm-2.5-200m-pytorch",
+          forecast_max_context: (raw.forecast_max_context as number) ?? FORECAST_MAX_CONTEXT_LIMIT,
+          forecast_max_horizon: (raw.forecast_max_horizon as number) ?? FORECAST_MAX_HORIZON_LIMIT,
+          forecast_use_quantiles: (raw.forecast_use_quantiles as boolean) ?? true,
+          forecast_xreg_mode: (raw.forecast_xreg_mode as string) ?? "xreg + timesfm",
+          forecast_force_xreg_cpu: (raw.forecast_force_xreg_cpu as boolean) ?? true,
           // Advanced Retrieval
           chunk_size: (raw.chunk_size as number) ?? 1000,
           chunk_overlap: (raw.chunk_overlap as number) ?? 100,
@@ -513,8 +573,11 @@ export default function SettingsPage() {
           deepread_mode: (raw.deepread_mode as boolean) ?? false,
           build_digest_index: (raw.build_digest_index as boolean) ?? true,
           build_comprehension_index: (raw.build_comprehension_index as boolean) ?? false,
+          build_llm_knowledge_graph: (raw.build_llm_knowledge_graph as boolean) ?? false,
           comprehension_extraction_depth: (raw.comprehension_extraction_depth as string) ?? "Standard",
           prefer_comprehension_index: (raw.prefer_comprehension_index as boolean) ?? true,
+          swarm_n_personas: (raw.swarm_n_personas as number) ?? 8,
+          swarm_n_rounds: (raw.swarm_n_rounds as number) ?? 4,
           // Advanced Graph
           kg_query_mode: (raw.kg_query_mode as string) ?? "hybrid",
           enable_langextract: (raw.enable_langextract as boolean) ?? false,
@@ -581,6 +644,18 @@ export default function SettingsPage() {
   const mmrLambda = watch("mmr_lambda");
   const hybridAlpha = watch("hybrid_alpha");
   const llmTemp = watch("llm_temperature");
+  const chatPath = watch("chat_path");
+  const selectedMode = watch("selected_mode");
+
+  useEffect(() => {
+    if (chatPath === "Forecast" && selectedMode !== FORECAST_SELECTED_MODE) {
+      setValue("selected_mode", FORECAST_SELECTED_MODE);
+      return;
+    }
+    if (chatPath !== "Forecast" && selectedMode === FORECAST_SELECTED_MODE) {
+      setValue("selected_mode", "Q&A");
+    }
+  }, [chatPath, selectedMode, setValue]);
 
   const searchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -784,9 +859,9 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <FieldLabel htmlFor="chat_path_rag" tooltip="RAG grounds answers in your documents via retrieval. Direct sends prompts straight to the LLM without any context.">Query path</FieldLabel>
+                    <FieldLabel htmlFor="chat_path_rag" tooltip="RAG grounds answers in your documents via retrieval. Direct sends prompts straight to the LLM without any context. Forecast turns the same chat workspace into a structured TimesFM forecasting surface for uploaded CSV or TSV time series.">Query path</FieldLabel>
                     <div className="flex gap-4">
-                      {(["RAG", "Direct"] as const).map((path) => (
+                      {(["RAG", "Direct", "Forecast"] as const).map((path) => (
                         <label key={path} htmlFor={`chat_path_${path}`} className="flex cursor-pointer items-center gap-2 text-sm">
                           <input
                             id={`chat_path_${path}`}
@@ -795,31 +870,115 @@ export default function SettingsPage() {
                             {...register("chat_path")}
                             className="accent-primary"
                           />
-                          {path === "RAG" ? "RAG (document-grounded)" : "Direct (LLM only)"}
+                          {path === "RAG"
+                            ? "RAG (document-grounded)"
+                            : path === "Forecast"
+                              ? "Forecast (time series)"
+                              : "Direct (LLM only)"}
                         </label>
                       ))}
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <FieldLabel htmlFor="selected_mode" tooltip="Q&A gives direct cited answers. Research adds sub-query expansion and graph traversal. Tutor uses Socratic back-and-forth. Evidence Pack grounds each claim.">Skill mode</FieldLabel>
-                    <div className="flex flex-wrap gap-3">
-                      {SKILL_MODES.map((mode) => (
-                        <label key={mode} htmlFor={`mode_${mode}`} className="flex cursor-pointer items-center gap-2 text-sm">
-                          <input
-                            id={`mode_${mode}`}
-                            type="radio"
-                            value={mode}
-                            {...register("selected_mode")}
-                            className="accent-primary"
-                          />
-                          {mode}
-                        </label>
-                      ))}
+                    <FieldLabel htmlFor="selected_mode" tooltip="Q&A gives direct cited answers. Research adds sub-query expansion and graph traversal. Tutor uses Socratic back-and-forth. Evidence Pack grounds each claim. Forecast mode uses a dedicated structured path instead of these RAG-only skills.">Skill mode</FieldLabel>
+                    {chatPath === "Forecast" ? (
+                      <div className="rounded-xl border border-sky-500/20 bg-sky-500/8 px-4 py-3 text-sm text-sky-200/90">
+                        Forecast mode uses the dedicated <code className="rounded bg-sky-500/15 px-1">selected_mode</code> value <strong>{FORECAST_SELECTED_MODE}</strong> and bypasses the RAG skill selector.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap gap-3">
+                          {SKILL_MODES.map((mode) => (
+                            <label key={mode} htmlFor={`mode_${mode}`} className="flex cursor-pointer items-center gap-2 text-sm">
+                              <input
+                                id={`mode_${mode}`}
+                                type="radio"
+                                value={mode}
+                                {...register("selected_mode")}
+                                className="accent-primary"
+                              />
+                              {mode}
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Controls how the assistant approaches your questions.
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="space-y-4 rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-4">
+                    <div>
+                      <h3 className="text-sm font-semibold">Forecast defaults</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        TimesFM settings used when the chat path is set to Forecast.
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Controls how the assistant approaches your questions.
-                    </p>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <FieldLabel htmlFor="forecast_model_id" tooltip="TimesFM checkpoint identifier used for Forecast mode runs.">Forecast model ID</FieldLabel>
+                        <Input id="forecast_model_id" type="text" {...register("forecast_model_id")} />
+                        <FieldError message={errors.forecast_model_id?.message} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <FieldLabel htmlFor="forecast_xreg_mode" tooltip="Covariate execution mode to send into TimesFM when regressors are mapped.">Forecast XReg mode</FieldLabel>
+                        <select
+                          id="forecast_xreg_mode"
+                          {...register("forecast_xreg_mode")}
+                          className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring"
+                        >
+                          {FORECAST_XREG_MODES.map((mode) => (
+                            <option key={mode} value={mode}>{mode}</option>
+                          ))}
+                        </select>
+                        <FieldError message={errors.forecast_xreg_mode?.message} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <FieldLabel htmlFor="forecast_max_context" tooltip="Maximum number of historical points to pass into the TimesFM context window. TimesFM 2.5 supports substantially larger windows than the old 1k default, so METIS now defaults to the full 16k context budget.">Forecast max context</FieldLabel>
+                        <Input
+                          id="forecast_max_context"
+                          type="number"
+                          min={1}
+                          max={FORECAST_MAX_CONTEXT_LIMIT}
+                          {...register("forecast_max_context", { valueAsNumber: true })}
+                        />
+                        <FieldError message={errors.forecast_max_context?.message} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <FieldLabel htmlFor="forecast_max_horizon" tooltip="Upper limit for horizon steps in Forecast mode. METIS now defaults to a 1k-step ceiling instead of the smaller 256-step cap.">Forecast max horizon</FieldLabel>
+                        <Input
+                          id="forecast_max_horizon"
+                          type="number"
+                          min={1}
+                          max={FORECAST_MAX_HORIZON_LIMIT}
+                          {...register("forecast_max_horizon", { valueAsNumber: true })}
+                        />
+                        <FieldError message={errors.forecast_max_horizon?.message} />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <ToggleRow
+                        id="forecast_use_quantiles"
+                        label="Forecast quantiles"
+                        description="Include uncertainty bands like p10 and p90 in forecast artifacts."
+                        checked={watch("forecast_use_quantiles")}
+                        onChange={(value) => setValue("forecast_use_quantiles", value)}
+                      />
+                      <ToggleRow
+                        id="forecast_force_xreg_cpu"
+                        label="Force XReg on CPU"
+                        description="Keep covariate-backed forecast runs on CPU for stability, especially on Windows."
+                        checked={watch("forecast_force_xreg_cpu")}
+                        onChange={(value) => setValue("forecast_force_xreg_cpu", value)}
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -1126,6 +1285,28 @@ export default function SettingsPage() {
                       />
                       <FieldError message={errors.agentic_convergence_threshold?.message} />
                     </div>
+                    <div className="space-y-1.5">
+                      <FieldLabel htmlFor="swarm_n_personas" tooltip="Number of AI personas simulated in each swarm debate round. Higher values increase answer diversity at the cost of latency.">Swarm personas</FieldLabel>
+                      <Input
+                        id="swarm_n_personas"
+                        type="number"
+                        min={1}
+                        max={32}
+                        {...register("swarm_n_personas", { valueAsNumber: true })}
+                      />
+                      <FieldError message={errors.swarm_n_personas?.message} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <FieldLabel htmlFor="swarm_n_rounds" tooltip="Number of debate rounds between swarm personas before producing the final answer.">Swarm rounds</FieldLabel>
+                      <Input
+                        id="swarm_n_rounds"
+                        type="number"
+                        min={1}
+                        max={16}
+                        {...register("swarm_n_rounds", { valueAsNumber: true })}
+                      />
+                      <FieldError message={errors.swarm_n_rounds?.message} />
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
@@ -1264,6 +1445,13 @@ export default function SettingsPage() {
                       description="Recursively follow graph edges to retrieve additional related context."
                       checked={watch("enable_recursive_retrieval")}
                       onChange={(v) => setValue("enable_recursive_retrieval", v)}
+                    />
+                    <ToggleRow
+                      id="build_llm_knowledge_graph"
+                      label="LLM knowledge graph enrichment"
+                      description="Use the primary LLM to extract entities and relations during indexing, enriching the knowledge graph beyond regex heuristics."
+                      checked={watch("build_llm_knowledge_graph")}
+                      onChange={(v) => setValue("build_llm_knowledge_graph", v)}
                     />
                     <ToggleRow
                       id="web_scrape_full_content"

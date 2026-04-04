@@ -77,6 +77,72 @@ export interface DirectQueryResult {
   actions?: NyxInstallAction[];
 }
 
+export interface ForecastMapping {
+  timestamp_column: string;
+  target_column: string;
+  dynamic_covariates: string[];
+  static_covariates: string[];
+}
+
+export interface ForecastSchemaColumn {
+  name: string;
+  detected_type: string;
+  non_null_count: number;
+  unique_count: number;
+  numeric_ratio: number;
+  timestamp_ratio: number;
+  sample_values: string[];
+}
+
+export interface ForecastValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  history_row_count: number;
+  future_row_count: number;
+  inferred_horizon: number;
+  resolved_horizon: number;
+  inferred_frequency: string;
+}
+
+export interface ForecastPreflightResult {
+  ready: boolean;
+  timesfm_available: boolean;
+  covariates_available: boolean;
+  model_id: string;
+  max_context: number;
+  max_horizon: number;
+  xreg_mode: string;
+  force_xreg_cpu: boolean;
+  warnings: string[];
+  install_guidance: string[];
+}
+
+export interface ForecastSchemaResult {
+  file_path: string;
+  file_name: string;
+  delimiter: string;
+  row_count: number;
+  column_count: number;
+  columns: ForecastSchemaColumn[];
+  timestamp_candidates: string[];
+  numeric_target_candidates: string[];
+  suggested_mapping?: ForecastMapping | null;
+  validation: ForecastValidationResult;
+}
+
+export interface ForecastQueryResult {
+  run_id: string;
+  answer_text: string;
+  selected_mode: string;
+  model_backend: string;
+  model_id: string;
+  horizon: number;
+  context_used: number;
+  warnings: string[];
+  artifacts?: ArrowArtifact[];
+}
+
 export interface IndexSummary {
   index_id: string;
   manifest_path: string;
@@ -311,6 +377,30 @@ export interface RagStreamErrorEvent extends RagStreamEnvelopeFields {
   message: string;
 }
 
+export interface ForecastStreamRunStartedEvent extends RagStreamEnvelopeFields {
+  type: "run_started";
+  run_id: string;
+}
+
+export interface ForecastStreamFinalEvent extends RagStreamEnvelopeFields {
+  type: "final";
+  run_id: string;
+  answer_text: string;
+  selected_mode: string;
+  model_backend: string;
+  model_id: string;
+  horizon: number;
+  context_used: number;
+  warnings?: string[];
+  artifacts?: ArrowArtifact[];
+}
+
+export interface ForecastStreamErrorEvent extends RagStreamEnvelopeFields {
+  type: "error";
+  run_id: string;
+  message: string;
+}
+
 export interface RagStreamActionRequiredEvent extends RagStreamEnvelopeFields {
   type: "action_required";
   run_id: string;
@@ -372,6 +462,49 @@ export interface RagStreamRunStartedEvent extends RagStreamEnvelopeFields {
   run_id: string;
 }
 
+export interface RagStreamSwarmStartEvent extends RagStreamEnvelopeFields {
+  type: "swarm_start";
+  run_id: string;
+  n_personas: number;
+  n_rounds: number;
+  topics: string[];
+}
+
+export interface RagStreamSwarmRoundStartEvent extends RagStreamEnvelopeFields {
+  type: "swarm_round_start";
+  run_id: string;
+  round: number;
+  n_rounds: number;
+}
+
+export interface RagStreamSwarmPersonaVoteEvent extends RagStreamEnvelopeFields {
+  type: "swarm_persona_vote";
+  run_id: string;
+  persona: string;
+  stance: string;
+  summary: string;
+}
+
+export interface RagStreamSwarmRoundEndEvent extends RagStreamEnvelopeFields {
+  type: "swarm_round_end";
+  run_id: string;
+  round: number;
+  consensus_delta: number;
+}
+
+export interface RagStreamSwarmSynthesisEvent extends RagStreamEnvelopeFields {
+  type: "swarm_synthesis";
+  run_id: string;
+  method: string;
+}
+
+export interface RagStreamSwarmCompleteEvent extends RagStreamEnvelopeFields {
+  type: "swarm_complete";
+  run_id: string;
+  answer_text: string;
+  sources: EvidenceSource[];
+}
+
 export type RagStreamEvent =
   | RagStreamRunStartedEvent
   | RagStreamRetrievalCompleteEvent
@@ -386,7 +519,18 @@ export type RagStreamEvent =
   | RagStreamGapsIdentifiedEvent
   | RagStreamRefinementRetrievalEvent
   | RagStreamIterationConvergedEvent
-  | RagStreamIterationCompleteEvent;
+  | RagStreamIterationCompleteEvent
+  | RagStreamSwarmStartEvent
+  | RagStreamSwarmRoundStartEvent
+  | RagStreamSwarmPersonaVoteEvent
+  | RagStreamSwarmRoundEndEvent
+  | RagStreamSwarmSynthesisEvent
+  | RagStreamSwarmCompleteEvent;
+
+export type ForecastStreamEvent =
+  | ForecastStreamRunStartedEvent
+  | ForecastStreamFinalEvent
+  | ForecastStreamErrorEvent;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -704,11 +848,94 @@ export function normalizeRagStreamEvent(rawEvent: unknown): RagStreamEvent {
         iteration: getNumber(event.iteration ?? payload.iteration),
         ...envelope,
       };
+    case "swarm_start":
+      return {
+        type: "swarm_start",
+        run_id: runId,
+        n_personas: getNumber(event.n_personas ?? payload.n_personas, 8),
+        n_rounds: getNumber(event.n_rounds ?? payload.n_rounds, 4),
+        topics: getStringArray(event.topics ?? payload.topics),
+        ...envelope,
+      };
+    case "swarm_round_start":
+      return {
+        type: "swarm_round_start",
+        run_id: runId,
+        round: getNumber(event.round ?? payload.round),
+        n_rounds: getNumber(event.n_rounds ?? payload.n_rounds, 4),
+        ...envelope,
+      };
+    case "swarm_persona_vote":
+      return {
+        type: "swarm_persona_vote",
+        run_id: runId,
+        persona: getText(event.persona ?? payload.persona),
+        stance: getText(event.stance ?? payload.stance),
+        summary: getText(event.summary ?? payload.summary),
+        ...envelope,
+      };
+    case "swarm_round_end":
+      return {
+        type: "swarm_round_end",
+        run_id: runId,
+        round: getNumber(event.round ?? payload.round),
+        consensus_delta: getNumber(event.consensus_delta ?? payload.consensus_delta),
+        ...envelope,
+      };
+    case "swarm_synthesis":
+      return {
+        type: "swarm_synthesis",
+        run_id: runId,
+        method: getText(event.method ?? payload.method, "majority_vote"),
+        ...envelope,
+      };
+    case "swarm_complete":
+      return {
+        type: "swarm_complete",
+        run_id: runId,
+        answer_text: getText(event.answer_text ?? payload.answer_text),
+        sources: getEvidenceSources(event.sources ?? payload.sources),
+        ...envelope,
+      };
     default:
       return {
         type: "error",
         run_id: runId,
         message: `Unsupported stream event type: ${type}`,
+        ...envelope,
+      };
+  }
+}
+
+export function normalizeForecastStreamEvent(rawEvent: unknown): ForecastStreamEvent {
+  const event = getRecord(rawEvent);
+  const payload = getRecord(event.payload);
+  const envelope = getEnvelopeFields(event);
+  const type = getText(event.type || event.event_type).trim() || "error";
+  const runId = getText(event.run_id || payload.run_id).trim();
+
+  switch (type) {
+    case "run_started":
+      return { type: "run_started", run_id: runId, ...envelope };
+    case "final":
+      return {
+        type: "final",
+        run_id: runId,
+        answer_text: getText(event.answer_text ?? payload.answer_text),
+        selected_mode: getText(event.selected_mode ?? payload.selected_mode, "Forecast"),
+        model_backend: getText(event.model_backend ?? payload.model_backend),
+        model_id: getText(event.model_id ?? payload.model_id),
+        horizon: getNumber(event.horizon ?? payload.horizon),
+        context_used: getNumber(event.context_used ?? payload.context_used),
+        warnings: getStringArray(event.warnings ?? payload.warnings),
+        artifacts: getArrowArtifacts(event.artifacts ?? payload.artifacts),
+        ...envelope,
+      };
+    default:
+      return {
+        type: "error",
+        run_id: runId,
+        message: getText(event.message ?? payload.message, `Unsupported forecast stream event type: ${type}`),
         ...envelope,
       };
   }
@@ -1273,6 +1500,101 @@ export async function fetchNyxComponentDetail(
     throw new Error(`Failed to fetch Nyx component detail (${res.status}): ${detail}`);
   }
   return res.json();
+}
+
+export async function fetchForecastPreflight(): Promise<ForecastPreflightResult> {
+  const res = await apiFetch(`${await getApiBase()}/v1/forecast/preflight`);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Forecast preflight failed (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function fetchForecastSchema(
+  filePath: string,
+  options?: {
+    mapping?: ForecastMapping | null;
+    horizon?: number | null;
+  },
+): Promise<ForecastSchemaResult> {
+  const res = await apiFetch(`${await getApiBase()}/v1/forecast/schema`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      file_path: filePath,
+      mapping: options?.mapping ?? undefined,
+      horizon: options?.horizon ?? undefined,
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Forecast schema failed (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function queryForecast(
+  filePath: string,
+  prompt: string,
+  mapping: ForecastMapping,
+  settings: Record<string, unknown>,
+  options?: {
+    horizon?: number | null;
+    sessionId?: string | null;
+  },
+): Promise<ForecastQueryResult> {
+  const res = await apiFetch(`${await getApiBase()}/v1/query/forecast`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      file_path: filePath,
+      prompt,
+      mapping,
+      settings,
+      session_id: options?.sessionId ?? "",
+      horizon: options?.horizon ?? undefined,
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Forecast query failed (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function queryForecastStream(
+  filePath: string,
+  prompt: string,
+  mapping: ForecastMapping,
+  settings: Record<string, unknown>,
+  options: {
+    signal?: AbortSignal;
+    sessionId?: string | null;
+    horizon?: number | null;
+    onEvent: (event: ForecastStreamEvent) => void;
+  },
+): Promise<void> {
+  const res = await apiFetch(`${await getApiBase()}/v1/query/forecast/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      file_path: filePath,
+      prompt,
+      mapping,
+      settings,
+      session_id: options.sessionId ?? "",
+      horizon: options.horizon ?? undefined,
+    }),
+    signal: options.signal,
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Forecast stream failed (${res.status}): ${detail}`);
+  }
+  await readSseEvents<unknown>(res, (message) => {
+    options.onEvent(normalizeForecastStreamEvent(message.data));
+  });
 }
 
 export async function queryRag(

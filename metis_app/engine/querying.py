@@ -21,6 +21,7 @@ _DEFAULT_SYSTEM_INSTRUCTIONS = (
 _ARTIFACT_SETTINGS_KEYS = ("arrow_artifacts", "artifacts")
 _MAX_ARROW_ARTIFACTS = 5
 _MAX_ARROW_ARTIFACT_PAYLOAD_BYTES = 16_384
+_MAX_FORECAST_ARTIFACT_PAYLOAD_BYTES = 65_536
 _MAX_ARROW_ARTIFACT_SUMMARY_CHARS = 280
 _MAX_ARROW_ARTIFACT_ID_CHARS = 96
 _MAX_ARROW_ARTIFACT_TYPE_CHARS = 64
@@ -89,6 +90,26 @@ class KnowledgeSearchResult:
     selected_mode: str
     retrieval_plan: dict[str, Any] = field(default_factory=dict)
     fallback: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class SwarmQueryRequest:
+    manifest_path: str | Path
+    question: str
+    settings: dict[str, Any]
+    run_id: str | None = None
+    n_personas: int = 8
+    n_rounds: int = 4
+    topics: list[str] | None = None
+
+
+@dataclass(slots=True)
+class SwarmQueryResult:
+    run_id: str
+    answer_text: str
+    report: dict[str, Any]
+    sources: list[dict[str, Any]]
+    selected_mode: str = "Simulation"
 
 
 def _normalize_run_id(run_id: str | None) -> str:
@@ -170,7 +191,12 @@ def _normalize_arrow_artifact(raw: Any, *, metadata_only: bool = False) -> dict[
     if metadata_only:
         return normalized
 
-    if payload is not None and payload_bytes <= _MAX_ARROW_ARTIFACT_PAYLOAD_BYTES:
+    payload_limit = (
+        _MAX_FORECAST_ARTIFACT_PAYLOAD_BYTES
+        if artifact_type == "forecast_report"
+        else _MAX_ARROW_ARTIFACT_PAYLOAD_BYTES
+    )
+    if payload is not None and payload_bytes <= payload_limit:
         normalized["payload"] = payload
         return normalized
 
@@ -403,6 +429,91 @@ def knowledge_search(req: KnowledgeSearchRequest) -> KnowledgeSearchResult:
     return result_payload
 
 
+def query_swarm(req: SwarmQueryRequest) -> SwarmQueryResult:
+    """Run a full swarm simulation over a persisted index (non-streaming)."""
+    from metis_app.services.swarm_service import run_swarm_simulation  # late import
+
+    question = str(req.question or "").strip()
+    if not question:
+        raise ValueError("question must not be empty.")
+
+    manifest_path, settings = _prepare_rag_settings(
+        RagQueryRequest(
+            manifest_path=req.manifest_path,
+            question=question,
+            settings=req.settings,
+            run_id=req.run_id,
+        )
+    )
+    settings["selected_mode"] = "Simulation"
+
+    # ── Retrieve context for the swarm to reason over ──────────────────────
+    adapter = resolve_vector_store(settings)
+    available, reason = adapter.is_available(settings)
+    if not available:
+        raise RuntimeError(f"Vector backend unavailable: {reason}")
+
+    bundle = adapter.load(manifest_path)
+    retrieval_plan = execute_retrieval_plan(
+        bundle=bundle,
+        adapter=adapter,
+        question=question,
+        settings=settings,
+        llm=None,
+    )
+    context_text = retrieval_plan.result.context_block
+    sources = [s.to_dict() for s in retrieval_plan.result.sources]
+
+    # ── Resolve persona / round counts from settings or request ───────────
+    try:
+        n_personas = int(settings.get("swarm_n_personas") or req.n_personas)
+    except (TypeError, ValueError):
+        n_personas = req.n_personas
+    try:
+        n_rounds = int(settings.get("swarm_n_rounds") or req.n_rounds)
+    except (TypeError, ValueError):
+        n_rounds = req.n_rounds
+
+    report = run_swarm_simulation(
+        context_text=context_text,
+        settings=settings,
+        n_personas=n_personas,
+        n_rounds=n_rounds,
+        topics=req.topics,
+    )
+    report_dict = report.to_dict() if hasattr(report, "to_dict") else dict(report.__dict__)
+
+    # ── Format answer text (reuse streaming helper logic inline) ───────────
+    lines: list[str] = []
+    summary = str(report_dict.get("document_summary") or "")
+    if summary:
+        lines.append(f"**Document Overview**\n{summary}\n")
+    topics_used = list(report_dict.get("topics") or [])
+    if topics_used:
+        lines.append(f"**Topics Simulated:** {', '.join(topics_used)}\n")
+    agents = list(report_dict.get("agents") or [])
+    if agents:
+        lines.append(f"**{len(agents)} Personas Generated:**")
+        for a in agents:
+            lines.append(f"• **{a.get('name', 'Agent')}**: {a.get('stance_summary', '')}")
+        lines.append("")
+    consensus = list(report_dict.get("consensus_topics") or [])
+    contested = list(report_dict.get("contested_topics") or [])
+    if consensus:
+        lines.append(f"**Consensus Topics:** {', '.join(consensus)}")
+    if contested:
+        lines.append(f"**Contested Topics:** {', '.join(contested)}")
+    answer_text = "\n".join(lines).strip()
+
+    return SwarmQueryResult(
+        run_id=_normalize_run_id(req.run_id),
+        answer_text=answer_text,
+        report=report_dict,
+        sources=sources,
+        selected_mode="Simulation",
+    )
+
+
 __all__ = [
     "DirectQueryRequest",
     "DirectQueryResult",
@@ -410,7 +521,10 @@ __all__ = [
     "KnowledgeSearchResult",
     "RagQueryRequest",
     "RagQueryResult",
+    "SwarmQueryRequest",
+    "SwarmQueryResult",
     "knowledge_search",
     "query_direct",
     "query_rag",
+    "query_swarm",
 ]

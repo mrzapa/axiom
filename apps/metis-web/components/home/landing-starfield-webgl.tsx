@@ -123,6 +123,8 @@ function normalizeRgb([red, green, blue]: readonly [number, number, number]) {
 
 function getTierValue(renderTier: LandingStarRenderTier): number {
   switch (renderTier) {
+    case "closeup":
+      return 3;
     case "hero":
       return 2;
     case "sprite":
@@ -135,11 +137,13 @@ function getTierValue(renderTier: LandingStarRenderTier): number {
 function getPointSize(star: LandingWebglStar) {
   const { visual } = star.profile;
   const tierScale =
-    star.renderTier === "hero"
-      ? 5.2 + visual.haloRadiusFactor * 0.42
-      : star.renderTier === "sprite"
-        ? 2.9 + visual.haloRadiusFactor * 0.16
-        : 1.5;
+    star.renderTier === "closeup"
+      ? 12 + visual.haloRadiusFactor * 1.2
+      : star.renderTier === "hero"
+        ? 5.2 + visual.haloRadiusFactor * 0.42
+        : star.renderTier === "sprite"
+          ? 2.9 + visual.haloRadiusFactor * 0.16
+          : 1.5;
 
   return Math.max(1.4, star.apparentSize * tierScale);
 }

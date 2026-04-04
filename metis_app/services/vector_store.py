@@ -288,9 +288,25 @@ class ChromaVectorStoreAdapter(VectorStoreAdapter):
         from chromadb import PersistentClient
 
         vector_store_dir = target / "chroma"
+        collection_name = _collection_name(bundle.index_id)
+
+        # Stage the manifest/bundle JSON first (atomic dir-swap).  If target
+        # already exists its old chroma/ sub-tree is deleted here, but no
+        # PersistentClient is open at this point so Windows won't object.
+        manifest = persist_index_bundle(
+            bundle,
+            backend=self.backend_name,
+            target_dir=target,
+            vector_store_path=vector_store_dir,
+            collection_name=collection_name,
+            restore_requirements={"python_package": "chromadb"},
+            manifest_metadata={"storage_kind": "chroma-persistent"},
+        )
+
+        # Write chroma vector data after the atomic swap so the directory is
+        # clean and no file locks are held during rmtree.
         vector_store_dir.mkdir(parents=True, exist_ok=True)
         client = PersistentClient(path=str(vector_store_dir))
-        collection_name = _collection_name(bundle.index_id)
         try:
             client.delete_collection(collection_name)
         except Exception:
@@ -315,16 +331,14 @@ class ChromaVectorStoreAdapter(VectorStoreAdapter):
                 embeddings=embeddings,
                 metadatas=metadatas,
             )
+        # Release Chroma's shared file handles so callers can clean up the
+        # directory on Windows without hitting PermissionError.
+        try:
+            from chromadb.api.client import SharedSystemClient
+            SharedSystemClient.clear_system_cache()
+        except Exception:
+            pass
 
-        manifest = persist_index_bundle(
-            bundle,
-            backend=self.backend_name,
-            target_dir=target,
-            vector_store_path=vector_store_dir,
-            collection_name=collection_name,
-            restore_requirements={"python_package": "chromadb"},
-            manifest_metadata={"storage_kind": "chroma-persistent"},
-        )
         return pathlib.Path(manifest.manifest_path)
 
     def query(self, bundle: IndexBundle, question: str, settings: dict[str, Any]) -> QueryResult:
@@ -361,7 +375,15 @@ class ChromaVectorStoreAdapter(VectorStoreAdapter):
             ranked.append(idx)
             scores[idx] = _normalized_distance_score(distances[pos] if pos < len(distances) else None)
         hits = select_hit_indices(bundle, question, ranked, settings)
-        return build_query_result(bundle, question, hits, scores, settings=settings)
+        result = build_query_result(bundle, question, hits, scores, settings=settings)
+        # Release Chroma's shared file handles so the caller can clean up the
+        # index directory on Windows without hitting PermissionError.
+        try:
+            from chromadb.api.client import SharedSystemClient
+            SharedSystemClient.clear_system_cache()
+        except Exception:
+            pass
+        return result
 
 
 class WeaviateVectorStoreAdapter(VectorStoreAdapter):
@@ -530,51 +552,65 @@ class WeaviateVectorStoreAdapter(VectorStoreAdapter):
         ok, reason = self._preflight(connection_settings)
         if not ok:
             raise RuntimeError(reason)
-        alpha = _hybrid_alpha(settings)
+
+        hybrid_alpha = float(settings.get("hybrid_alpha", 1.0) or 1.0)
         client = self._connect(connection_settings)
         try:
             collection = client.collections.get(
                 manifest.collection_name or _collection_name(bundle.index_id, uppercase_first=True)
             )
-            embeddings = _load_query_embeddings(settings)
-            query_vector = embeddings.embed_query(question)
             limit = _native_query_limit(bundle, settings)
-            if alpha < 1.0:
-                # Use Weaviate's native hybrid search (BM25 + vector fusion).
+            if hybrid_alpha < 1.0:
+                # Weaviate native hybrid search (BM25 + vector). Weaviate's alpha
+                # convention matches ours: 1.0 = pure vector, 0.0 = pure BM25.
                 response = collection.query.hybrid(
                     query=question,
-                    vector=query_vector,
-                    alpha=alpha,
+                    alpha=hybrid_alpha,
                     limit=limit,
                     return_metadata=MetadataQuery(score=True),
                 )
+                ranked: list[int] = []
+                scores: dict[int, float] = {}
+                lookup = _chunk_id_lookup(bundle)
+                for item in getattr(response, "objects", []) or []:
+                    props = dict(getattr(item, "properties", {}) or {})
+                    idx = lookup.get(str(props.get("chunk_id") or ""))
+                    if idx is None:
+                        try:
+                            idx = int(props.get("chunk_idx"))
+                        except (TypeError, ValueError):
+                            idx = None
+                    if idx is None or idx in scores:
+                        continue
+                    ranked.append(idx)
+                    raw_score = getattr(getattr(item, "metadata", None), "score", None)
+                    scores[idx] = float(raw_score) if raw_score is not None else 0.0
             else:
+                # Pure vector path (original behaviour).
+                embeddings = _load_query_embeddings(settings)
+                query_vector = embeddings.embed_query(question)
                 response = collection.query.near_vector(
                     near_vector=query_vector,
                     limit=limit,
                     return_metadata=MetadataQuery(distance=True),
                 )
-            ranked: list[int] = []
-            scores: dict[int, float] = {}
-            lookup = _chunk_id_lookup(bundle)
-            for item in getattr(response, "objects", []) or []:
-                props = dict(getattr(item, "properties", {}) or {})
-                idx = lookup.get(str(props.get("chunk_id") or ""))
-                if idx is None:
-                    try:
-                        idx = int(props.get("chunk_idx"))
-                    except (TypeError, ValueError):
-                        idx = None
-                if idx is None or idx in scores:
-                    continue
-                ranked.append(idx)
-                meta = getattr(item, "metadata", None)
-                if alpha < 1.0:
-                    # hybrid search returns a score (higher = better)
-                    raw_score = getattr(meta, "score", None)
-                    scores[idx] = float(raw_score) if raw_score is not None else 0.0
-                else:
-                    scores[idx] = _normalized_distance_score(getattr(meta, "distance", None))
+                ranked = []
+                scores = {}
+                lookup = _chunk_id_lookup(bundle)
+                for item in getattr(response, "objects", []) or []:
+                    props = dict(getattr(item, "properties", {}) or {})
+                    idx = lookup.get(str(props.get("chunk_id") or ""))
+                    if idx is None:
+                        try:
+                            idx = int(props.get("chunk_idx"))
+                        except (TypeError, ValueError):
+                            idx = None
+                    if idx is None or idx in scores:
+                        continue
+                    ranked.append(idx)
+                    scores[idx] = _normalized_distance_score(
+                        getattr(getattr(item, "metadata", None), "distance", None)
+                    )
         finally:
             client.close()
 
@@ -604,10 +640,93 @@ class WeaviateVectorStoreAdapter(VectorStoreAdapter):
         super().delete(directory)
 
 
+class GrepVectorStoreAdapter(VectorStoreAdapter):
+    """Hybrid adapter: JSON vector search + rga keyword search, fused with RRF.
+
+    Useful when documents contain code, config files, or other structured text
+    where keyword / regex matching complements semantic similarity.
+
+    Requires ``rga`` (ripgrep-all) to be on ``PATH``; falls back gracefully to
+    pure vector search when rga is unavailable.
+    """
+
+    backend_name = "grep"
+
+    def is_available(self, settings: dict[str, Any]) -> tuple[bool, str]:
+        _ = settings
+        import shutil  # noqa: PLC0415
+
+        if shutil.which("rga") is None:
+            return False, "rga (ripgrep-all) is not installed or not on PATH."
+        return True, ""
+
+    def query(self, bundle: IndexBundle, question: str, settings: dict[str, Any]) -> QueryResult:
+        # Step 1 — dense vector query (base)
+        base_result = query_index_bundle(bundle, question, settings)
+
+        # Step 2 — rga keyword search on source files
+        try:
+            import shutil  # noqa: PLC0415
+
+            from metis_app.services.grep_retriever import (  # noqa: PLC0415
+                extract_keywords,
+                map_hits_to_chunks,
+                rrf_fuse,
+                run_rga,
+            )
+
+            if shutil.which("rga") is None:
+                return base_result
+
+            keywords = extract_keywords(question)
+            if not keywords:
+                return base_result
+
+            # Collect unique source file paths from the bundle
+            file_paths: list[str] = list(
+                {
+                    c.get("file_path", "")
+                    for c in bundle.chunks
+                    if c.get("file_path")
+                }
+            )
+            if not file_paths:
+                return base_result
+
+            grep_hits = run_rga(keywords, file_paths)
+            if not grep_hits:
+                return base_result
+
+            # Step 3 — map grep hits to chunk indices
+            grep_indices = map_hits_to_chunks(grep_hits, bundle.chunks)
+            if not grep_indices:
+                return base_result
+
+            # Step 4 — RRF fusion of vector and grep rankings
+            fused = rrf_fuse(list(base_result.hit_indices), grep_indices)
+            top_k = int(settings.get("top_k", 5) or 5)
+
+            # Reuse vector scores for build_query_result scoring
+            dense_scores: dict[int, float] = {
+                s.chunk_idx: s.score
+                for s in base_result.sources
+                if s.chunk_idx is not None
+            }
+            return build_query_result(
+                bundle, question, fused[:top_k], dense_scores, settings=settings
+            )
+
+        except Exception:  # noqa: BLE001
+            # rga error — return plain vector result
+            return base_result
+
+
 def resolve_vector_store(settings: dict[str, Any]) -> VectorStoreAdapter:
     backend = str(settings.get("vector_db_type", "") or "").strip().lower()
     if backend == "chroma":
         return ChromaVectorStoreAdapter()
     if backend == "weaviate":
         return WeaviateVectorStoreAdapter()
+    if backend == "grep":
+        return GrepVectorStoreAdapter()
     return JsonVectorStoreAdapter()

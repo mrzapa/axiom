@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 import json
 from typing import Any
 
-from metis_app.services.hybrid_scorer import hybrid_alpha, hybrid_rerank
+from metis_app.services.hybrid_scorer import hybrid_rerank
 from metis_app.services.index_service import IndexBundle, QueryResult, build_query_result
 from metis_app.services.reranker import reciprocal_rank_fusion
 from metis_app.utils.embedding_providers import create_embeddings
@@ -230,8 +230,57 @@ def execute_retrieval_plan(
     """Run the retrieval pipeline and return a serialisable plan."""
 
     selected_mode = _selected_mode(settings)
-    alpha = hybrid_alpha(settings)
+
+    # --- Knowledge cache look-aside (disabled by default) ---
+    _cache = None
+    if settings.get("enable_knowledge_cache"):
+        try:
+            from metis_app.services.knowledge_cache import QueryResultCache  # noqa: PLC0415
+            _cache = QueryResultCache.build(settings, index_id=bundle.index_id)
+            _cached_payload = _cache.get(question)
+            if _cached_payload is not None:
+                from metis_app.models.session_types import EvidenceSource as _ES  # noqa: PLC0415
+                _cached_sources = [
+                    _ES.from_dict(s) for s in _cached_payload.get("sources") or []
+                ]
+                _cached_result = QueryResult(
+                    prompt=str(_cached_payload.get("prompt") or ""),
+                    context_block=str(_cached_payload.get("context_block") or ""),
+                    sources=_cached_sources,
+                    hit_indices=list(_cached_payload.get("hit_indices") or []),
+                    top_score=float(_cached_payload.get("top_score") or 0.0),
+                )
+                return RetrievalPlan(
+                    question=question,
+                    selected_mode=selected_mode,
+                    result=_cached_result,
+                    effective_queries=[question],
+                    stages=[RetrievalStage("cache_hit", {"index_id": bundle.index_id})],
+                    fallback=_fallback_for_result(_cached_result, settings),
+                )
+        except Exception:  # noqa: BLE001
+            _cache = None  # degrade gracefully; proceed with live retrieval
+
     primary_result = adapter.query(bundle, question, settings)
+
+    # Hybrid rerank: blend BM25 keyword scores with vector scores (Onyx-style alpha blending).
+    # alpha=1.0 (default) is a no-op — pure vector, identical to previous behaviour.
+    _hybrid_alpha = float(settings.get("hybrid_alpha", 1.0) or 1.0)
+    if _hybrid_alpha < 1.0 and bundle.chunks:
+        _vec_scores = {
+            s.chunk_idx: float(s.score)
+            for s in primary_result.sources
+            if s.chunk_idx is not None
+        }
+        _reranked = hybrid_rerank(
+            bundle.chunks, list(primary_result.hit_indices),
+            _vec_scores, question, _hybrid_alpha,
+        )
+        if _reranked != list(primary_result.hit_indices):
+            primary_result = build_query_result(
+                bundle, question, _reranked, _vec_scores, settings=settings,
+            )
+
     effective_queries = [question]
 
     # ── Hybrid rerank primary result ─────────────────────────────────────────
@@ -289,14 +338,12 @@ def execute_retrieval_plan(
                 fused_indices = reciprocal_rank_fusion(*ranked_lists)
                 top_k = int(settings.get("top_k", 5) or 5)
                 dense_scores = _score_bundle_against_question(bundle, question, settings)
-                if alpha < 1.0:
-                    chunk_texts = [str(c.get("text") or "") for c in bundle.chunks]
+                if _hybrid_alpha < 1.0 and bundle.chunks:
+                    _dense_dict = {i: float(s) for i, s in enumerate(dense_scores)}
+                    # Rerank a wider candidate window before slicing to top_k
+                    _candidate_pool = fused_indices[: max(top_k * 3, top_k)]
                     fused_indices = hybrid_rerank(
-                        fused_indices,
-                        {idx: dense_scores[idx] if idx < len(dense_scores) else 0.0 for idx in fused_indices},
-                        chunk_texts,
-                        question,
-                        alpha=alpha,
+                        bundle.chunks, _candidate_pool, _dense_dict, question, _hybrid_alpha,
                     )
                 final_result = build_query_result(
                     bundle,
@@ -316,6 +363,43 @@ def execute_retrieval_plan(
                     )
                 )
 
+    # --- Monte Carlo Evidence Sampling (MCES) ---
+    # Expands retrieved chunks by re-reading each source file and returning
+    # the best context window around the hit (controlled by enable_mces).
+    if settings.get("enable_mces") and final_result.sources:
+        try:
+            from metis_app.services.monte_carlo_sampler import apply_mces  # noqa: PLC0415
+            _mces_snippets, _expanded_count = apply_mces(
+                final_result.sources, question, settings
+            )
+            if _mces_snippets:
+                # Patch each source's snippet with the expanded context window
+                # so the LLM actually receives fuller text.
+                _expanded_map = {
+                    s["file_path"]: s["expanded_text"] for s in _mces_snippets
+                }
+                for _src in final_result.sources:
+                    _fp = _src.file_path or ""
+                    if _fp and _fp in _expanded_map:
+                        _src.snippet = _expanded_map[_fp]
+                # Rebuild context_block from updated source snippets
+                final_result.context_block = "\n\n".join(
+                    _src.snippet
+                    for _src in final_result.sources
+                    if _src.snippet
+                )
+                stages.append(
+                    RetrievalStage(
+                        stage_type="mces_context_expansion",
+                        payload={
+                            "snippets": _mces_snippets,
+                            "expanded_count": _expanded_count,
+                        },
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass  # MCES is best-effort; never block a query
+
     fallback = _fallback_for_result(final_result, settings)
     stages.append(
         RetrievalStage(
@@ -328,6 +412,19 @@ def execute_retrieval_plan(
         final_result.sources.sort(
             key=lambda s: (s.chunk_idx if s.chunk_idx is not None else 0)
         )
+
+    # --- Cache put (store result for future hits) ---
+    if _cache is not None:
+        try:
+            _cache.put(question, {
+                "prompt": final_result.prompt,
+                "context_block": final_result.context_block,
+                "sources": [s.to_dict() for s in final_result.sources],
+                "hit_indices": list(final_result.hit_indices),
+                "top_score": float(final_result.top_score),
+            })
+        except Exception:  # noqa: BLE001
+            pass
 
     return RetrievalPlan(
         question=question,
