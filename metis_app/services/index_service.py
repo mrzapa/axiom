@@ -34,6 +34,7 @@ from metis_app.utils.knowledge_graph import (
     KnowledgeGraph,
     build_knowledge_graph,
     collect_graph_chunk_candidates,
+    llm_extract_entities_and_relations,
 )
 from metis_app.utils.mock_embeddings import MockEmbeddings
 
@@ -1230,6 +1231,36 @@ def build_index_bundle(
     graph, entity_to_chunks = build_knowledge_graph(
         [chunk["text"] for chunk in all_chunks]
     )
+
+    # ── LLM knowledge-graph enrichment (optional) ─────────────────────
+    _build_llm_kg = settings.get("build_llm_knowledge_graph", False)
+    if _build_llm_kg and per_doc_chunks:
+        if callable(post_message):
+            post_message({"type": "status", "text": "Enriching knowledge graph with LLM NER…"})
+        try:
+            from metis_app.utils.llm_providers import create_llm as _create_llm
+
+            _llm = _create_llm(settings)
+            for _source, _file_path, _doc_texts in per_doc_chunks:
+                for _chunk_text in _doc_texts:
+                    _entities, _rels = llm_extract_entities_and_relations(_chunk_text, _llm)
+                    for _label, _entity in _entities:
+                        graph.add_node(_entity, entity_type=_label)
+                    for _src, _rel, _tgt in _rels:
+                        graph.add_edge(_src, _rel, _tgt)
+            if callable(post_message):
+                post_message({"type": "log", "text": "  LLM knowledge graph enrichment complete"})
+        except Exception as _exc:  # noqa: BLE001
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "LLM knowledge graph enrichment failed: %s", _exc
+            )
+            if callable(post_message):
+                post_message(
+                    {"type": "log", "text": "  (LLM KG enrichment skipped — LLM unavailable)"}
+                )
+
     digest = hashlib.sha1(
         "||".join(sorted(str(path) for path in documents)).encode(
             "utf-8", errors="ignore"

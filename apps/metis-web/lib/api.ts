@@ -462,6 +462,49 @@ export interface RagStreamRunStartedEvent extends RagStreamEnvelopeFields {
   run_id: string;
 }
 
+export interface RagStreamSwarmStartEvent extends RagStreamEnvelopeFields {
+  type: "swarm_start";
+  run_id: string;
+  n_personas: number;
+  n_rounds: number;
+  topics: string[];
+}
+
+export interface RagStreamSwarmRoundStartEvent extends RagStreamEnvelopeFields {
+  type: "swarm_round_start";
+  run_id: string;
+  round: number;
+  n_rounds: number;
+}
+
+export interface RagStreamSwarmPersonaVoteEvent extends RagStreamEnvelopeFields {
+  type: "swarm_persona_vote";
+  run_id: string;
+  persona: string;
+  stance: string;
+  summary: string;
+}
+
+export interface RagStreamSwarmRoundEndEvent extends RagStreamEnvelopeFields {
+  type: "swarm_round_end";
+  run_id: string;
+  round: number;
+  consensus_delta: number;
+}
+
+export interface RagStreamSwarmSynthesisEvent extends RagStreamEnvelopeFields {
+  type: "swarm_synthesis";
+  run_id: string;
+  method: string;
+}
+
+export interface RagStreamSwarmCompleteEvent extends RagStreamEnvelopeFields {
+  type: "swarm_complete";
+  run_id: string;
+  answer_text: string;
+  sources: EvidenceSource[];
+}
+
 export type RagStreamEvent =
   | RagStreamRunStartedEvent
   | RagStreamRetrievalCompleteEvent
@@ -476,7 +519,13 @@ export type RagStreamEvent =
   | RagStreamGapsIdentifiedEvent
   | RagStreamRefinementRetrievalEvent
   | RagStreamIterationConvergedEvent
-  | RagStreamIterationCompleteEvent;
+  | RagStreamIterationCompleteEvent
+  | RagStreamSwarmStartEvent
+  | RagStreamSwarmRoundStartEvent
+  | RagStreamSwarmPersonaVoteEvent
+  | RagStreamSwarmRoundEndEvent
+  | RagStreamSwarmSynthesisEvent
+  | RagStreamSwarmCompleteEvent;
 
 export type ForecastStreamEvent =
   | ForecastStreamRunStartedEvent
@@ -797,6 +846,55 @@ export function normalizeRagStreamEvent(rawEvent: unknown): RagStreamEvent {
         run_id: runId,
         gaps: getStringArray(event.gaps ?? payload.gaps),
         iteration: getNumber(event.iteration ?? payload.iteration),
+        ...envelope,
+      };
+    case "swarm_start":
+      return {
+        type: "swarm_start",
+        run_id: runId,
+        n_personas: getNumber(event.n_personas ?? payload.n_personas, 8),
+        n_rounds: getNumber(event.n_rounds ?? payload.n_rounds, 4),
+        topics: getStringArray(event.topics ?? payload.topics),
+        ...envelope,
+      };
+    case "swarm_round_start":
+      return {
+        type: "swarm_round_start",
+        run_id: runId,
+        round: getNumber(event.round ?? payload.round),
+        n_rounds: getNumber(event.n_rounds ?? payload.n_rounds, 4),
+        ...envelope,
+      };
+    case "swarm_persona_vote":
+      return {
+        type: "swarm_persona_vote",
+        run_id: runId,
+        persona: getText(event.persona ?? payload.persona),
+        stance: getText(event.stance ?? payload.stance),
+        summary: getText(event.summary ?? payload.summary),
+        ...envelope,
+      };
+    case "swarm_round_end":
+      return {
+        type: "swarm_round_end",
+        run_id: runId,
+        round: getNumber(event.round ?? payload.round),
+        consensus_delta: getNumber(event.consensus_delta ?? payload.consensus_delta),
+        ...envelope,
+      };
+    case "swarm_synthesis":
+      return {
+        type: "swarm_synthesis",
+        run_id: runId,
+        method: getText(event.method ?? payload.method, "majority_vote"),
+        ...envelope,
+      };
+    case "swarm_complete":
+      return {
+        type: "swarm_complete",
+        run_id: runId,
+        answer_text: getText(event.answer_text ?? payload.answer_text),
+        sources: getEvidenceSources(event.sources ?? payload.sources),
         ...envelope,
       };
     default:

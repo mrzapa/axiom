@@ -36,6 +36,7 @@ from metis_app.engine import (
     query_forecast,
     query_direct,
     query_rag,
+    query_swarm,
     stream_forecast,
     stream_rag_answer,
 )
@@ -47,6 +48,8 @@ from metis_app.engine.querying import (
     KnowledgeSearchResult,
     RagQueryRequest,
     RagQueryResult,
+    SwarmQueryRequest,
+    SwarmQueryResult,
     extract_arrow_artifacts,
 )
 from metis_app.engine.forecasting import ForecastQueryRequest, ForecastSchemaRequest
@@ -365,6 +368,53 @@ class WorkspaceOrchestrator:
                 session_id,
                 role="assistant",
                 content=result.summary_text,
+                run_id=result.run_id,
+                sources=[EvidenceSource.from_dict(item) for item in result.sources],
+            )
+            self._assistant_service.reflect(
+                trigger="completed_run",
+                settings=resolved_settings,
+                session_id=session_id,
+                run_id=result.run_id,
+                _orchestrator=self,
+            )
+        return result
+
+    def run_swarm_query(
+        self,
+        req: SwarmQueryRequest,
+        *,
+        session_id: str = "",
+    ) -> SwarmQueryResult:
+        """Execute a swarm simulation query via the engine."""
+        resolved_settings = self._resolve_query_settings(req.settings, query=req.question)
+        normalized = SwarmQueryRequest(
+            manifest_path=req.manifest_path,
+            question=req.question,
+            settings=resolved_settings,
+            run_id=req.run_id,
+            n_personas=req.n_personas,
+            n_rounds=req.n_rounds,
+            topics=req.topics,
+        )
+        if session_id:
+            self._prepare_session_for_query(session_id, req.question, resolved_settings, manifest_path=req.manifest_path)
+            self.append_message(session_id, role="user", content=req.question, run_id="")
+        result = query_swarm(normalized)
+        self._record_trace_event(
+            result.run_id,
+            {
+                "type": "final",
+                "run_id": result.run_id,
+                "answer_text": result.answer_text,
+                "sources": result.sources,
+            },
+        )
+        if session_id:
+            self.append_message(
+                session_id,
+                role="assistant",
+                content=result.answer_text,
                 run_id=result.run_id,
                 sources=[EvidenceSource.from_dict(item) for item in result.sources],
             )

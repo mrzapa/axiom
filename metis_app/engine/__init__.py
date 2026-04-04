@@ -17,9 +17,12 @@ from metis_app.engine.querying import (
     KnowledgeSearchResult,
     RagQueryRequest,
     RagQueryResult,
+    SwarmQueryRequest,
+    SwarmQueryResult,
     knowledge_search,
     query_direct,
     query_rag,
+    query_swarm,
 )
 from metis_app.engine.streaming import stream_rag_answer
 
@@ -34,6 +37,8 @@ __all__ = [
     "KnowledgeSearchResult",
     "RagQueryRequest",
     "RagQueryResult",
+    "SwarmQueryRequest",
+    "SwarmQueryResult",
     "build_index",
     "delete_index",
     "forecast_preflight",
@@ -44,6 +49,7 @@ __all__ = [
     "query_forecast",
     "query_direct",
     "query_rag",
+    "query_swarm",
     "stream_forecast",
     "stream_rag_answer",
 ]

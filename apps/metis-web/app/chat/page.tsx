@@ -1397,6 +1397,92 @@ function ChatPageContent() {
                     payload: { fallback: event.fallback },
                   });
                   break;
+                case "swarm_start":
+                  appendTraceEvent(currentStream, {
+                    run_id: resolvedRunId,
+                    event_id: eventId !== null ? String(eventId) : undefined,
+                    stage: "simulation",
+                    event_type: "swarm_start",
+                    timestamp: new Date().toISOString(),
+                    payload: {
+                      n_personas: event.n_personas,
+                      n_rounds: event.n_rounds,
+                      topics: event.topics,
+                    },
+                  });
+                  break;
+                case "swarm_round_start":
+                  appendTraceEvent(currentStream, {
+                    run_id: resolvedRunId,
+                    event_id: eventId !== null ? String(eventId) : undefined,
+                    stage: "simulation",
+                    event_type: "swarm_round_start",
+                    timestamp: new Date().toISOString(),
+                    iteration: event.round,
+                    payload: { round: event.round, n_rounds: event.n_rounds },
+                  });
+                  break;
+                case "swarm_persona_vote":
+                  appendTraceEvent(currentStream, {
+                    run_id: resolvedRunId,
+                    event_id: eventId !== null ? String(eventId) : undefined,
+                    stage: "simulation",
+                    event_type: "swarm_persona_vote",
+                    timestamp: new Date().toISOString(),
+                    payload: {
+                      persona: event.persona,
+                      stance: event.stance,
+                      summary: event.summary,
+                    },
+                  });
+                  break;
+                case "swarm_round_end":
+                  appendTraceEvent(currentStream, {
+                    run_id: resolvedRunId,
+                    event_id: eventId !== null ? String(eventId) : undefined,
+                    stage: "simulation",
+                    event_type: "swarm_round_end",
+                    timestamp: new Date().toISOString(),
+                    iteration: event.round,
+                    payload: {
+                      round: event.round,
+                      consensus_delta: event.consensus_delta,
+                    },
+                  });
+                  break;
+                case "swarm_synthesis":
+                  appendTraceEvent(currentStream, {
+                    run_id: resolvedRunId,
+                    event_id: eventId !== null ? String(eventId) : undefined,
+                    stage: "simulation",
+                    event_type: "swarm_synthesis",
+                    timestamp: new Date().toISOString(),
+                    payload: { method: event.method },
+                  });
+                  break;
+                case "swarm_complete": {
+                  const swarmSources =
+                    event.sources.length > 0
+                      ? event.sources
+                      : currentStream.pendingSources;
+                  currentStream.assistantContent = event.answer_text;
+                  appendTraceEvent(currentStream, {
+                    run_id: resolvedRunId,
+                    event_id: eventId !== null ? String(eventId) : undefined,
+                    stage: "simulation",
+                    event_type: "swarm_complete",
+                    timestamp: new Date().toISOString(),
+                    payload: {
+                      answer_length: event.answer_text.length,
+                      sources_count: swarmSources.length,
+                    },
+                  });
+                  activeRagStreamRef.current = null;
+                  setIsStreamingRag(false);
+                  publishResumableRun(null);
+                  finalizeRun(resolvedRunId, event.answer_text, swarmSources);
+                  break;
+                }
                 case "token":
                   currentStream.assistantContent = `${currentStream.assistantContent}${event.text}`;
                   appendRunToken(resolvedRunId, event.text);

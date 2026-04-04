@@ -19,6 +19,8 @@ from metis_app.engine import (
     KnowledgeSearchResult,
     RagQueryRequest,
     RagQueryResult,
+    SwarmQueryRequest,
+    SwarmQueryResult,
 )
 from metis_app.services.forecast_service import (
     ForecastMapping,
@@ -147,6 +149,48 @@ class QueryArtifactModel(BaseModel):
     payload: Any | None = None
     payload_bytes: int = 0
     payload_truncated: bool = False
+
+
+class SwarmQueryRequestModel(BaseModel):
+    manifest_path: str
+    question: str
+    settings: dict[str, Any]
+    run_id: str | None = None
+    session_id: str = ""
+    n_personas: int = 8
+    n_rounds: int = 4
+    topics: list[str] | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    def to_engine(self) -> SwarmQueryRequest:
+        return SwarmQueryRequest(
+            manifest_path=Path(self.manifest_path),
+            question=self.question,
+            settings=dict(self.settings),
+            run_id=self.run_id,
+            n_personas=self.n_personas,
+            n_rounds=self.n_rounds,
+            topics=list(self.topics) if self.topics is not None else None,
+        )
+
+
+class SwarmQueryResultModel(BaseModel):
+    run_id: str
+    answer_text: str
+    report: dict[str, Any]
+    sources: list[dict[str, Any]]
+    selected_mode: str = "Simulation"
+
+    @classmethod
+    def from_engine(cls, result: SwarmQueryResult) -> "SwarmQueryResultModel":
+        return cls(
+            run_id=result.run_id,
+            answer_text=result.answer_text,
+            report=dict(result.report or {}),
+            sources=list(result.sources or []),
+            selected_mode=result.selected_mode,
+        )
 
 
 class ForecastMappingModel(BaseModel):

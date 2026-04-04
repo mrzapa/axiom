@@ -76,6 +76,8 @@ from .models import (
     RagQueryRequestModel,
     RagQueryResultModel,
     RunActionRequestModel,
+    SwarmQueryRequestModel,
+    SwarmQueryResultModel,
     UiTelemetryIngestRequestModel,
     UiTelemetrySummaryResponseModel,
 )
@@ -622,6 +624,17 @@ def create_app() -> FastAPI:
         return RagQueryResultModel.from_engine(
             _run_engine(
                 orchestrator.run_rag_query,
+                payload.to_engine(),
+                session_id=payload.session_id,
+            )
+        )
+
+    @app.post("/v1/query/swarm", response_model=SwarmQueryResultModel, dependencies=_auth)
+    def api_query_swarm(payload: SwarmQueryRequestModel) -> SwarmQueryResultModel:
+        orchestrator = WorkspaceOrchestrator()
+        return SwarmQueryResultModel.from_engine(
+            _run_engine(
+                orchestrator.run_swarm_query,
                 payload.to_engine(),
                 session_id=payload.session_id,
             )

@@ -777,9 +777,12 @@ class AssistantCompanionService:
             log.debug("_promote_skill_candidates: LLM unavailable: %s", exc)
             return 0
 
-        db_path = _db_path or _DEFAULT_CANDIDATES_DB_PATH
-        auto_gen_dir = _auto_gen_dir or (_DEFAULT_SKILLS_DIR / "auto-generated")
-        repo = SkillRepository(skills_dir=auto_gen_dir.parent)
+        db_path = _db_path or getattr(self, "_candidates_db_path", None) or _DEFAULT_CANDIDATES_DB_PATH
+        _self_skill_repo = getattr(self, "_skill_repo", None)
+        auto_gen_dir = _auto_gen_dir or (
+            (_self_skill_repo.skills_dir / "auto-generated") if _self_skill_repo else (_DEFAULT_SKILLS_DIR / "auto-generated")
+        )
+        repo = _self_skill_repo or SkillRepository(skills_dir=auto_gen_dir.parent)
         candidates = repo.list_candidates(db_path=db_path, limit=3)
         promoted_count = 0
 

@@ -78,8 +78,11 @@ const schema = z.object({
   deepread_mode: z.boolean(),
   build_digest_index: z.boolean(),
   build_comprehension_index: z.boolean(),
+  build_llm_knowledge_graph: z.boolean(),
   comprehension_extraction_depth: z.string().min(1),
   prefer_comprehension_index: z.boolean(),
+  swarm_n_personas: z.number().int().min(1, "Min 1").max(32, "Max 32"),
+  swarm_n_rounds: z.number().int().min(1, "Min 1").max(16, "Max 16"),
   // ── Advanced Graph ────────────────────────────────────────────────────────
   kg_query_mode: z.string().min(1),
   enable_langextract: z.boolean(),
@@ -228,8 +231,11 @@ const FORM_DEFAULT_VALUES: FormValues = {
   deepread_mode: false,
   build_digest_index: true,
   build_comprehension_index: false,
+  build_llm_knowledge_graph: false,
   comprehension_extraction_depth: "Standard",
   prefer_comprehension_index: true,
+  swarm_n_personas: 8,
+  swarm_n_rounds: 4,
   kg_query_mode: "hybrid",
   enable_langextract: false,
   enable_structured_extraction: false,
@@ -292,11 +298,14 @@ const SEARCH_INDEX = [
   { tab: "retrieval", label: "Build comprehension index", description: "Build a deep comprehension index for richer retrieval (slower to build)." },
   { tab: "retrieval", label: "Comprehension depth", description: "How deeply to analyse documents when building the comprehension index." },
   { tab: "retrieval", label: "Prefer comprehension index", description: "Use the comprehension index when both indexes are available." },
+  { tab: "retrieval", label: "Swarm personas", description: "Number of AI personas used in swarm simulation queries." },
+  { tab: "retrieval", label: "Swarm rounds", description: "Number of debate rounds in swarm simulation before synthesising the final answer." },
   // ── Graph ──
   { tab: "graph", label: "Knowledge graph query mode", description: "hybrid combines vector + keyword; vector uses embeddings only; keyword uses BM25 only." },
   { tab: "graph", label: "Language extraction", description: "Enable language-aware extraction pipeline for multi-lingual documents." },
   { tab: "graph", label: "Structured extraction", description: "Extract structured data (tables, entities) from documents during ingestion." },
   { tab: "graph", label: "Recursive retrieval", description: "Recursively follow graph edges to retrieve additional related context." },
+  { tab: "graph", label: "LLM knowledge graph enrichment", description: "Use the LLM to extract entities and relations during indexing for a richer knowledge graph." },
   // ── Memory ──
   { tab: "memory", label: "Citation v2", description: "Use the improved citation pipeline with claim-level source mapping." },
   { tab: "memory", label: "Claim-level grounding", description: "Post-process answers to verify and fix citation anchors at the claim level." },
@@ -448,8 +457,11 @@ export default function SettingsPage() {
       deepread_mode: false,
       build_digest_index: true,
       build_comprehension_index: false,
+      build_llm_knowledge_graph: false,
       comprehension_extraction_depth: "Standard",
       prefer_comprehension_index: true,
+      swarm_n_personas: 8,
+      swarm_n_rounds: 4,
       // Advanced Graph
       kg_query_mode: "hybrid",
       enable_langextract: false,
@@ -556,8 +568,11 @@ export default function SettingsPage() {
           deepread_mode: (raw.deepread_mode as boolean) ?? false,
           build_digest_index: (raw.build_digest_index as boolean) ?? true,
           build_comprehension_index: (raw.build_comprehension_index as boolean) ?? false,
+          build_llm_knowledge_graph: (raw.build_llm_knowledge_graph as boolean) ?? false,
           comprehension_extraction_depth: (raw.comprehension_extraction_depth as string) ?? "Standard",
           prefer_comprehension_index: (raw.prefer_comprehension_index as boolean) ?? true,
+          swarm_n_personas: (raw.swarm_n_personas as number) ?? 8,
+          swarm_n_rounds: (raw.swarm_n_rounds as number) ?? 4,
           // Advanced Graph
           kg_query_mode: (raw.kg_query_mode as string) ?? "hybrid",
           enable_langextract: (raw.enable_langextract as boolean) ?? false,
@@ -1241,6 +1256,28 @@ export default function SettingsPage() {
                       />
                       <FieldError message={errors.agentic_convergence_threshold?.message} />
                     </div>
+                    <div className="space-y-1.5">
+                      <FieldLabel htmlFor="swarm_n_personas" tooltip="Number of AI personas simulated in each swarm debate round. Higher values increase answer diversity at the cost of latency.">Swarm personas</FieldLabel>
+                      <Input
+                        id="swarm_n_personas"
+                        type="number"
+                        min={1}
+                        max={32}
+                        {...register("swarm_n_personas", { valueAsNumber: true })}
+                      />
+                      <FieldError message={errors.swarm_n_personas?.message} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <FieldLabel htmlFor="swarm_n_rounds" tooltip="Number of debate rounds between swarm personas before producing the final answer.">Swarm rounds</FieldLabel>
+                      <Input
+                        id="swarm_n_rounds"
+                        type="number"
+                        min={1}
+                        max={16}
+                        {...register("swarm_n_rounds", { valueAsNumber: true })}
+                      />
+                      <FieldError message={errors.swarm_n_rounds?.message} />
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
@@ -1379,6 +1416,13 @@ export default function SettingsPage() {
                       description="Recursively follow graph edges to retrieve additional related context."
                       checked={watch("enable_recursive_retrieval")}
                       onChange={(v) => setValue("enable_recursive_retrieval", v)}
+                    />
+                    <ToggleRow
+                      id="build_llm_knowledge_graph"
+                      label="LLM knowledge graph enrichment"
+                      description="Use the primary LLM to extract entities and relations during indexing, enriching the knowledge graph beyond regex heuristics."
+                      checked={watch("build_llm_knowledge_graph")}
+                      onChange={(v) => setValue("build_llm_knowledge_graph", v)}
                     />
                     <ToggleRow
                       id="web_scrape_full_content"
