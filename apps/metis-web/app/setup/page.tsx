@@ -467,8 +467,8 @@ export default function SetupPage() {
       <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col px-4 pb-8 pt-4 sm:px-6 lg:px-8">
         <header className="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 sm:px-5">
           <div>
-            <p className="text-lg font-semibold tracking-tight text-foreground">
-              METIS Setup
+            <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              METIS<sup style={{ fontSize: 8, opacity: 0.4, verticalAlign: 'super', marginLeft: 2 }}>AI</sup>
             </p>
             <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
               Setup
