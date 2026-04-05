@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import Any
 
 _DEFAULT_MODEL_ID = "google/timesfm-2.5-200m-pytorch"
-_DEFAULT_MAX_CONTEXT = 16000
+_DEFAULT_MAX_CONTEXT = 15360
 _DEFAULT_MAX_HORIZON = 1000
+_FORECAST_CONTEXT_LIMIT = 15360
+_FORECAST_HORIZON_LIMIT = 1000
 _DEFAULT_XREG_MODE = "xreg + timesfm"
 _FORECAST_SELECTED_MODE = "Forecast"
 _DEFAULT_QUANTILE_LABELS = [
@@ -120,6 +122,20 @@ def _downsample_points(
 
 def _module_available(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
+
+
+def _resolve_compile_limits(settings: dict[str, Any]) -> tuple[int, int, list[str]]:
+    requested_context = max(1, int(settings.get("forecast_max_context") or _DEFAULT_MAX_CONTEXT))
+    requested_horizon = max(1, int(settings.get("forecast_max_horizon") or _DEFAULT_MAX_HORIZON))
+    resolved_context = min(requested_context, _FORECAST_CONTEXT_LIMIT)
+    resolved_horizon = min(requested_horizon, _FORECAST_HORIZON_LIMIT)
+    warnings: list[str] = []
+    if requested_context != resolved_context or requested_horizon != resolved_horizon:
+        warnings.append(
+            "TimesFM uses a shared compile budget on this runtime; METIS capped forecast settings to "
+            f"{resolved_context} context and {resolved_horizon} horizon for compatibility."
+        )
+    return resolved_context, resolved_horizon, warnings
 
 
 @dataclass(slots=True)
@@ -268,6 +284,7 @@ class ForecastQueryResult:
     run_id: str
     answer_text: str
     selected_mode: str
+    query_mode: str
     model_backend: str
     model_id: str
     horizon: int
@@ -330,13 +347,16 @@ class ForecastService:
                 "Enable covariates with `pip install 'metis-app[forecast-xreg]'` or `pip install jax scikit-learn`."
             )
 
+        resolved_max_context, resolved_max_horizon, compile_warnings = _resolve_compile_limits(resolved_settings)
+        warnings.extend(compile_warnings)
+
         return ForecastPreflightResult(
             ready=timesfm_available,
             timesfm_available=timesfm_available,
             covariates_available=covariates_available,
             model_id=str(resolved_settings.get("forecast_model_id") or _DEFAULT_MODEL_ID),
-            max_context=max(1, int(resolved_settings.get("forecast_max_context") or _DEFAULT_MAX_CONTEXT)),
-            max_horizon=max(1, int(resolved_settings.get("forecast_max_horizon") or _DEFAULT_MAX_HORIZON)),
+            max_context=resolved_max_context,
+            max_horizon=resolved_max_horizon,
             xreg_mode=str(resolved_settings.get("forecast_xreg_mode") or _DEFAULT_XREG_MODE),
             force_xreg_cpu=bool(resolved_settings.get("forecast_force_xreg_cpu", True)),
             warnings=warnings,
@@ -475,6 +495,7 @@ class ForecastService:
             run_id=str(run_id or ""),
             answer_text=answer_text,
             selected_mode=_FORECAST_SELECTED_MODE,
+            query_mode="forecast",
             model_backend="timesfm-2.5-torch",
             model_id=preflight.model_id,
             horizon=dataset.horizon,
@@ -848,8 +869,7 @@ class ForecastService:
 
     def _get_model(self, *, settings: dict[str, Any], uses_covariates: bool) -> Any:
         model_id = str(settings.get("forecast_model_id") or _DEFAULT_MODEL_ID)
-        max_context = max(1, int(settings.get("forecast_max_context") or _DEFAULT_MAX_CONTEXT))
-        max_horizon = max(1, int(settings.get("forecast_max_horizon") or _DEFAULT_MAX_HORIZON))
+        max_context, max_horizon, _ = _resolve_compile_limits(settings)
         use_quantiles = bool(settings.get("forecast_use_quantiles", True))
         cache_key = (model_id, max_context, max_horizon, use_quantiles, uses_covariates)
         cached_model = self._model_cache.get(cache_key)

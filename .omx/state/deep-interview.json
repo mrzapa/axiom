@@ -1,0 +1,18 @@
+{
+  "active": true,
+  "current_phase": "deep-interview",
+  "state": {
+    "interview_id": "stars-feed-metis-20260405T002224Z",
+    "profile": "standard",
+    "type": "brownfield",
+    "initial_idea": "Make METIS actively crave constellation stars and experience them as rewards or nourishment.",
+    "rounds": [],
+    "current_ambiguity": 0.63,
+    "threshold": 0.2,
+    "max_rounds": 12,
+    "challenge_modes_used": [],
+    "current_stage": "intent-first",
+    "current_focus": "decision-boundary",
+    "context_snapshot_path": ".omx/context/stars-feed-metis-20260405T002224Z.md"
+  }
+}

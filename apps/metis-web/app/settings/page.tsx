@@ -26,7 +26,7 @@ import { AlertCircle, CheckCircle2, HelpCircle, Info, Loader2, RotateCcw, Search
 import { cn } from "@/lib/utils";
 import { useArrowState } from "@/hooks/use-arrow-state";
 
-const FORECAST_MAX_CONTEXT_LIMIT = 16000;
+const FORECAST_MAX_CONTEXT_LIMIT = 15360;
 const FORECAST_MAX_HORIZON_LIMIT = 1000;
 
 const schema = z.object({
@@ -941,7 +941,7 @@ export default function SettingsPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <FieldLabel htmlFor="forecast_max_context" tooltip="Maximum number of historical points to pass into the TimesFM context window. TimesFM 2.5 supports substantially larger windows than the old 1k default, so METIS now defaults to the full 16k context budget.">Forecast max context</FieldLabel>
+                        <FieldLabel htmlFor="forecast_max_context" tooltip="Maximum number of historical points to pass into the TimesFM context window. TimesFM 2.5 supports substantially larger windows than the old 1k default, so METIS now defaults to a near-max 15,360-point context budget within the shared compile window.">Forecast max context</FieldLabel>
                         <Input
                           id="forecast_max_context"
                           type="number"

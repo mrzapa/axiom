@@ -84,6 +84,7 @@ def stream_forecast(req: ForecastQueryRequest) -> Iterator[dict[str, Any]]:
                 "run_id": run_id,
                 "answer_text": result.answer_text,
                 "selected_mode": result.selected_mode,
+                "query_mode": result.query_mode,
                 "model_backend": result.model_backend,
                 "model_id": result.model_id,
                 "horizon": result.horizon,

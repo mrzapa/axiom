@@ -326,6 +326,7 @@ class ForecastQueryResultModel(BaseModel):
     run_id: str
     answer_text: str
     selected_mode: str
+    query_mode: str
     model_backend: str
     model_id: str
     horizon: int
@@ -339,6 +340,7 @@ class ForecastQueryResultModel(BaseModel):
             run_id=result.run_id,
             answer_text=result.answer_text,
             selected_mode=result.selected_mode,
+            query_mode=result.query_mode,
             model_backend=result.model_backend,
             model_id=result.model_id,
             horizon=result.horizon,

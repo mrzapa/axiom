@@ -65,6 +65,23 @@ def test_preflight_reports_univariate_ready_but_covariates_unavailable(
     assert any("jax" in guidance.lower() for guidance in result.install_guidance)
 
 
+def test_preflight_clamps_oversized_compile_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(forecast_service_module, "_module_available", lambda _module_name: True)
+
+    result = ForecastService().preflight(
+        {
+            "forecast_max_context": 20000,
+            "forecast_max_horizon": 1000,
+        }
+    )
+
+    assert result.max_context == 15360
+    assert result.max_horizon == 1000
+    assert any("shared compile budget" in warning.lower() for warning in result.warnings)
+
+
 def test_run_forecast_returns_univariate_artifacts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -213,9 +213,9 @@ cd apps/metis-web
 pnpm dev
 ```
 
-Forecast mode now defaults to a full 16k context window and a 1k horizon cap
-instead of the older 1k / 256 defaults, so long-history series are no longer
-artificially clipped by small local settings.
+Forecast mode now defaults to a near-max 15,360-point context window and a 1k
+horizon cap instead of the older 1k / 256 defaults. That keeps METIS close to
+TimesFM's limit without advertising an invalid context+horizon pair.
 
 ---
 
