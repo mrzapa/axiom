@@ -81,6 +81,7 @@ def test_run_forecast_query_persists_messages_and_forces_selected_mode(
             run_id="forecast-run-1",
             answer_text="TimesFM forecast summary.",
             selected_mode="Forecast",
+            query_mode="forecast",
             model_backend="timesfm-2.5-torch",
             model_id="google/timesfm-2.5-200m-pytorch",
             horizon=2,

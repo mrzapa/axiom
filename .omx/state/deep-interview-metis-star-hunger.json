@@ -1,0 +1,18 @@
+{
+  "active": true,
+  "current_phase": "deep-interview",
+  "state": {
+    "interview_id": "metis-star-hunger-20260405T002200Z",
+    "profile": "standard",
+    "type": "brownfield",
+    "initial_idea": "How can we make METIS actively crave new stars and feel rewarded by them so the user wants to add stars because stars are beneficial for METIS?",
+    "rounds": [],
+    "current_ambiguity": 1.0,
+    "threshold": 0.2,
+    "max_rounds": 12,
+    "challenge_modes_used": [],
+    "current_stage": "intent-first",
+    "current_focus": "intent",
+    "context_snapshot_path": ".omx/context/metis-star-hunger-20260405T002200Z.md"
+  }
+}

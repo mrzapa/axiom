@@ -16,7 +16,7 @@ def test_forecast_preflight_endpoint_uses_orchestrator(monkeypatch) -> None:
         "timesfm_available": True,
         "covariates_available": False,
         "model_id": "google/timesfm-2.5-200m-pytorch",
-        "max_context": 16000,
+        "max_context": 15360,
         "max_horizon": 1000,
         "xreg_mode": "xreg + timesfm",
         "force_xreg_cpu": True,
@@ -96,6 +96,7 @@ def test_forecast_query_endpoint_uses_orchestrator(monkeypatch) -> None:
         run_id="forecast-run-1",
         answer_text="Forecast summary.",
         selected_mode="Forecast",
+        query_mode="forecast",
         model_backend="timesfm-2.5-torch",
         model_id="google/timesfm-2.5-200m-pytorch",
         horizon=3,
@@ -155,6 +156,7 @@ def test_forecast_query_endpoint_uses_orchestrator(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["selected_mode"] == "Forecast"
+    assert payload["query_mode"] == "forecast"
     assert payload["artifacts"][0]["type"] == "forecast_report"
     fake_orchestrator.run_forecast_query.assert_called_once()
     assert fake_orchestrator.run_forecast_query.call_args.kwargs["session_id"] == "session-1"
@@ -170,6 +172,7 @@ def test_forecast_stream_endpoint_emits_sse(monkeypatch) -> None:
                 "run_id": "forecast-run-2",
                 "answer_text": "Done",
                 "selected_mode": "Forecast",
+                "query_mode": "forecast",
                 "model_backend": "timesfm-2.5-torch",
                 "model_id": "google/timesfm-2.5-200m-pytorch",
                 "horizon": 2,
@@ -203,3 +206,4 @@ def test_forecast_stream_endpoint_emits_sse(monkeypatch) -> None:
     assert "text/event-stream" in response.headers["content-type"]
     assert "run_started" in response.text
     assert '"selected_mode": "Forecast"' in response.text
+    assert '"query_mode": "forecast"' in response.text

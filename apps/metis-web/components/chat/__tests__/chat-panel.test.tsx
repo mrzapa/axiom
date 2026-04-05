@@ -63,7 +63,7 @@ describe("ChatPanel", () => {
           timesfm_available: true,
           covariates_available: true,
           model_id: "google/timesfm-2.5-200m-pytorch",
-          max_context: 16000,
+          max_context: 15360,
           max_horizon: 1000,
           xreg_mode: "xreg + timesfm",
           force_xreg_cpu: true,

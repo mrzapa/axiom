@@ -1,0 +1,27 @@
+# Ralph Context Snapshot
+
+- Task statement: Continue the TimesFM Forecast integration work and remove the artificially small forecast context limits in METIS.
+- Desired outcome: Forecast mode remains reproducible on Windows, runtime/docs reflect the working Python 3.11 path, and METIS no longer defaults to a small TimesFM context or horizon cap.
+- Known facts/evidence:
+  - Forecast mode already works end to end with TimesFM in a dedicated Python 3.11 environment and FastAPI backend.
+  - The repo now includes a Windows forecast bootstrap script, updated launch guidance, and raised forecast defaults.
+  - Targeted tests previously passed for forecast API and web helpers.
+  - TimesFM upstream still documents source-install workflows and has an open packaging issue, so local reproducibility matters.
+- Constraints:
+  - Keep user-facing behavior aligned across backend defaults, settings UI validation, and docs.
+  - Avoid reverting unrelated dirty worktree changes.
+  - Preserve Windows CPU-forced XReg behavior unless a safer alternative is clearly validated.
+- Unknowns/open questions:
+  - Whether the new 16k/1k defaults are reflected live in the running preflight response.
+  - Whether any remaining forecast API parity gap still exists under real HTTP usage.
+  - Whether an additional review pass will surface regressions or cleanup items.
+- Likely codebase touchpoints:
+  - `metis_app/services/forecast_service.py`
+  - `metis_app/default_settings.json`
+  - `apps/metis-web/app/settings/page.tsx`
+  - `tests/test_forecast_api.py`
+  - `apps/metis-web/lib/__tests__/api.test.ts`
+  - `apps/metis-web/components/chat/__tests__/chat-panel.test.tsx`
+  - `scripts/run_forecast_api_dev.ps1`
+  - `.agents/skills/launch-app/SKILL.md`
+  - `README.md`
