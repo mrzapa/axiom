@@ -24,7 +24,8 @@ const StarDiveOverlay = dynamic(
 import { StarDetailsPanel } from "@/components/constellation/star-observatory-dialog";
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { useCometNews } from "@/hooks/use-news-comets";
-import { deleteIndex, fetchIndexes, previewLearningRoute, subscribeCompanionActivity } from "@/lib/api";
+import { deleteIndex, fetchBrainScaffold, fetchIndexes, previewLearningRoute, subscribeCompanionActivity } from "@/lib/api";
+import type { BrainScaffoldEdge } from "@/lib/api";
 import type { CometData, CometEvent } from "@/lib/comet-types";
 import {
   makeCometData,
@@ -872,6 +873,7 @@ export default function Home() {
   const hoveredAddCandidateRef = useRef<StarData | null>(null);
   const armedAddCandidateIdRef = useRef<string | null>(null);
   const availableIndexesRef = useRef<IndexSummary[]>(availableIndexes);
+  const scaffoldEdgesRef = useRef<BrainScaffoldEdge[]>([]);
   const canvasBoundsRef = useRef<CanvasBounds>({
     left: 0,
     top: 0,
@@ -1714,6 +1716,19 @@ export default function Home() {
     void refreshAvailableIndexes();
   }, [refreshAvailableIndexes]);
 
+  // Fetch scaffold topology for semantic star wiring
+  useEffect(() => {
+    let cancelled = false;
+    fetchBrainScaffold()
+      .then((data) => {
+        if (!cancelled) scaffoldEdgesRef.current = data.scaffold_edges;
+      })
+      .catch(() => {
+        // Scaffold is optional — silently degrade
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (selectedUserStar && pendingDetailStar?.id === selectedUserStar.id) {
       setPendingDetailStar(null);
@@ -2156,7 +2171,7 @@ export default function Home() {
 
     function drawGalaxy() {
       const zoomFactor = backgroundZoomRef.current;
-      const galaxyAlpha = 1 - smoothstep(0.75, 1.5, zoomFactor);
+      const galaxyAlpha = 1 - smoothstep(0.75, 2.5, zoomFactor);
       if (galaxyAlpha <= 0) return;
       ctx!.save();
       ctx!.globalAlpha = ctx!.globalAlpha * galaxyAlpha;
@@ -2834,6 +2849,73 @@ export default function Home() {
           ctx!.stroke();
         });
       });
+
+      // --- Scaffold-derived semantic edges ---
+      // Map scaffold edges (brain graph node IDs) back to user stars via manifest paths.
+      const scaffoldEdges = scaffoldEdgesRef.current;
+      if (scaffoldEdges.length > 0 && currentUserStars.length >= 2) {
+        // Build nodeId → manifest_path lookup from available indexes
+        const nodeIdToManifest = new Map<string, string>();
+        for (const idx of availableIndexesRef.current) {
+          nodeIdToManifest.set(`index:${idx.index_id}`, idx.manifest_path);
+        }
+
+        // Build manifest_path → star IDs lookup
+        const manifestToStarIds = new Map<string, string[]>();
+        for (const star of currentUserStars) {
+          for (const mp of getStarManifestPaths(star)) {
+            if (!mp) continue;
+            const list = manifestToStarIds.get(mp);
+            if (list) list.push(star.id);
+            else manifestToStarIds.set(mp, [star.id]);
+          }
+        }
+
+        for (const edge of scaffoldEdges) {
+          const srcManifest = nodeIdToManifest.get(edge.source_id);
+          const tgtManifest = nodeIdToManifest.get(edge.target_id);
+          if (!srcManifest || !tgtManifest) continue;
+
+          const srcStarIds = manifestToStarIds.get(srcManifest) ?? [];
+          const tgtStarIds = manifestToStarIds.get(tgtManifest) ?? [];
+
+          for (const srcStarId of srcStarIds) {
+            for (const tgtStarId of tgtStarIds) {
+              if (srcStarId === tgtStarId) continue;
+              const edgeKey = srcStarId < tgtStarId
+                ? `${srcStarId}:${tgtStarId}`
+                : `${tgtStarId}:${srcStarId}`;
+              if (renderedLinks.has(edgeKey)) continue;
+              renderedLinks.add(edgeKey);
+
+              const fromState = projectedUserStarRenderState.get(srcStarId);
+              const toState = projectedUserStarRenderState.get(tgtStarId);
+              if (!fromState || !toState) continue;
+
+              const alphaMultiplier = Math.max(0, Math.min(1, Math.min(fromState.fadeIn, toState.fadeIn) * edgeBreath));
+              const scaffoldAlpha = 0.12 + Math.min(edge.persistence_weight, 1.0) * 0.22;
+              const scaffoldWidth = 0.8 + Math.min(edge.persistence_weight, 1.0) * 1.2;
+
+              // Scaffold edges use a distinct cyan to visually separate
+              // topological connections from user-created links.
+              const gradient = ctx!.createLinearGradient(
+                fromState.target.x, fromState.target.y,
+                toState.target.x, toState.target.y,
+              );
+              gradient.addColorStop(0, `rgba(120,220,255,${scaffoldAlpha * alphaMultiplier})`);
+              gradient.addColorStop(1, `rgba(120,220,255,${scaffoldAlpha * 0.6 * alphaMultiplier})`);
+              ctx!.strokeStyle = gradient;
+              ctx!.lineWidth = scaffoldWidth;
+              ctx!.setLineDash([6, 4]);
+              ctx!.beginPath();
+              ctx!.moveTo(fromState.target.x, fromState.target.y);
+              ctx!.lineTo(toState.target.x, toState.target.y);
+              ctx!.stroke();
+              ctx!.setLineDash([]);
+            }
+          }
+        }
+      }
     }
 
     function drawUserStars(t: number) {
