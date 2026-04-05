@@ -2077,7 +2077,7 @@ export default function Home() {
     }
 
     function renderGalaxyToCanvas(offscreen: HTMLCanvasElement, cW: number, cH: number) {
-      const gc = offscreen.getContext('2d')!;
+      const gc = offscreen.getContext('2d');
       if (!gc) return;
       const dpr = window.devicePixelRatio || 1;
       const pw = Math.round(cW * dpr);
@@ -4285,7 +4285,7 @@ export default function Home() {
         zoomFactor: backgroundZoomTargetRef.current,
       };
       const worldBeforeZoom = screenToWorldPoint(pointer, bounds.width, bounds.height, currentCamera);
-      const zoomMultiplier = Math.exp(e.deltaY * 0.0014);
+      const zoomMultiplier = Math.exp(-e.deltaY * 0.0014);
       const nextZoomFactor = clampBackgroundZoomFactor(currentCamera.zoomFactor * zoomMultiplier);
 
       if (Math.abs(nextZoomFactor - currentCamera.zoomFactor) < 0.0005) {
