@@ -2208,7 +2208,7 @@ export default function Home() {
 
     function drawGalaxy() {
       const zoomFactor = backgroundZoomRef.current;
-      const galaxyAlpha = 1 - smoothstep(0.75, 2.5, zoomFactor);
+      const galaxyAlpha = 1 - smoothstep(0.002, 0.05, zoomFactor);
       if (galaxyAlpha <= 0) return;
       ctx!.save();
       ctx!.globalAlpha = ctx!.globalAlpha * galaxyAlpha;

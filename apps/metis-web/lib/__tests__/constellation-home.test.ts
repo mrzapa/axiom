@@ -550,7 +550,7 @@ describe("getPreviewConnectionNodes", () => {
 
 describe("background zoom helpers", () => {
   it("clamps the zoom factor to the supported orbit window", () => {
-    expect(clampBackgroundZoomFactor(0.01)).toBe(0.75);
+    expect(clampBackgroundZoomFactor(0.001)).toBe(0.002);
     expect(clampBackgroundZoomFactor(2500)).toBe(2000);
     expect(clampBackgroundZoomFactor(24)).toBe(24);
   });
