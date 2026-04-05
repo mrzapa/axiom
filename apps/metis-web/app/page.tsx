@@ -1510,7 +1510,7 @@ export default function Home() {
 
   const nudgeBackgroundZoom = useCallback((direction: "in" | "out") => {
     const nextZoomFactor =
-      direction === "out"
+      direction === "in"
         ? backgroundZoomTargetRef.current * BACKGROUND_BUTTON_ZOOM_STEP
         : backgroundZoomTargetRef.current / BACKGROUND_BUTTON_ZOOM_STEP;
     clearConstellationHoverState();
@@ -4750,9 +4750,9 @@ export default function Home() {
           <button
             type="button"
             className="metis-zoom-pill-btn"
-            onClick={() => nudgeBackgroundZoom("in")}
-            disabled={canvasInteractionsLocked || backgroundZoomFactor <= MIN_BACKGROUND_ZOOM_FACTOR + 0.01}
-            aria-label="Zoom closer"
+            onClick={() => nudgeBackgroundZoom("out")}
+            disabled={canvasInteractionsLocked || backgroundZoomFactor <= MIN_BACKGROUND_ZOOM_FACTOR + 0.001}
+            aria-label="Zoom out"
           >
             -
           </button>
@@ -4768,9 +4768,9 @@ export default function Home() {
           <button
             type="button"
             className="metis-zoom-pill-btn"
-            onClick={() => nudgeBackgroundZoom("out")}
+            onClick={() => nudgeBackgroundZoom("in")}
             disabled={canvasInteractionsLocked || backgroundZoomFactor >= MAX_BACKGROUND_ZOOM_FACTOR - 0.5}
-            aria-label="Zoom farther"
+            aria-label="Zoom in"
           >
             +
           </button>
