@@ -2078,6 +2078,7 @@ export default function Home() {
 
     function renderGalaxyToCanvas(offscreen: HTMLCanvasElement, cW: number, cH: number) {
       const gc = offscreen.getContext('2d')!;
+      if (!gc) return;
       const dpr = window.devicePixelRatio || 1;
       const pw = Math.round(cW * dpr);
       const ph = Math.round(cH * dpr);
@@ -2119,9 +2120,18 @@ export default function Home() {
 
       gc.putImageData(imageData, 0, 0);
 
-      gc.filter = 'blur(4px)';
-      gc.drawImage(offscreen, 0, 0);
-      gc.filter = 'none';
+      // Blur using a temporary canvas to avoid self-compositing (undefined in Firefox/Safari)
+      const blurTemp = document.createElement('canvas');
+      blurTemp.width = pw;
+      blurTemp.height = ph;
+      const btx = blurTemp.getContext('2d');
+      if (btx) {
+        btx.filter = 'blur(4px)';
+        btx.drawImage(offscreen, 0, 0);
+        btx.filter = 'none';
+        gc.clearRect(0, 0, pw, ph);
+        gc.drawImage(blurTemp, 0, 0);
+      }
 
       const seed = 0.618;
       for (let py = 0; py < ph; py += 2) {
@@ -2135,7 +2145,7 @@ export default function Home() {
           const h = Math.abs(hash2(px, py));
           if (h < density * 0.06) {
             gc.fillStyle = `rgba(200,210,255,${density * 0.85})`;
-            gc.fillRect(px / dpr, py / dpr, 1 / dpr, 1 / dpr);
+            gc.fillRect(px, py, 1, 1);
           }
         }
       }
@@ -2149,7 +2159,7 @@ export default function Home() {
       const galaxyAlpha = 1 - smoothstep(0.75, 1.5, zoomFactor);
       if (galaxyAlpha <= 0) return;
       ctx!.save();
-      ctx!.globalAlpha = galaxyAlpha;
+      ctx!.globalAlpha = ctx!.globalAlpha * galaxyAlpha;
       ctx!.drawImage(galaxyCanvas, 0, 0, W, H);
       ctx!.restore();
     }
