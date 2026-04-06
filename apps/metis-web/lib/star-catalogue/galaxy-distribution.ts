@@ -8,6 +8,53 @@ export interface GalaxyDistributionConfig {
 }
 
 /**
+ * Galaxy-scale density factor for a sector centred at (centerWx, centerWy).
+ * Returns [0, 1]: 1 = maximum density (galactic core), 0 = empty void.
+ *
+ * Galaxy radius is expressed in world units. numArms / armWindingRate drive
+ * the global spiral arm structure so the whole starfield has coherent shape.
+ */
+export function galaxyDensityFactor(
+  centerWx: number,
+  centerWy: number,
+  numArms: number,
+  armWindingRate: number,
+  galaxyRadiusWu: number,
+): number {
+  const nx = centerWx / galaxyRadiusWu;
+  const ny = centerWy / galaxyRadiusWu;
+  const r = Math.sqrt(nx * nx + ny * ny);
+
+  // Minimum background density so the outer void isn't pitch-black.
+  const minDensity = 0.03;
+
+  if (r > 2.5) return minDensity;
+
+  const theta = Math.atan2(ny, nx);
+
+  // Galactic core: tight Gaussian
+  const coreDensity = Math.exp(-(r * r) / 0.012);
+
+  // Exponential disk falloff
+  const diskDensity = Math.exp(-r * 2.6);
+
+  // Global spiral arms
+  let armDensity = 0;
+  for (let arm = 0; arm < numArms; arm++) {
+    const armOffset = (arm / numArms) * Math.PI * 2;
+    const armAngle = armOffset + r * armWindingRate * 0.35;
+    let dAngle = theta - armAngle;
+    // Normalise to [-π, π]
+    dAngle -= Math.round(dAngle / (Math.PI * 2)) * (Math.PI * 2);
+    const armWidth = 0.25 + r * 0.18;
+    armDensity = Math.max(armDensity, Math.exp(-(dAngle * dAngle) / (armWidth * armWidth)));
+  }
+
+  const density = coreDensity * 0.25 + diskDensity * 0.5 + armDensity * diskDensity * 0.65;
+  return Math.min(1, Math.max(minDensity, density));
+}
+
+/**
  * Generate a world-space position for a star within a galaxy.
  * Returns position in approximately [-1, 1] range with spiral arm structure.
  */

@@ -1,5 +1,5 @@
 import { fnv1a32, SeededRNG } from "./rng";
-import { sampleGalaxyPosition } from "./galaxy-distribution";
+import { galaxyDensityFactor } from "./galaxy-distribution";
 import { generateStarName } from "./star-name-generator";
 import type { CatalogueStar, CatalogueSector, SectorKey, StarCatalogueConfig } from "./types";
 
@@ -52,23 +52,35 @@ export class StarCatalogue {
     const rng = new SeededRNG(sectorSeed);
     const stars: CatalogueStar[] = [];
 
-    const distCfg = {
-      numArms: this.cfg.numArms,
-      armWindingRate: this.cfg.armWindingRate,
-      coreRadius: 0.15,
-      diskFalloff: 3.0,
-    };
+    // Galaxy-scale density: sectors near the galactic centre get more stars;
+    // outer sectors thin out, breaking the uniform-grid look at zoom-out.
+    const galaxyRadius = this.cfg.sectorSize * 8; // ~8 sectors = galaxy radius
+    const sectorCentreWx = (sx + 0.5) * this.cfg.sectorSize;
+    const sectorCentreWy = (sy + 0.5) * this.cfg.sectorSize;
+    const density = galaxyDensityFactor(
+      sectorCentreWx,
+      sectorCentreWy,
+      this.cfg.numArms,
+      this.cfg.armWindingRate,
+      galaxyRadius,
+    );
+    // Poisson-style count: floor + stochastic rounding so average = starsPerSector * density
+    const expectedCount = this.cfg.starsPerSector * density;
+    const starsToGen = Math.floor(expectedCount) + (rng.next() < (expectedCount % 1) ? 1 : 0);
 
-    for (let i = 0; i < this.cfg.starsPerSector; i++) {
+    for (let i = 0; i < starsToGen; i++) {
       const starSeedStr = `${this.cfg.galaxySeed}:${key}:${i}`;
       const starSeed = fnv1a32(starSeedStr);
       const starRng = new SeededRNG(starSeed);
 
-      const { wx, wy, depthLayer } = sampleGalaxyPosition(starRng, distCfg);
+      // Uniform random placement within sector — avoids the repeating per-sector
+      // mini-spiral texture that looks like a grid at extreme zoom-out.
+      const wx = starRng.next();
+      const wy = starRng.next();
+      const depthLayer = Math.min(1, 0.3 + starRng.next() * 0.7);
 
-      // Map galaxy [-1,1] into sector world bounds
-      const sectorWx = sx * this.cfg.sectorSize + ((wx + 1) * 0.5) * this.cfg.sectorSize;
-      const sectorWy = sy * this.cfg.sectorSize + ((wy + 1) * 0.5) * this.cfg.sectorSize;
+      const sectorWx = sx * this.cfg.sectorSize + wx * this.cfg.sectorSize;
+      const sectorWy = sy * this.cfg.sectorSize + wy * this.cfg.sectorSize;
 
       const profile = this.generateProfile(starSeedStr);
 
