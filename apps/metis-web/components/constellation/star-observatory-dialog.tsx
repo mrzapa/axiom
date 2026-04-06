@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FacultyGlyphPanel } from "@/components/constellation/faculty-glyph-panel";
 import { LearningRoutePanel } from "@/components/constellation/learning-route-panel";
 import {
   Dialog,
@@ -33,7 +34,13 @@ import {
   buildFacultyAnchoredPlacement,
   getConstellationPlacementDecision,
 } from "@/lib/constellation-brain";
-import { CONSTELLATION_FACULTIES, getAutoStarFaculty, getFacultyColor, isAutonomousStar } from "@/lib/constellation-home";
+import {
+  CONSTELLATION_FACULTIES,
+  getAutoStarFaculty,
+  getFacultyColor,
+  inferConstellationFaculty,
+  isAutonomousStar,
+} from "@/lib/constellation-home";
 import type {
   LearningRoute,
   LearningRouteStep,
@@ -516,6 +523,26 @@ export function StarDetailsPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, building, uploading, removing, handleOpenChange]);
 
+  const activeFaculty = useMemo(() => {
+    if (!star) {
+      return null;
+    }
+
+    const activeStar = star as DetailStar;
+    const chosenFacultyId = primaryDomainIdDraft.trim() || activeStar.primaryDomainId;
+    if (chosenFacultyId) {
+      const matchedFaculty = CONSTELLATION_FACULTIES.find((faculty) => faculty.id === chosenFacultyId);
+      if (matchedFaculty) {
+        return matchedFaculty;
+      }
+    }
+
+    return inferConstellationFaculty({
+      x: activeStar.x,
+      y: activeStar.y,
+    }).primary.faculty;
+  }, [primaryDomainIdDraft, star]);
+
   if (!star) {
     return null;
   }
@@ -887,6 +914,8 @@ export function StarDetailsPanel({
                 Attached sources
               </button>
             </div>
+
+            <FacultyGlyphPanel faculty={activeFaculty} />
           </DialogHeader>
         </div>
 

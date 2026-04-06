@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048" fill="none">
+  <defs>
+    <linearGradient id="filament" x1="502" y1="342" x2="1542" y2="1698" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#73D5FF"/>
+      <stop offset="0.52" stop-color="#F2FCFF"/>
+      <stop offset="1" stop-color="#7EBCFF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="770" y1="466" x2="1310" y2="1598" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F0B85A"/>
+      <stop offset="1" stop-color="#FFF1C0"/>
+    </linearGradient>
+    <filter id="glow" x="328" y="246" width="1390" height="1578" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#glow)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1025 458C928 464 838 519 786 604C739 684 730 765 757 845C786 930 853 1008 960 1081C1037 1140 1085 1210 1103 1292C1120 1372 1117 1467 1088 1558" stroke="url(#filament)" stroke-width="22"/>
+    <path d="M1025 458C1123 462 1214 515 1264 596C1319 685 1331 781 1300 872C1266 963 1192 1039 1086 1098" stroke="url(#filament)" stroke-width="22"/>
+    <path d="M813 918L1023 702L1228 924L1016 1142L813 918Z" stroke="url(#filament)" stroke-width="20"/>
+    <path d="M932 1000L1119 835" stroke="url(#accent)" stroke-width="14"/>
+    <path d="M1036 699L932 1001L1016 1142" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M790 1186L1020 1328L1258 1186" stroke="url(#filament)" stroke-width="20"/>
+    <path d="M790 1186L1020 1041L1258 1186" stroke="url(#filament)" stroke-width="20"/>
+    <path d="M1020 1328V1554" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M1232 663L1359 983" stroke="url(#filament)" stroke-width="20"/>
+    <path d="M1359 983L1121 1018" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M1330 908L1398 847" stroke="url(#accent)" stroke-width="16"/>
+    <path d="M827 660L690 1013" stroke="url(#filament)" stroke-width="20"/>
+    <path d="M690 1013L932 1016" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M721 940L648 879" stroke="url(#accent)" stroke-width="16"/>
+    <circle cx="1025" cy="458" r="18" fill="#F6FCFF"/>
+    <circle cx="813" cy="918" r="18" fill="#F6FCFF"/>
+    <circle cx="1228" cy="924" r="18" fill="#F6FCFF"/>
+    <circle cx="1016" cy="1142" r="18" fill="#F0B85A"/>
+    <circle cx="790" cy="1186" r="17" fill="#F6FCFF"/>
+    <circle cx="1258" cy="1186" r="17" fill="#F6FCFF"/>
+    <circle cx="1020" cy="1328" r="18" fill="#F0B85A"/>
+    <circle cx="1020" cy="1554" r="18" fill="#F6FCFF"/>
+    <circle cx="1359" cy="983" r="18" fill="#F6FCFF"/>
+    <circle cx="690" cy="1013" r="18" fill="#F6FCFF"/>
+  </g>
+</svg>

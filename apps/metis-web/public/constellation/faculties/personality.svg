@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048" fill="none">
+  <defs>
+    <linearGradient id="filament" x1="530" y1="340" x2="1544" y2="1718" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#70D4FF"/>
+      <stop offset="0.52" stop-color="#F2FCFF"/>
+      <stop offset="1" stop-color="#7BC0FF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="750" y1="456" x2="1296" y2="1604" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F0B85A"/>
+      <stop offset="1" stop-color="#FFF0BD"/>
+    </linearGradient>
+    <filter id="glow" x="356" y="248" width="1338" height="1576" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#glow)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1025 446C944 458 867 509 819 602C773 687 763 785 792 877C822 972 883 1052 969 1108C1038 1152 1080 1226 1090 1334C1098 1414 1088 1488 1057 1564" stroke="url(#filament)" stroke-width="22"/>
+    <path d="M1025 446C1122 451 1212 512 1265 604C1318 696 1330 801 1297 892C1263 982 1194 1062 1096 1114C1049 1137 1011 1176 979 1233" stroke="url(#filament)" stroke-width="22"/>
+    <path d="M844 671C862 589 932 527 1022 516C1125 506 1204 568 1223 663C1242 754 1178 828 1076 846L1060 907C1127 936 1184 975 1233 1029C1284 1087 1315 1150 1329 1217C1241 1188 1165 1146 1104 1090C1060 1047 1029 995 1014 935C983 999 945 1053 901 1097C842 1153 765 1192 672 1214C688 1141 719 1080 769 1023C817 966 880 923 957 894L946 835C855 804 818 735 844 671Z" stroke="url(#filament)" stroke-width="20"/>
+    <path d="M932 671C967 637 1007 619 1056 619C1101 619 1137 635 1170 668" stroke="url(#accent)" stroke-width="14"/>
+    <path d="M978 753C1007 774 1037 777 1070 753" stroke="url(#accent)" stroke-width="14"/>
+    <path d="M753 1300C837 1275 909 1268 967 1279C922 1362 845 1437 731 1507" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M1280 1296C1213 1275 1146 1268 1089 1278C1133 1360 1210 1435 1318 1500" stroke="url(#filament)" stroke-width="18"/>
+    <circle cx="1025" cy="446" r="18" fill="#F6FCFF"/>
+    <circle cx="844" cy="671" r="18" fill="#F6FCFF"/>
+    <circle cx="1223" cy="663" r="18" fill="#F6FCFF"/>
+    <circle cx="957" cy="894" r="18" fill="#F0B85A"/>
+    <circle cx="1014" cy="935" r="18" fill="#F6FCFF"/>
+    <circle cx="1329" cy="1217" r="18" fill="#F6FCFF"/>
+    <circle cx="672" cy="1214" r="18" fill="#F6FCFF"/>
+    <circle cx="731" cy="1507" r="18" fill="#F0B85A"/>
+    <circle cx="1318" cy="1500" r="18" fill="#F0B85A"/>
+    <circle cx="1057" cy="1564" r="18" fill="#F6FCFF"/>
+  </g>
+</svg>

@@ -109,6 +109,7 @@ import {
   measureSingleLineTextWidth,
   quantizeFontSize,
 } from "@/lib/pretext-labels";
+import { getFacultyArtDefinition } from "@/lib/constellation-faculty-art";
 import type {
   IndexBuildResult,
   IndexSummary,
@@ -192,6 +193,12 @@ interface NodeData extends ConstellationNodePoint {
 interface DustData {
   x: number; y: number; vx: number; vy: number;
   size: number; opacity: number;
+}
+
+interface FacultyArtRenderState {
+  errored: boolean;
+  image: HTMLImageElement;
+  loaded: boolean;
 }
 
 interface WorldStarData {
@@ -2086,6 +2093,30 @@ export default function Home() {
       _labelTop: 0,
       _sx: 0, _sy: 0,
     }));
+    const facultyArtImages = new Map<string, FacultyArtRenderState>();
+    CONSTELLATION_FACULTIES.forEach((faculty) => {
+      const art = getFacultyArtDefinition(faculty.id);
+      if (!art) {
+        return;
+      }
+
+      const image = new Image();
+      const renderState: FacultyArtRenderState = {
+        errored: false,
+        image,
+        loaded: false,
+      };
+
+      image.decoding = "async";
+      image.onload = () => {
+        renderState.loaded = true;
+      };
+      image.onerror = () => {
+        renderState.errored = true;
+      };
+      image.src = art.src;
+      facultyArtImages.set(faculty.id, renderState);
+    });
 
     function syncNodeLabelLayout(
       node: NodeData,
@@ -2146,8 +2177,6 @@ export default function Home() {
     /* comets — news items rendered as comets across the constellation */
     const cometSprites: CometData[] = [];
     const absorbBursts: { x: number; y: number; color: [number, number, number]; startedAt: number }[] = [];
-    let lastCometSyncSerial = -1;
-
     /** Reconcile server-side comet events into the closure-scoped cometSprites array. */
     function syncComets(serverComets: CometEvent[]) {
       const existing = new Set(cometSprites.map((c) => c.comet_id));
@@ -2182,7 +2211,7 @@ export default function Home() {
     let lastVisibleStarfieldY = Number.NaN;
     let lastVisibleWorldZoom = Number.NaN;
     let visibleWorldStars: WorldStarData[] = [];
-    let visibleStarNameMap = new Map<string, string>();
+    const visibleStarNameMap = new Map<string, string>();
     let lastConstellationProjectionWidth = -1;
     let lastConstellationProjectionHeight = -1;
     let lastConstellationProjectionZoom = Number.NaN;
@@ -3289,6 +3318,51 @@ export default function Home() {
       ctx!.fillText("METIS", ppx, topNodeY - 8 * sc);
     }
 
+    function drawFacultyGlyph(
+      node: NodeData,
+      px: number,
+      py: number,
+      brightness: number,
+      active: boolean,
+      proximity: number,
+      nodeAwakenProg: number,
+      ragFacultyHighlighted: boolean,
+      ragPulseStrength: number,
+    ) {
+      const art = getFacultyArtDefinition(node.concept.faculty.id);
+      const artState = art ? facultyArtImages.get(node.concept.faculty.id) : null;
+      if (!art || !artState || artState.errored || !artState.loaded) {
+        return;
+      }
+
+      let artOpacity = art.idleOpacity;
+      artOpacity += nodeAwakenProg * 0.03;
+      artOpacity += Math.max(0, brightness - 0.18) * 0.04;
+      artOpacity += proximity * 0.06;
+      artOpacity += node.hoverBoost * (art.activeOpacity - art.idleOpacity);
+      if (active) {
+        artOpacity = Math.max(artOpacity, art.activeOpacity);
+      }
+
+      if (ragFacultyHighlighted) {
+        artOpacity = Math.max(artOpacity, 0.24 + ragPulseStrength * 0.04);
+      }
+
+      if (artOpacity <= 0.01) {
+        return;
+      }
+
+      const cScale = getConstellationCameraScale(backgroundZoomRef.current);
+      const artSize = Math.min(W, H) * cScale * art.scale;
+      const drawX = px - artSize / 2;
+      const drawY = py - artSize / 2 + artSize * art.offsetY;
+
+      ctx!.save();
+      ctx!.globalAlpha = Math.min(0.28, artOpacity);
+      ctx!.drawImage(artState.image, drawX, drawY, artSize, artSize);
+      ctx!.restore();
+    }
+
     function drawNodes(t: number) {
       const aNode = activeNodeRef.current;
       const hasAddCandidate = hoveredAddCandidateRef.current !== null;
@@ -3319,6 +3393,17 @@ export default function Home() {
         const b = n.brightness;
         const hoverScale = enhancedHoverMotion ? n.hoverBoost * 2.6 : 0;
         const s = (n.baseSize * 2.9 + proximity * 2.6 + (i === aNode ? 1.35 : 0) + hoverScale) * nodeGalaxyScale;
+        drawFacultyGlyph(
+          n,
+          px,
+          py,
+          b,
+          i === aNode,
+          proximity,
+          nodeAwakenProg,
+          ragFacultyHighlighted,
+          ragPulseStrength,
+        );
 
         // Intra-constellation stick-figure lines
         const cScale = getConstellationCameraScale(backgroundZoomRef.current);
@@ -4548,6 +4633,10 @@ export default function Home() {
       cancelAnimationFrame(animFrame);
       cometSprites.length = 0;
       absorbBursts.length = 0;
+      facultyArtImages.forEach((artState) => {
+        artState.image.onload = null;
+        artState.image.onerror = null;
+      });
       window.removeEventListener("resize", onResize);
       canvas.removeEventListener("pointerdown", onCanvasPointerDown);
       canvas.removeEventListener("lostpointercapture", onCanvasLostPointerCapture);
