@@ -17,6 +17,7 @@ from metis_app.engine.querying import DirectQueryRequest, RagQueryRequest
 from metis_app.models.brain_graph import BrainGraph
 from metis_app.models.parity_types import SkillDefinition
 from metis_app.models.session_types import SessionDetail, SessionSummary
+from metis_app.services.atlas_repository import AtlasRepository
 from metis_app.services.nyx_catalog import (
     CuratedNyxComponent,
     NyxCatalogBroker,
@@ -70,6 +71,7 @@ def _make_orchestrator(
     skill_repo: Any | None = None,
     assistant_service: Any | None = None,
     nyx_catalog: Any | None = None,
+    atlas_repo: Any | None = None,
 ) -> WorkspaceOrchestrator:
     """Return a WorkspaceOrchestrator with stub dependencies injected."""
     if session_repo is None:
@@ -94,6 +96,7 @@ def _make_orchestrator(
         skill_repo=skill_repo,
         assistant_service=assistant_service,
         nyx_catalog=nyx_catalog,
+        atlas_repo=atlas_repo,
         index_dir="/tmp/fake_indexes",
     )
 
@@ -782,6 +785,112 @@ class TestRunRagQuery:
             "fallback_decision",
             "final",
         ]
+
+    def test_creates_atlas_candidate_for_grounded_completed_run(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_result = MagicMock(
+            run_id="run-atlas",
+            answer_text=(
+                "METIS uses grounded retrieval to synthesize answers across multiple sources. "
+                "It also preserves evidence so the user can verify the result."
+            ),
+            sources=[
+                {"sid": "S1", "source": "doc-a.txt", "snippet": "Grounded retrieval", "score": 0.91},
+                {"sid": "S2", "source": "doc-b.txt", "snippet": "Evidence preserved", "score": 0.84},
+            ],
+            context_block="context",
+            top_score=0.91,
+            selected_mode="Research",
+            retrieval_plan={"stages": []},
+            fallback={"triggered": False},
+        )
+        session_repo = MagicMock()
+        session_repo.get_session.return_value = SessionDetail(summary=_make_summary("s-atlas"))
+        session_repo.upsert_session.return_value = _make_summary("s-atlas")
+        assistant_service = MagicMock()
+        assistant_service.get_snapshot.return_value = {"identity": {"name": "Companion"}}
+        assistant_service.reflect.return_value = {"ok": True}
+        atlas_repo = AtlasRepository(db_path=":memory:")
+        orch = _make_orchestrator(
+            session_repo=session_repo,
+            assistant_service=assistant_service,
+            atlas_repo=atlas_repo,
+        )
+
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"selected_mode": "Research", "llm_provider": "mock"},
+        )
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator.query_rag",
+            lambda req: fake_result,
+        )
+
+        orch.run_rag_query(
+            RagQueryRequest(
+                manifest_path="/tmp/manifest.json",
+                question="How does METIS keep answers grounded?",
+                settings={"selected_mode": "Research"},
+            ),
+            session_id="s-atlas",
+        )
+
+        atlas_candidate = atlas_repo.get_candidate("s-atlas", "run-atlas")
+        assert atlas_candidate is not None
+        assert atlas_candidate.title == "How does METIS keep answers grounded?"
+        assert atlas_candidate.source_count == 2
+        assert atlas_candidate.mode == "Research"
+        assert atlas_candidate.status == "candidate"
+
+    def test_skips_atlas_candidate_when_fallback_triggered(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_result = MagicMock(
+            run_id="run-no-atlas",
+            answer_text="I could not find enough evidence to answer confidently.",
+            sources=[
+                {"sid": "S1", "source": "doc-a.txt", "snippet": "Thin evidence", "score": 0.12},
+                {"sid": "S2", "source": "doc-b.txt", "snippet": "Still thin", "score": 0.11},
+            ],
+            context_block="context",
+            top_score=0.12,
+            selected_mode="Q&A",
+            retrieval_plan={"stages": []},
+            fallback={"triggered": True, "strategy": "no_answer"},
+        )
+        session_repo = MagicMock()
+        session_repo.get_session.return_value = SessionDetail(summary=_make_summary("s-no-atlas"))
+        session_repo.upsert_session.return_value = _make_summary("s-no-atlas")
+        assistant_service = MagicMock()
+        assistant_service.get_snapshot.return_value = {"identity": {"name": "Companion"}}
+        assistant_service.reflect.return_value = {"ok": True}
+        atlas_repo = AtlasRepository(db_path=":memory:")
+        orch = _make_orchestrator(
+            session_repo=session_repo,
+            assistant_service=assistant_service,
+            atlas_repo=atlas_repo,
+        )
+
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator._settings_store.load_settings",
+            lambda: {"selected_mode": "Q&A", "llm_provider": "mock"},
+        )
+        monkeypatch.setattr(
+            "metis_app.services.workspace_orchestrator.query_rag",
+            lambda req: fake_result,
+        )
+
+        orch.run_rag_query(
+            RagQueryRequest(
+                manifest_path="/tmp/manifest.json",
+                question="Can METIS answer this?",
+                settings={"selected_mode": "Q&A"},
+            ),
+            session_id="s-no-atlas",
+        )
+
+        assert atlas_repo.get_candidate("s-no-atlas", "run-no-atlas") is None
 
 
 class TestRunDirectQuery:

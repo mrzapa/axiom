@@ -7,6 +7,9 @@ import type { AssistantSnapshot } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
   fetchAssistant: vi.fn(),
+  fetchAtlasCandidate: vi.fn(),
+  saveAtlasEntry: vi.fn(),
+  decideAtlasCandidate: vi.fn(),
   updateAssistant: vi.fn(),
   reflectAssistant: vi.fn(),
   bootstrapAssistant: vi.fn(),
@@ -21,7 +24,12 @@ vi.mock("@/lib/webgpu-companion/webgpu-companion-context", () => ({
   useWebGPUCompanionContext: () => ({ status: "idle", load: vi.fn(), send: vi.fn(), stop: vi.fn(), reset: vi.fn(), output: null, progress: null, error: null }),
 }));
 
-const { fetchAssistant } = await import("@/lib/api");
+const {
+  fetchAssistant,
+  fetchAtlasCandidate,
+  saveAtlasEntry,
+  decideAtlasCandidate,
+} = await import("@/lib/api");
 
 function buildSnapshot(overrides: Partial<AssistantSnapshot> = {}): AssistantSnapshot {
   return {
@@ -96,6 +104,7 @@ describe("MetisCompanionDock", () => {
 
   it("renders the minimized companion state from the assistant snapshot", async () => {
     vi.mocked(fetchAssistant).mockResolvedValueOnce(buildSnapshot());
+    vi.mocked(fetchAtlasCandidate).mockResolvedValueOnce(null);
 
     render(<MetisCompanionDock />);
 
@@ -110,5 +119,131 @@ describe("MetisCompanionDock", () => {
     // Subtitle and summary are hidden in the compact minimized pill
     expect(screen.queryByText("Dedicated local companion")).not.toBeInTheDocument();
     expect(screen.queryByText("The companion stays minimized but persistent.")).not.toBeInTheDocument();
+  });
+
+  it("shows the Atlas popup and lets the user save or dismiss it", async () => {
+    vi.mocked(fetchAssistant).mockResolvedValueOnce(buildSnapshot());
+    vi.mocked(fetchAtlasCandidate).mockResolvedValue({
+      entry_id: "atlas-1",
+      created_at: "2026-04-06T20:00:00Z",
+      updated_at: "2026-04-06T20:05:00Z",
+      session_id: "session-1",
+      run_id: "run-1",
+      title: "How does METIS stay grounded?",
+      summary: "METIS keeps grounded evidence attached to the answer.",
+      body_md: "METIS keeps grounded evidence attached to the answer.",
+      sources: [],
+      mode: "Research",
+      index_id: "idx-1",
+      top_score: 0.88,
+      source_count: 2,
+      confidence: 0.77,
+      rationale: "2 grounded sources, top score 0.88, mode Research.",
+      slug: "how-does-metis-stay-grounded",
+      status: "candidate",
+      saved_at: "",
+      markdown_path: "",
+    });
+    vi.mocked(saveAtlasEntry).mockResolvedValueOnce({
+      entry_id: "atlas-1",
+      created_at: "2026-04-06T20:00:00Z",
+      updated_at: "2026-04-06T20:05:00Z",
+      session_id: "session-1",
+      run_id: "run-1",
+      title: "How does METIS stay grounded?",
+      summary: "METIS keeps grounded evidence attached to the answer.",
+      body_md: "METIS keeps grounded evidence attached to the answer.",
+      sources: [],
+      mode: "Research",
+      index_id: "idx-1",
+      top_score: 0.88,
+      source_count: 2,
+      confidence: 0.77,
+      rationale: "2 grounded sources, top score 0.88, mode Research.",
+      slug: "how-does-metis-stay-grounded",
+      status: "saved",
+      saved_at: "2026-04-06T20:05:00Z",
+      markdown_path: "C:/atlas/entries/how-does-metis-stay-grounded.md",
+    });
+
+    render(<MetisCompanionDock sessionId="session-1" runId="run-1" />);
+
+    expect(await screen.findByText("Atlas Suggestion")).toBeInTheDocument();
+    expect(screen.getByText("This answer looks worth keeping. Save it to Atlas?")).toBeInTheDocument();
+
+    await screen.getByRole("button", { name: "Save to Atlas" }).click();
+
+    await waitFor(() => {
+      expect(saveAtlasEntry).toHaveBeenCalledWith({
+        session_id: "session-1",
+        run_id: "run-1",
+        title: "How does METIS stay grounded?",
+        summary: "METIS keeps grounded evidence attached to the answer.",
+      });
+    });
+    expect(await screen.findByText("Saved to Atlas · entries/how-does-metis-stay-grounded.md")).toBeInTheDocument();
+  });
+
+  it("dismisses the Atlas popup when the user snoozes it", async () => {
+    vi.mocked(fetchAssistant).mockResolvedValueOnce(buildSnapshot());
+    vi.mocked(fetchAtlasCandidate).mockResolvedValue({
+      entry_id: "atlas-1",
+      created_at: "2026-04-06T20:00:00Z",
+      updated_at: "2026-04-06T20:05:00Z",
+      session_id: "session-1",
+      run_id: "run-1",
+      title: "How does METIS stay grounded?",
+      summary: "METIS keeps grounded evidence attached to the answer.",
+      body_md: "METIS keeps grounded evidence attached to the answer.",
+      sources: [],
+      mode: "Research",
+      index_id: "idx-1",
+      top_score: 0.88,
+      source_count: 2,
+      confidence: 0.77,
+      rationale: "2 grounded sources, top score 0.88, mode Research.",
+      slug: "how-does-metis-stay-grounded",
+      status: "candidate",
+      saved_at: "",
+      markdown_path: "",
+    });
+    vi.mocked(decideAtlasCandidate).mockResolvedValueOnce({
+      entry_id: "atlas-1",
+      created_at: "2026-04-06T20:00:00Z",
+      updated_at: "2026-04-06T20:05:00Z",
+      session_id: "session-1",
+      run_id: "run-1",
+      title: "How does METIS stay grounded?",
+      summary: "METIS keeps grounded evidence attached to the answer.",
+      body_md: "METIS keeps grounded evidence attached to the answer.",
+      sources: [],
+      mode: "Research",
+      index_id: "idx-1",
+      top_score: 0.88,
+      source_count: 2,
+      confidence: 0.77,
+      rationale: "2 grounded sources, top score 0.88, mode Research.",
+      slug: "how-does-metis-stay-grounded",
+      status: "snoozed",
+      saved_at: "",
+      markdown_path: "",
+    });
+
+    render(<MetisCompanionDock sessionId="session-1" runId="run-1" />);
+
+    expect(await screen.findByText("Atlas Suggestion")).toBeInTheDocument();
+
+    await screen.getByRole("button", { name: "Not now" }).click();
+
+    await waitFor(() => {
+      expect(decideAtlasCandidate).toHaveBeenCalledWith({
+        session_id: "session-1",
+        run_id: "run-1",
+        decision: "snoozed",
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Atlas Suggestion")).not.toBeInTheDocument();
+    });
   });
 });

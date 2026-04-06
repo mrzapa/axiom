@@ -6,6 +6,9 @@ const {
   reflectAssistant,
   bootstrapAssistant,
   clearAssistantMemory,
+  fetchAtlasCandidate,
+  saveAtlasEntry,
+  decideAtlasCandidate,
 } = await import("../api");
 
 function mockJsonResponse<T>(data: T) {
@@ -187,6 +190,80 @@ describe("assistant API helpers", () => {
       "http://127.0.0.1:8000/v1/assistant/memory?limit=7",
       expect.objectContaining({
         method: "DELETE",
+      }),
+    );
+  });
+
+  it("Atlas helpers read, save, and dismiss candidate prompts", async () => {
+    const candidate = {
+      entry_id: "atlas-1",
+      created_at: "2026-04-06T20:00:00Z",
+      updated_at: "2026-04-06T20:05:00Z",
+      session_id: "session-1",
+      run_id: "run-1",
+      title: "How does METIS stay grounded?",
+      summary: "METIS keeps grounded evidence attached to the answer.",
+      body_md: "METIS keeps grounded evidence attached to the answer.",
+      sources: [],
+      mode: "Research",
+      index_id: "idx-1",
+      top_score: 0.88,
+      source_count: 2,
+      confidence: 0.77,
+      rationale: "2 grounded sources, top score 0.88, mode Research.",
+      slug: "how-does-metis-stay-grounded",
+      status: "candidate",
+      saved_at: "",
+      markdown_path: "",
+    };
+    const saved = { ...candidate, status: "saved", markdown_path: "C:/atlas/entries/how-does-metis-stay-grounded.md" };
+    const snoozed = { ...candidate, status: "snoozed" };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockJsonResponse(candidate))
+      .mockResolvedValueOnce(mockJsonResponse(saved))
+      .mockResolvedValueOnce(mockJsonResponse(snoozed));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchAtlasCandidate("session-1", "run-1")).resolves.toEqual(candidate);
+    await expect(
+      saveAtlasEntry({ session_id: "session-1", run_id: "run-1", title: "Keep this", summary: "Atlas summary" }),
+    ).resolves.toEqual(saved);
+    await expect(
+      decideAtlasCandidate({ session_id: "session-1", run_id: "run-1", decision: "snoozed" }),
+    ).resolves.toEqual(snoozed);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8000/v1/atlas/candidate?session_id=session-1&run_id=run-1",
+      undefined,
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8000/v1/atlas/save",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: "session-1",
+          run_id: "run-1",
+          title: "Keep this",
+          summary: "Atlas summary",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://127.0.0.1:8000/v1/atlas/decision",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: "session-1",
+          run_id: "run-1",
+          decision: "snoozed",
+        }),
       }),
     );
   });

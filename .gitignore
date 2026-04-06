@@ -79,3 +79,6 @@ langextract_grounding_*.html
 venv/
 __pycache__/
 .claude/worktrees/
+
+# repowise API keys (local)
+.repowise/.env

@@ -1,60 +1,13 @@
 {
-  "active": true,
+  "active": false,
   "mode": "deep-interview",
-  "current_phase": "intent-first",
+  "current_phase": "completing",
   "started_at": "2026-04-04T23:54:28.334Z",
-  "updated_at": "2026-04-05T00:22:23Z",
+  "updated_at": "2026-04-06T20:34:04.505Z",
+  "completed_at": "2026-04-06T20:34:04.505Z",
   "session_id": "",
-  "thread_id": "019d5adf-bc3b-7530-9704-3971a180d08a",
-  "turn_id": "019d5ae2-9807-7140-ba24-4870f9bf5702",
-  "state": {
-    "interview_id": "metis-star-reward-loop",
-    "profile": "standard",
-    "type": "brownfield",
-    "initial_idea": "Make METIS actively crave new stars, feel rewarded by stars, and believe stars feed it so it wants the user to add more.",
-    "rounds": [],
-    "current_ambiguity": 0.68,
-    "threshold": 0.2,
-    "max_rounds": 12,
-    "challenge_modes_used": [],
-    "codebase_context": {
-      "star_persistence": [
-        "apps/metis-web/hooks/use-constellation-stars.ts",
-        "apps/metis-web/lib/constellation-types.ts"
-      ],
-      "star_ui": [
-        "apps/metis-web/app/page.tsx"
-      ],
-      "companion_ui": [
-        "apps/metis-web/components/shell/metis-companion-dock.tsx"
-      ],
-      "assistant_backend": [
-        "metis_app/services/assistant_companion.py",
-        "metis_app/services/assistant_repository.py",
-        "metis_app/models/assistant_types.py"
-      ],
-      "feedback_backend": [
-        "metis_app/api/sessions.py",
-        "metis_app/services/session_repository.py"
-      ],
-      "autonomous_research": [
-        "metis_app/services/autonomous_research_service.py",
-        "metis_app/services/workspace_orchestrator.py",
-        "metis_app/api_litestar/routes/autonomous.py"
-      ]
-    },
-    "current_stage": "intent-first",
-    "current_focus": "decision-boundaries",
-    "context_snapshot_path": ".omx/context/metis-star-reward-loop-20260405T002223Z.md",
-    "scores": {
-      "intent": 0.45,
-      "outcome": 0.35,
-      "scope": 0.25,
-      "constraints": 0.1,
-      "success": 0.1,
-      "context": 0.65
-    }
-  },
+  "thread_id": "019d6414-a884-7bb2-a506-475c02cb97c8",
+  "turn_id": "019d646e-69ea-75c3-9214-52b867aba6fb",
   "input_lock": {
     "active": true,
     "scope": "deep-interview-auto-approval",

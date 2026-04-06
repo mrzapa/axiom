@@ -4,16 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   bootstrapAssistant,
   clearAssistantMemory,
+  decideAtlasCandidate,
   fetchAssistant,
+  fetchAtlasCandidate,
   fetchAutonomousStatus,
   reflectAssistant,
+  saveAtlasEntry,
   subscribeCompanionActivity,
   triggerAutonomousResearchStream,
   updateAssistant,
   updateSettings,
-  type AssistantSnapshot,
-  type CompanionActivityEvent,
 } from "@/lib/api";
+import type { AssistantSnapshot, AtlasEntry, CompanionActivityEvent } from "@/lib/api";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,8 +57,13 @@ export function MetisCompanionDock({
   const [busyAction, setBusyAction] = useArrowState<"" | "toggle" | "reflect" | "clear" | "bootstrap" | "research">("");
   const [showWhy, setShowWhy] = useArrowState(false);
   const [error, setError] = useArrowState<string | null>(null);
+  const [atlasCandidate, setAtlasCandidate] = useArrowState<AtlasEntry | null>(null);
+  const [atlasBusyAction, setAtlasBusyAction] = useArrowState<"" | "save" | "snooze" | "decline">("");
+  const [atlasError, setAtlasError] = useArrowState<string | null>(null);
   const requestIdRef = useRef(0);
+  const atlasRequestIdRef = useRef(0);
   const previousContextRef = useRef<{ sessionId?: string | null; runId?: string | null } | null>(null);
+  const atlasPromptedRunIdRef = useRef("");
   const researchAbortRef = useRef<AbortController | null>(null);
 
   // WebGPU companion – shared instance from context, so the chat pane and dock
@@ -78,6 +85,7 @@ export function MetisCompanionDock({
   const [unseenCount, setUnseenCount] = useState(0);
   const [dockHistory, setDockHistory] = useState<Array<{ role: string; content: string }>>([]);
   const minimized = Boolean(snapshot?.identity.minimized);
+  const showAtlasToast = Boolean(toastMessage?.startsWith("Saved to Atlas"));
 
   const load = useCallback(async (autoBootstrap: boolean) => {
     const requestId = ++requestIdRef.current;
@@ -115,6 +123,46 @@ export function MetisCompanionDock({
     previousContextRef.current = { sessionId, runId };
     void load(!hasPreviousContext);
   }, [load, sessionId, runId]);
+
+  const loadAtlasPrompt = useCallback(async () => {
+    const nextSessionId = String(sessionId ?? "").trim();
+    const nextRunId = String(runId ?? "").trim();
+    const requestId = ++atlasRequestIdRef.current;
+    if (!nextSessionId || !nextRunId) {
+      setAtlasCandidate(null);
+      setAtlasError(null);
+      return;
+    }
+    try {
+      const candidate = await fetchAtlasCandidate(nextSessionId, nextRunId);
+      if (requestId !== atlasRequestIdRef.current) {
+        return;
+      }
+      setAtlasCandidate(candidate);
+      setAtlasError(null);
+      if (
+        candidate &&
+        candidate.status === "candidate" &&
+        candidate.run_id !== atlasPromptedRunIdRef.current
+      ) {
+        atlasPromptedRunIdRef.current = candidate.run_id;
+        if (minimized) {
+          setToastMessage("METIS suggests saving this answer to Atlas");
+          setUnseenCount((count) => count + 1);
+        }
+      }
+    } catch (err) {
+      if (requestId !== atlasRequestIdRef.current) {
+        return;
+      }
+      setAtlasCandidate(null);
+      setAtlasError(err instanceof Error ? err.message : "Failed to load Atlas prompt");
+    }
+  }, [minimized, runId, sessionId, setAtlasCandidate, setAtlasError, setToastMessage, setUnseenCount]);
+
+  useEffect(() => {
+    void loadAtlasPrompt();
+  }, [loadAtlasPrompt]);
 
   // Persist thought log to sessionStorage on every update
   useEffect(() => {
@@ -259,6 +307,50 @@ export function MetisCompanionDock({
     }
   }
 
+  async function handleSaveAtlas() {
+    const candidate = atlasCandidate;
+    if (!candidate) return;
+    setAtlasBusyAction("save");
+    setAtlasError(null);
+    try {
+      const saved = await saveAtlasEntry({
+        session_id: candidate.session_id,
+        run_id: candidate.run_id,
+        title: candidate.title,
+        summary: candidate.summary,
+      });
+      setAtlasCandidate(saved);
+      setToastMessage(
+        saved.markdown_path
+          ? `Saved to Atlas · ${formatAtlasPath(saved.markdown_path)}`
+          : "Saved to Atlas",
+      );
+    } catch (err) {
+      setAtlasError(err instanceof Error ? err.message : "Failed to save Atlas entry");
+    } finally {
+      setAtlasBusyAction("");
+    }
+  }
+
+  async function handleAtlasDecision(decision: "snoozed" | "declined") {
+    const candidate = atlasCandidate;
+    if (!candidate) return;
+    setAtlasBusyAction(decision === "snoozed" ? "snooze" : "decline");
+    setAtlasError(null);
+    try {
+      await decideAtlasCandidate({
+        session_id: candidate.session_id,
+        run_id: candidate.run_id,
+        decision,
+      });
+      setAtlasCandidate(null);
+    } catch (err) {
+      setAtlasError(err instanceof Error ? err.message : "Failed to update Atlas prompt");
+    } finally {
+      setAtlasBusyAction("");
+    }
+  }
+
   async function handleResearchNow() {
     // Cancel any previous in-flight request
     researchAbortRef.current?.abort();
@@ -326,6 +418,78 @@ export function MetisCompanionDock({
       )}
       aria-label="METIS companion"
     >
+      {showAtlasToast ? (
+        <div className="absolute bottom-full right-0 mb-3 w-[min(22rem,calc(100vw-2rem))] rounded-[1.1rem] border border-emerald-400/20 bg-[rgba(7,24,20,0.95)] px-3 py-2.5 shadow-2xl shadow-black/35 backdrop-blur-xl">
+          <p className="text-xs font-medium text-emerald-300">{toastMessage}</p>
+        </div>
+      ) : null}
+      {atlasCandidate?.status === "candidate" ? (
+        <div className="absolute bottom-full right-0 mb-3 w-[min(22rem,calc(100vw-2rem))] rounded-[1.35rem] border border-sky-400/20 bg-[rgba(8,16,28,0.94)] p-3.5 shadow-2xl shadow-black/35 backdrop-blur-xl">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-sky-500/14 text-sky-300">
+              <Bot className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1 space-y-2">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-300">
+                  Atlas Suggestion
+                </p>
+                <p className="mt-1 text-sm leading-6 text-foreground">
+                  This answer looks worth keeping. Save it to Atlas?
+                </p>
+              </div>
+              <div className="rounded-[1rem] border border-white/8 bg-white/4 px-3 py-2">
+                <p className="truncate text-xs font-medium text-foreground">
+                  {atlasCandidate.title}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {atlasCandidate.summary || atlasCandidate.rationale}
+                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground/80">
+                  {atlasCandidate.rationale}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 gap-2"
+                  onClick={() => void handleSaveAtlas()}
+                  disabled={atlasBusyAction !== ""}
+                >
+                  {atlasBusyAction === "save" ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : null}
+                  Save to Atlas
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => void handleAtlasDecision("snoozed")}
+                  disabled={atlasBusyAction !== ""}
+                >
+                  {atlasBusyAction === "snooze" ? "Saving…" : "Not now"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => void handleAtlasDecision("declined")}
+                  disabled={atlasBusyAction !== ""}
+                >
+                  {atlasBusyAction === "decline" ? "Saving…" : "Don't ask again"}
+                </Button>
+              </div>
+              {atlasError ? (
+                <p className="text-xs text-destructive">{atlasError}</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className={cn(
         "home-liquid-glass border border-white/10 shadow-2xl shadow-black/40",
         minimized ? "rounded-full" : "rounded-[1.6rem]",
@@ -568,7 +732,7 @@ export function MetisCompanionDock({
                 )}
 
 {/* Toast notification for new star – taps through to /brain */}
-                {toastMessage && (
+                {toastMessage && !showAtlasToast && (
                   <Link
                     href="/brain"
                     className="flex items-center gap-2 rounded-[1rem] border border-violet-400/20 bg-violet-400/10 px-3 py-2 transition-colors hover:bg-violet-400/15"
@@ -832,4 +996,12 @@ export function MetisCompanionDock({
       </div>
     </aside>
   );
+}
+
+function formatAtlasPath(value: string): string {
+  const tokens = String(value || "").split(/[\\/]/).filter(Boolean);
+  if (tokens.length <= 2) {
+    return tokens.join("/");
+  }
+  return tokens.slice(-2).join("/");
 }

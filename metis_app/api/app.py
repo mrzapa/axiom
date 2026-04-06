@@ -48,6 +48,7 @@ from . import heretic as _heretic
 from . import logs as _logs
 from . import observe as _observe
 from . import sessions as _sessions
+from . import atlas as _atlas
 from . import settings as _settings
 from . import assistant as _assistant
 from . import autonomous as _autonomous
@@ -258,6 +259,7 @@ def create_app() -> FastAPI:
     # Protected routers — require token when METIS_API_TOKEN is set
     _auth = [Depends(_require_token)]
     app.include_router(_app_state.router, dependencies=_auth)
+    app.include_router(_atlas.router, dependencies=_auth)
     app.include_router(_sessions.router, dependencies=_auth)
     app.include_router(_settings.router, dependencies=_auth)
     app.include_router(_logs.router, dependencies=_auth)

@@ -1307,6 +1307,47 @@ class AssistantBootstrapRequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AtlasEntryModel(BaseModel):
+    entry_id: str
+    created_at: str
+    updated_at: str
+    session_id: str
+    run_id: str
+    title: str
+    summary: str
+    body_md: str
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    mode: str = ""
+    index_id: str = ""
+    top_score: float = 0.0
+    source_count: int = 0
+    confidence: float = 0.0
+    rationale: str = ""
+    slug: str = ""
+    status: str = "candidate"
+    saved_at: str = ""
+    markdown_path: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AtlasSaveRequestModel(BaseModel):
+    session_id: str
+    run_id: str
+    title: str = ""
+    summary: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AtlasDecisionRequestModel(BaseModel):
+    session_id: str
+    run_id: str
+    decision: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class GgufCatalogEntryModel(BaseModel):
     model_name: str
     provider: str

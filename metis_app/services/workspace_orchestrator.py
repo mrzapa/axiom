@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 from collections.abc import Callable, Iterator
 from typing import Any, Callable
 
@@ -53,12 +54,14 @@ from metis_app.engine.querying import (
     extract_arrow_artifacts,
 )
 from metis_app.engine.forecasting import ForecastQueryRequest, ForecastSchemaRequest
+from metis_app.models.atlas_types import AtlasEntry
 from metis_app.models.brain_graph import BrainGraph
 from metis_app.models.session_types import (
     EvidenceSource,
     SessionDetail,
     SessionSummary,
 )
+from metis_app.services.atlas_repository import AtlasRepository
 from metis_app.services.assistant_companion import AssistantCompanionService
 from metis_app.services.learning_route_service import (
     LearningRouteIndexSummary,
@@ -107,11 +110,13 @@ class WorkspaceOrchestrator:
         index_dir: pathlib.Path | str | None = None,
         assistant_service: AssistantCompanionService | None = None,
         nyx_catalog: NyxCatalogBroker | None = None,
+        atlas_repo: AtlasRepository | None = None,
     ) -> None:
         self._session_repo: SessionRepository = session_repo or _make_session_repo()
         self._skill_repo: SkillRepository = skill_repo or SkillRepository()
         self._index_dir: pathlib.Path | str | None = index_dir
         self._trace_store = TraceStore()
+        self._atlas_repo = atlas_repo or AtlasRepository()
         self._assistant_service = assistant_service or AssistantCompanionService(
             session_repo=self._session_repo,
             trace_store=self._trace_store,
@@ -249,6 +254,16 @@ class WorkspaceOrchestrator:
                 sources=[EvidenceSource.from_dict(item) for item in result.sources],
                 artifacts=result_artifacts,
                 actions=result_actions,
+            )
+            self._maybe_create_atlas_candidate(
+                session_id=session_id,
+                question=req.question,
+                run_id=result.run_id,
+                answer_text=result.answer_text,
+                sources=result.sources,
+                selected_mode=result.selected_mode,
+                top_score=result.top_score,
+                fallback=result.fallback,
             )
             self._assistant_service.reflect(
                 trigger="completed_run",
@@ -457,6 +472,7 @@ class WorkspaceOrchestrator:
 
         def _wrapped() -> Iterator[dict[str, Any]]:
             pending_sources: list[EvidenceSource] = []
+            pending_top_score = 0.0
             final_run_id = str(normalized.run_id or "")
             for raw_event in stream_rag_answer(normalized, cancel_token=cancel_token):
                 event = dict(raw_event)
@@ -477,6 +493,10 @@ class WorkspaceOrchestrator:
                         item if isinstance(item, EvidenceSource) else EvidenceSource.from_dict(item)
                         for item in list(event.get("sources") or [])
                     ]
+                    try:
+                        pending_top_score = float(event.get("top_score") or 0.0)
+                    except (TypeError, ValueError):
+                        pending_top_score = 0.0
                 elif (
                     event.get("type") == "iteration_complete"
                     and int(event.get("iterations_used", 0)) >= 2
@@ -511,6 +531,19 @@ class WorkspaceOrchestrator:
                         sources=final_sources,
                         artifacts=final_artifacts,
                         actions=final_actions,
+                    )
+                    self._maybe_create_atlas_candidate(
+                        session_id=session_id,
+                        question=req.question,
+                        run_id=final_run_id,
+                        answer_text=str(event.get("answer_text") or ""),
+                        sources=[
+                            item.to_dict() if isinstance(item, EvidenceSource) else dict(item)
+                            for item in final_sources
+                        ],
+                        selected_mode=str(resolved_settings.get("selected_mode") or ""),
+                        top_score=pending_top_score,
+                        fallback=dict(event.get("fallback") or {}),
                     )
                     self._assistant_service.reflect(
                         trigger="completed_run",
@@ -757,6 +790,59 @@ class WorkspaceOrchestrator:
     def delete_session(self, session_id: str) -> None:
         """Permanently delete a session and all its messages."""
         self._session_repo.delete_session(session_id)
+
+    def get_atlas_candidate(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+    ) -> dict[str, Any] | None:
+        """Return a pending Atlas candidate for one session/run pair."""
+        entry = self._atlas_repo.get_candidate(session_id=session_id, run_id=run_id)
+        return entry.to_payload() if entry is not None else None
+
+    def save_atlas_entry(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        title: str | None = None,
+        summary: str | None = None,
+    ) -> dict[str, Any]:
+        """Promote a candidate into a saved Atlas entry and materialize markdown."""
+        entry = self._atlas_repo.save(
+            session_id=session_id,
+            run_id=run_id,
+            title=title,
+            summary=summary,
+        )
+        return entry.to_payload()
+
+    def decide_atlas_candidate(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        decision: str,
+    ) -> dict[str, Any]:
+        """Persist a non-save decision for a candidate."""
+        entry = self._atlas_repo.decide(
+            session_id=session_id,
+            run_id=run_id,
+            decision=str(decision or "").strip().lower(),
+        )
+        return entry.to_payload()
+
+    def list_atlas_entries(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        """List recently saved Atlas entries."""
+        return [
+            entry.to_payload()
+            for entry in self._atlas_repo.list_entries(limit=limit)
+        ]
+
+    def get_atlas_entry(self, entry_id: str) -> dict[str, Any] | None:
+        entry = self._atlas_repo.get_entry(entry_id)
+        return entry.to_payload() if entry is not None else None
 
     # ------------------------------------------------------------------
     # Skills
@@ -1061,6 +1147,125 @@ class WorkspaceOrchestrator:
             event_type=event_type,
             payload=payload,
         )
+
+    def _maybe_create_atlas_candidate(
+        self,
+        *,
+        session_id: str,
+        question: str,
+        run_id: str,
+        answer_text: str,
+        sources: list[dict[str, Any]] | list[EvidenceSource],
+        selected_mode: str,
+        top_score: float,
+        fallback: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        normalized_run_id = str(run_id or "").strip()
+        normalized_session_id = str(session_id or "").strip()
+        normalized_answer = str(answer_text or "").strip()
+        normalized_mode = str(selected_mode or "").strip() or "Q&A"
+        fallback_payload = dict(fallback or {})
+
+        if not normalized_run_id or not normalized_session_id or not normalized_answer:
+            return None
+        if normalized_mode in {"Knowledge Search", "Forecast", "Simulation"}:
+            return None
+        if bool(fallback_payload.get("triggered")):
+            return None
+
+        normalized_sources: list[dict[str, Any]] = []
+        for item in sources:
+            if isinstance(item, EvidenceSource):
+                normalized_sources.append(item.to_dict())
+            elif isinstance(item, dict):
+                normalized_sources.append(dict(item))
+
+        source_count = len(normalized_sources)
+        if source_count < 2 or len(normalized_answer) < 120:
+            return None
+
+        try:
+            normalized_top_score = float(top_score or 0.0)
+        except (TypeError, ValueError):
+            normalized_top_score = 0.0
+
+        confidence = self._atlas_candidate_confidence(
+            answer_text=normalized_answer,
+            source_count=source_count,
+            top_score=normalized_top_score,
+            selected_mode=normalized_mode,
+        )
+        if confidence < 0.62:
+            return None
+
+        title = self._atlas_title_from_question(question)
+        summary = self._atlas_summary(normalized_answer)
+        session_detail = self.get_session(normalized_session_id)
+        index_id = session_detail.summary.index_id if session_detail is not None else ""
+        rationale = (
+            f"{source_count} grounded sources, top score {normalized_top_score:.2f}, "
+            f"mode {normalized_mode}."
+        )
+        entry = AtlasEntry.create_candidate(
+            session_id=normalized_session_id,
+            run_id=normalized_run_id,
+            title=title,
+            summary=summary,
+            body_md=normalized_answer,
+            sources=normalized_sources,
+            mode=normalized_mode,
+            index_id=index_id,
+            top_score=normalized_top_score,
+            source_count=source_count,
+            confidence=confidence,
+            rationale=rationale,
+        )
+        stored = self._atlas_repo.upsert_candidate(entry)
+        return stored.to_payload()
+
+    @staticmethod
+    def _atlas_title_from_question(question: str) -> str:
+        raw = str(question or "").strip()
+        if raw.startswith("[AGENT ACTION:"):
+            parts = raw.split("\n\n", 1)
+            raw = parts[-1].strip() if parts else raw
+        raw = raw or "Untitled Atlas Entry"
+        if len(raw) <= 120:
+            return raw
+        return raw[:117].rstrip() + "..."
+
+    @staticmethod
+    def _atlas_summary(answer_text: str) -> str:
+        lines = [line.strip() for line in str(answer_text or "").splitlines() if line.strip()]
+        if not lines:
+            return ""
+        first_line = lines[0]
+        summary = re.split(r"(?<=[.!?])\s+", first_line, maxsplit=1)[0]
+        summary = summary.strip()
+        if len(summary) <= 160:
+            return summary
+        return summary[:157].rstrip() + "..."
+
+    @staticmethod
+    def _atlas_candidate_confidence(
+        *,
+        answer_text: str,
+        source_count: int,
+        top_score: float,
+        selected_mode: str,
+    ) -> float:
+        confidence = 0.18
+        confidence += min(max(source_count, 0), 5) * 0.08
+        confidence += max(0.0, min(top_score, 1.0)) * 0.34
+        if len(answer_text) >= 420:
+            confidence += 0.08
+        if len(answer_text) >= 900:
+            confidence += 0.05
+        if selected_mode in {"Research", "Evidence Pack", "Summary"}:
+            confidence += 0.14
+        elif selected_mode in {"Q&A", "Tutor"}:
+            confidence += 0.08
+        return max(0.0, min(confidence, 0.95))
 
     def enabled_skills(self, settings: dict[str, Any]) -> list[SkillDefinition]:
         """Return skills that are enabled for the given *settings* snapshot."""

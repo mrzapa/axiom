@@ -1133,6 +1133,28 @@ export interface AssistantSnapshot {
   brain_links: AssistantBrainLink[];
 }
 
+export interface AtlasEntry {
+  entry_id: string;
+  created_at: string;
+  updated_at: string;
+  session_id: string;
+  run_id: string;
+  title: string;
+  summary: string;
+  body_md: string;
+  sources: EvidenceSource[];
+  mode: string;
+  index_id: string;
+  top_score: number;
+  source_count: number;
+  confidence: number;
+  rationale: string;
+  slug: string;
+  status: "candidate" | "snoozed" | "declined" | "saved";
+  saved_at: string;
+  markdown_path: string;
+}
+
 export interface SessionDetail {
   summary: SessionSummary;
   messages: SessionMessage[];
@@ -2705,6 +2727,65 @@ export async function clearAssistantMemory(limit = 10): Promise<Record<string, u
   if (!res.ok) {
     const detail = await res.text();
     throw new Error(`Failed to clear assistant memory (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function fetchAtlasCandidate(
+  sessionId: string,
+  runId: string,
+): Promise<AtlasEntry | null> {
+  if (!sessionId.trim() || !runId.trim()) {
+    return null;
+  }
+  const url = `${await getApiBase()}/v1/atlas/candidate?session_id=${encodeURIComponent(sessionId)}&run_id=${encodeURIComponent(runId)}`;
+  const res = await apiFetch(url);
+  if (res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to fetch Atlas candidate (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function saveAtlasEntry(payload: {
+  session_id: string;
+  run_id: string;
+  title?: string;
+  summary?: string;
+}): Promise<AtlasEntry> {
+  const res = await apiFetch(`${await getApiBase()}/v1/atlas/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: payload.session_id,
+      run_id: payload.run_id,
+      title: payload.title ?? "",
+      summary: payload.summary ?? "",
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to save Atlas entry (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function decideAtlasCandidate(payload: {
+  session_id: string;
+  run_id: string;
+  decision: "snoozed" | "declined";
+}): Promise<AtlasEntry> {
+  const res = await apiFetch(`${await getApiBase()}/v1/atlas/decision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Failed to update Atlas candidate (${res.status}): ${detail}`);
   }
   return res.json();
 }

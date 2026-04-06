@@ -1,6 +1,7 @@
 """Litestar route modules."""
 
 from . import app_state
+from . import atlas
 from . import assistant
 from . import autonomous
 from . import comets
@@ -19,6 +20,7 @@ from . import settings
 
 __all__ = [
 	"app_state",
+	"atlas",
 	"assistant",
 	"autonomous",
 	"comets",
