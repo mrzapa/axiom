@@ -4489,9 +4489,14 @@ export default function Home() {
       };
       const worldBeforeZoom = screenToWorldPoint(pointer, bounds.width, bounds.height, currentCamera);
       const zoomMultiplier = Math.exp(-e.deltaY * 0.0014);
-      const nextZoomFactor = clampBackgroundZoomFactor(currentCamera.zoomFactor * zoomMultiplier);
+      const rawNextZoomFactor = currentCamera.zoomFactor * zoomMultiplier;
+      const nextZoomFactor = clampBackgroundZoomFactor(rawNextZoomFactor);
 
-      if (Math.abs(nextZoomFactor - currentCamera.zoomFactor) < 0.0005) {
+      // Dead-zone: skip trivial float noise, but always pass through when
+      // the raw value differs from the clamped value (i.e. we are at a boundary
+      // and the user is scrolling away from it).
+      const relativeChange = Math.abs(nextZoomFactor - currentCamera.zoomFactor) / currentCamera.zoomFactor;
+      if (relativeChange < 0.002 && Math.abs(rawNextZoomFactor - nextZoomFactor) < 1e-9) {
         registerZoomInteraction();
         return;
       }
