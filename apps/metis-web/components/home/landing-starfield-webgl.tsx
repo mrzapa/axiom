@@ -140,7 +140,7 @@ function getPointSize(star: LandingWebglStar) {
   const { visual } = star.profile;
   const tierScale =
     star.renderTier === "closeup"
-      ? 12 + visual.haloRadiusFactor * 1.2
+      ? 5.2 + visual.haloRadiusFactor * 0.42  // same as hero — NMS overlay provides the growing-star visual
       : star.renderTier === "hero"
         ? 5.2 + visual.haloRadiusFactor * 0.42
         : star.renderTier === "sprite"

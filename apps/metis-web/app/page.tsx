@@ -2488,15 +2488,16 @@ export default function Home() {
         const profile = visibleStarProfiles.get(star.id) ?? getCachedStellarProfile(star.id);
         const focusStr = starDiveFocusStrengthRef.current;
         const isFocused = starDiveFocusedStarIdRef.current === star.id;
-        // Dim non-focused stars proportionally to focus strength
-        const dimFactor = focusStr > 0 && !isFocused ? 1 - focusStr * 0.85 : 1;
-        // Grow focused star toward ~60% of viewport height as focus strength → 1
-        const focusedSizeBoost = isFocused && focusStr > 0
-          ? star.baseSize + (H * 0.6 - star.baseSize) * focusStr
-          : star.baseSize;
+        // The NMS overlay drives the "growing star" visual — the background WebGL point
+        // fades out as focusStrength rises.  Non-focused stars dim in sympathy.
+        const dimFactor = focusStr > 0
+          ? isFocused
+            ? Math.max(0, 1 - focusStr * 1.6)  // focused star fades out as overlay takes over
+            : 1 - focusStr * 0.85               // non-focused stars dim gently
+          : 1;
         const projectedStar: LandingWorldStarRenderState = {
           addable: star.isAddable,
-          apparentSize: isFocused ? focusedSizeBoost : star.baseSize,
+          apparentSize: star.baseSize,  // NMS overlay drives the growing-star visual
           brightness: star.brightness * dimFactor,
           catalogueName: visibleStarNameMap.get(star.id),
           hitRadius: star.hitRadius,

@@ -63,9 +63,11 @@ void main(){
   float dist  = length(px);
   float angle = atan(px.y, px.x);
 
-  // Disc radius — ~28% of the shorter viewport dimension at full focus
+  // Disc radius grows with focus: pinpoint at first glow → full NMS disc at focusStrength=1.
+  // This ensures the NMS overlay starts as a tiny glow that matches the background WebGL star,
+  // then expands seamlessly — no hard mode-switch.
   float vmin    = min(u_res.x, u_res.y);
-  float discR   = vmin * 0.28;        // physical pixels
+  float discR   = vmin * mix(0.006, 0.28, smoothstep(0.0, 0.7, u_focusStrength));
 
   float rNorm     = dist / discR;
   float coronaDist = max(0.0, dist - discR);
@@ -177,8 +179,10 @@ void main(){
   col += ambientCol * ambient;
   col *= twinkle;
 
-  // Scale entire output by focus strength — glow builds as you zoom in
-  float intensity = smoothstep(0.0, 0.4, u_focusStrength);
+  // Scale entire output by focus strength — glow builds as you zoom in.
+  // Low threshold (0.15) means the ambient tint is visible early in the dive,
+  // cross-fading smoothly with the background WebGL point sprite.
+  float intensity = smoothstep(0.0, 0.15, u_focusStrength);
   col *= intensity;
 
   // Reinhard tonemap
