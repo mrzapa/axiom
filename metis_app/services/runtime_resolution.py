@@ -33,7 +33,7 @@ def _build_nourishment_block(settings: dict[str, Any]) -> str:
     if not stars and not settings.get("_nourishment_state"):
         return ""
     try:
-        from metis_app.models.star_nourishment import NourishmentState, compute_nourishment  # noqa: PLC0415
+        from metis_app.models.star_nourishment import NourishmentState, PersonalityEvolution, compute_nourishment  # noqa: PLC0415
         from metis_app.services.star_nourishment_gen import generate_hunger_block  # noqa: PLC0415
 
         _DEFAULT_FACULTIES = [
@@ -52,7 +52,8 @@ def _build_nourishment_block(settings: dict[str, Any]) -> str:
         faculties = list(settings.get("constellation_faculties") or _DEFAULT_FACULTIES)
         previous_raw = settings.get("_nourishment_state")
         previous = NourishmentState.from_payload(previous_raw) if isinstance(previous_raw, dict) else None
-        state = compute_nourishment(stars=stars, faculties=faculties, previous=previous)
+        personality = previous.personality if previous else None
+        state = compute_nourishment(stars=stars, faculties=faculties, previous=previous, personality=personality)
         return generate_hunger_block(state)
     except Exception:  # noqa: BLE001
         return ""

@@ -75,10 +75,11 @@ def clear_assistant_memory(limit: int = 10) -> dict:
 # ---------------------------------------------------------------------------
 
 class StarEventBody(BaseModel):
-    event_type: str       # "star_added" | "star_removed" | "star_evolved"
+    event_type: str       # "star_added" | "star_removed" | "star_evolved" | "personality_baked"
     star_id: str = ""
     faculty_id: str = ""
     detail: str = ""
+    model_id: str = ""    # Required for personality_baked events
 
 
 @router.post("/nourishment/event")
@@ -90,6 +91,7 @@ def report_star_event(payload: StarEventBody) -> dict:
     """
     from metis_app.models.star_nourishment import (  # noqa: PLC0415
         NourishmentState,
+        PersonalityEvolution,
         StarEvent,
         assistant_now_iso,
         compute_nourishment,
@@ -133,11 +135,25 @@ def report_star_event(payload: StarEventBody) -> dict:
         if isinstance(previous_raw, dict) else None
     )
 
+    # Carry forward personality evolution from previous state
+    personality = previous.personality if previous else PersonalityEvolution()
+
+    # For personality_baked events, record the abliteration
+    if payload.event_type == "personality_baked" and payload.model_id:
+        faculty_ids = [f["id"] for f in faculties if isinstance(f, dict)]
+        personality.record_abliteration(
+            model_id=payload.model_id,
+            star_count=len(stars),
+            hunger_level=previous.hunger_level if previous else 0.5,
+            faculty_ids=faculty_ids,
+        )
+
     state = compute_nourishment(
         stars=stars,
         faculties=faculties,
         previous=previous,
         events=[event],
+        personality=personality,
     )
 
     # Persist nourishment state for temporal tracking
@@ -170,3 +186,19 @@ def get_nourishment() -> dict:
     orch = WorkspaceOrchestrator()
     snapshot = orch.get_assistant_snapshot()
     return dict(snapshot.get("nourishment") or {})
+
+
+@router.get("/nourishment/personality")
+def get_personality_evolution() -> dict:
+    """Get the companion's personality evolution state."""
+    import metis_app.settings_store as _store  # noqa: PLC0415
+    from metis_app.models.star_nourishment import (  # noqa: PLC0415
+        NourishmentState,
+        PersonalityEvolution,
+    )
+
+    raw = _store.load_settings().get("_nourishment_state")
+    if not isinstance(raw, dict):
+        return PersonalityEvolution().to_payload()
+    state = NourishmentState.from_payload(raw)
+    return state.personality.to_payload()

@@ -556,6 +556,7 @@ class AssistantCompanionService:
             previous=previous,
             events=events,
             topology=topo_signal,
+            personality=previous.personality if previous else None,
         )
 
     def _install_companion_model(

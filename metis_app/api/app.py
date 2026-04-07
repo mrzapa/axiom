@@ -23,6 +23,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
 
 import metis_app.settings_store as _settings_store
+from metis_app.services.star_archetype import detect_archetypes
 from metis_app.engine import list_indexes
 from metis_app.engine.querying import _normalize_run_id
 from metis_app.services.nyx_catalog import NyxCatalogComponentNotFoundError
@@ -66,6 +67,7 @@ from .models import (
     IndexDeleteResultModel,
     IndexBuildResultModel,
     KnowledgeSearchRequestModel,
+    SuggestArchetypesRequestModel,
     KnowledgeSearchResultModel,
     LearningRoutePreviewModel,
     LearningRoutePreviewRequestModel,
@@ -301,6 +303,25 @@ def create_app() -> FastAPI:
     @app.get("/v1/index/list", dependencies=_auth)
     def api_list_indexes() -> list[dict[str, Any]]:
         return _run_engine(list_indexes)
+
+    @app.post("/v1/index/suggest-archetypes", dependencies=_auth)
+    def api_suggest_archetypes(payload: SuggestArchetypesRequestModel) -> dict[str, Any]:
+        ranked = detect_archetypes(payload.file_paths)
+        return {
+            "archetypes": [
+                {
+                    "id": r.archetype.id,
+                    "name": r.archetype.name,
+                    "description": r.archetype.description,
+                    "icon_hint": r.archetype.icon_hint,
+                    "settings_overrides": r.archetype.settings_overrides,
+                    "score": r.score,
+                    "why": r.why,
+                }
+                for r in ranked
+            ],
+            "top_id": ranked[0].archetype.id if ranked else None,
+        }
 
     @app.delete("/v1/index", response_model=IndexDeleteResultModel, dependencies=_auth)
     def api_delete_index(manifest_path: str) -> IndexDeleteResultModel:

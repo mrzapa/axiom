@@ -458,7 +458,21 @@ def stream_rag_answer(
         if _mode == "Simulation":
             from metis_app.services.swarm_service import stream_swarm_simulation  # noqa: PLC0415
 
-            n_personas = max(1, int(settings.get("swarm_n_personas", 8) or 8))
+            # Wave 3: swarm persona count scales with star nourishment.
+            # If companion is enabled, derive n_personas from star count +
+            # personality depth.  Falls back to the static setting otherwise.
+            _static_personas = max(1, int(settings.get("swarm_n_personas", 8) or 8))
+            try:
+                from metis_app.models.star_nourishment import (  # noqa: PLC0415
+                    PersonalityEvolution,
+                    swarm_persona_count,
+                )
+                _stars = list(settings.get("landing_constellation_user_stars") or [])
+                _evo_data = settings.get("personality_evolution")
+                _evo = PersonalityEvolution.from_payload(_evo_data) if _evo_data else PersonalityEvolution()
+                n_personas = swarm_persona_count(len(_stars), _evo.personality_depth)
+            except Exception:  # noqa: BLE001
+                n_personas = _static_personas
             n_rounds = max(1, int(settings.get("swarm_n_rounds", 4) or 4))
             _round_deltas: list[float] = []
 

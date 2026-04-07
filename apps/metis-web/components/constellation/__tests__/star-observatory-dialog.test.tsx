@@ -43,11 +43,12 @@ vi.mock("@/lib/api", async (importOriginal) => {
     ...actual,
     buildIndexStream: vi.fn(),
     fetchSettings: vi.fn(),
+    suggestStarArchetypes: vi.fn(),
     uploadFiles: vi.fn(),
   };
 });
 
-const { buildIndexStream, fetchSettings } = await import("@/lib/api");
+const { buildIndexStream, fetchSettings, suggestStarArchetypes } = await import("@/lib/api");
 const { StarDetailsPanel } = await import("../star-observatory-dialog");
 
 function makeIndex(overrides: Partial<IndexSummary> = {}): IndexSummary {
@@ -174,6 +175,17 @@ describe("StarDetailsPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fetchSettings).mockResolvedValue({});
+    vi.mocked(suggestStarArchetypes).mockResolvedValue([
+      {
+        id: "scroll",
+        name: "Scroll",
+        description: "Long-form prose, reports, and academic papers",
+        icon_hint: "BookOpen",
+        why: "Detected as a document-heavy upload.",
+        settings_overrides: {},
+        score: 0.9,
+      },
+    ]);
   });
 
   it("builds a new index and attaches it to a new star", async () => {
@@ -212,6 +224,13 @@ describe("StarDetailsPanel", () => {
       target: { value: "/docs/field-notes.md\n/docs/summary.pdf" },
     });
 
+    // Wait for the archetype picker to complete its async suggestion fetch
+    // and auto-select an archetype (which enables the build button).
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", { name: "Add and build" }).at(-1),
+      ).not.toBeDisabled();
+    });
     fireEvent.click(screen.getAllByRole("button", { name: "Add and build" }).at(-1) as HTMLButtonElement);
 
     await waitFor(() => {
@@ -379,6 +398,13 @@ describe("StarDetailsPanel", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /I understand these paths/i }));
     fireEvent.change(screen.getByPlaceholderText(/report\.pdf/), {
       target: { value: "/docs/field-notes.md" },
+    });
+
+    // Wait for archetype picker async fetch to complete and enable the button.
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", { name: "Add and build" }).at(-1),
+      ).not.toBeDisabled();
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Add and build" }).at(-1) as HTMLButtonElement);
 

@@ -16,6 +16,59 @@ from metis_app.services.heretic_service import HereticService
 log = logging.getLogger(__name__)
 
 
+def _fire_personality_baked(model_id: str) -> None:
+    """Record a personality_baked event in the nourishment system.
+
+    Called after a successful abliteration to connect heretic → companion
+    identity via the PersonalityEvolution tracker.
+    """
+    from metis_app.models.star_nourishment import (  # noqa: PLC0415
+        NourishmentState,
+        PersonalityEvolution,
+        StarEvent,
+        assistant_now_iso,
+        compute_nourishment,
+    )
+    from metis_app.services.star_nourishment_gen import (  # noqa: PLC0415
+        generate_star_event_reaction,
+    )
+    import metis_app.settings_store as _store  # noqa: PLC0415
+
+    settings = _store.load_settings()
+    stars = list(settings.get("landing_constellation_user_stars") or [])
+    faculties = list(settings.get("constellation_faculties") or [])
+    faculty_ids = [f["id"] for f in faculties if isinstance(f, dict)]
+
+    previous_raw = settings.get("_nourishment_state")
+    previous = (
+        NourishmentState.from_payload(previous_raw)
+        if isinstance(previous_raw, dict) else None
+    )
+
+    personality = previous.personality if previous else PersonalityEvolution()
+    personality.record_abliteration(
+        model_id=model_id,
+        star_count=len(stars),
+        hunger_level=previous.hunger_level if previous else 0.5,
+        faculty_ids=faculty_ids,
+    )
+
+    event = StarEvent(
+        event_type="personality_baked",
+        star_id="",
+        faculty_id="",
+        timestamp=assistant_now_iso(),
+        detail=f"Abliterated {model_id}",
+    )
+
+    state = compute_nourishment(
+        stars=stars, faculties=faculties, previous=previous,
+        events=[event], personality=personality,
+    )
+    _store.save_settings({"_nourishment_state": state.to_payload()})
+    log.info("personality_baked event recorded for %s (depth=%.3f)", model_id, state.personality_depth)
+
+
 @get("/v1/heretic/preflight")
 def preflight() -> dict[str, Any]:
     svc = HereticService()
@@ -83,6 +136,11 @@ async def abliterate_stream(payload: AbliterateStreamRequest) -> ServerSentEvent
 
         try:
             gguf_path = future.result()
+            # Fire personality_baked event to connect heretic → nourishment
+            try:
+                _fire_personality_baked(payload.model_id)
+            except Exception:  # noqa: BLE001
+                log.warning("Failed to fire personality_baked event for %s", payload.model_id)
             yield {
                 "event": "message",
                 "data": json.dumps(

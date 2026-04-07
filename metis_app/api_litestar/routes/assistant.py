@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from litestar import Router, delete, get, post
+from pydantic import BaseModel
 
 from metis_app.api.models import (
     AssistantBootstrapRequestModel,
@@ -63,6 +64,109 @@ def clear_assistant_memory(limit: int = 10) -> dict:
     return WorkspaceOrchestrator().clear_assistant_memory(limit=limit)
 
 
+# ---------------------------------------------------------------------------
+# Star nourishment events
+# ---------------------------------------------------------------------------
+
+class _StarEventBody(BaseModel):
+    event_type: str
+    star_id: str = ""
+    faculty_id: str = ""
+    detail: str = ""
+    model_id: str = ""
+
+
+@post("/v1/assistant/nourishment/event")
+def report_star_event(payload: _StarEventBody) -> dict:
+    """Report a star event to the companion nourishment system."""
+    from metis_app.models.star_nourishment import (  # noqa: PLC0415
+        NourishmentState,
+        PersonalityEvolution,
+        StarEvent,
+        assistant_now_iso,
+        compute_nourishment,
+    )
+    from metis_app.services.star_nourishment_gen import (  # noqa: PLC0415
+        generate_star_event_reaction,
+    )
+    import metis_app.settings_store as _store  # noqa: PLC0415
+
+    event = StarEvent(
+        event_type=payload.event_type,
+        star_id=payload.star_id,
+        faculty_id=payload.faculty_id,
+        timestamp=assistant_now_iso(),
+        detail=payload.detail,
+    )
+
+    orch = WorkspaceOrchestrator()
+    settings = _store.load_settings()
+    stars = list(settings.get("landing_constellation_user_stars") or [])
+    faculties = list(settings.get("constellation_faculties") or [])
+
+    previous_raw = settings.get("_nourishment_state")
+    previous = (
+        NourishmentState.from_payload(previous_raw)
+        if isinstance(previous_raw, dict) else None
+    )
+
+    personality = previous.personality if previous else PersonalityEvolution()
+
+    if payload.event_type == "personality_baked" and payload.model_id:
+        faculty_ids = [f["id"] for f in faculties if isinstance(f, dict)]
+        personality.record_abliteration(
+            model_id=payload.model_id,
+            star_count=len(stars),
+            hunger_level=previous.hunger_level if previous else 0.5,
+            faculty_ids=faculty_ids,
+        )
+
+    state = compute_nourishment(
+        stars=stars, faculties=faculties, previous=previous,
+        events=[event], personality=personality,
+    )
+
+    _store.save_settings({"_nourishment_state": state.to_payload()})
+    reaction = generate_star_event_reaction(state)
+
+    reflection_result = None
+    if payload.event_type == "star_removed":
+        try:
+            reflection_result = orch.reflect_assistant(trigger="star_removed", force=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+    return {
+        "ok": True,
+        "nourishment": state.to_payload(),
+        "reaction": reaction,
+        "reflection": reflection_result,
+    }
+
+
+@get("/v1/assistant/nourishment")
+def get_nourishment() -> dict:
+    """Get current nourishment state."""
+    snapshot = WorkspaceOrchestrator().get_assistant_snapshot()
+    return dict(snapshot.get("nourishment") or {})
+
+
+@get("/v1/assistant/nourishment/personality")
+def get_personality_evolution() -> dict:
+    """Get the companion's personality evolution state."""
+    import metis_app.settings_store as _store  # noqa: PLC0415
+    from metis_app.models.star_nourishment import (  # noqa: PLC0415
+        NourishmentState,
+        PersonalityEvolution,
+    )
+
+    raw = _store.load_settings().get("_nourishment_state")
+    if not isinstance(raw, dict):
+        return PersonalityEvolution().to_payload()
+    state = NourishmentState.from_payload(raw)
+    return state.personality.to_payload()
+
+
 router = Router(
     path="",
     route_handlers=[
@@ -73,6 +177,9 @@ router = Router(
         bootstrap_assistant,
         list_assistant_memory,
         clear_assistant_memory,
+        report_star_event,
+        get_nourishment,
+        get_personality_evolution,
     ],
     tags=["assistant"],
 )

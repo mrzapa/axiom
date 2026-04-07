@@ -47,6 +47,12 @@ from metis_app.services.nyx_catalog import (
 )
 
 
+class SuggestArchetypesRequestModel(BaseModel):
+    file_paths: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class IndexBuildRequestModel(BaseModel):
     document_paths: list[str] = Field(min_length=1)
     settings: dict[str, Any]

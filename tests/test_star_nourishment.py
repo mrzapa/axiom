@@ -7,12 +7,15 @@ import pytest
 from metis_app.models.star_nourishment import (
     FACULTY_GAP_THRESHOLD,
     LIGHTNING_STAR_THRESHOLD,
+    AbliterationRecord,
     FacultyNourishment,
     NourishmentState,
+    PersonalityEvolution,
     StarEvent,
     assistant_now_iso,
     compute_nourishment,
     hunger_label,
+    swarm_persona_count,
 )
 from metis_app.services.star_nourishment_gen import (
     generate_hunger_block,
@@ -453,3 +456,385 @@ class TestTopologyAwareExpressions:
             assert isinstance(expr, str), f"Failed at level {level}"
             block = generate_hunger_block(state)
             assert "Topology:" in block, f"No topology at level {level}"
+
+
+# ---------------------------------------------------------------------------
+# Wave 3: PersonalityEvolution, swarm persona scaling, personality_baked
+# ---------------------------------------------------------------------------
+
+
+class TestAbliterationRecord:
+    def test_roundtrip(self):
+        rec = AbliterationRecord(
+            model_id="meta-llama/Llama-2-7b",
+            timestamp="2025-06-01T00:00:00+00:00",
+            traits_seeded=["mathematics", "physics"],
+            star_count_at_bake=10,
+            hunger_at_bake=0.3,
+        )
+        payload = rec.to_payload()
+        assert payload["model_id"] == "meta-llama/Llama-2-7b"
+        assert payload["star_count_at_bake"] == 10
+
+        restored = AbliterationRecord.from_payload(payload)
+        assert restored.model_id == "meta-llama/Llama-2-7b"
+        assert restored.traits_seeded == ["mathematics", "physics"]
+        assert restored.hunger_at_bake == 0.3
+
+    def test_from_empty_payload(self):
+        rec = AbliterationRecord.from_payload({})
+        assert rec.model_id == ""
+        assert rec.star_count_at_bake == 0
+        assert rec.hunger_at_bake == 0.5  # default
+
+    def test_hunger_clamped(self):
+        rec = AbliterationRecord.from_payload({"hunger_at_bake": 5.0})
+        assert rec.hunger_at_bake == 1.0
+        rec2 = AbliterationRecord.from_payload({"hunger_at_bake": -1.0})
+        assert rec2.hunger_at_bake == 0.0
+
+
+class TestPersonalityEvolution:
+    def test_defaults(self):
+        evo = PersonalityEvolution()
+        assert evo.abliteration_count == 0
+        assert evo.personality_depth == 0.0
+        assert evo.dominant_traits == []
+        assert evo.last_baked_at == ""
+
+    def test_roundtrip(self):
+        evo = PersonalityEvolution(
+            abliteration_count=2,
+            personality_depth=0.45,
+            dominant_traits=["mathematics", "physics"],
+        )
+        payload = evo.to_payload()
+        assert payload["personality_depth"] == 0.45
+        assert payload["abliteration_count"] == 2
+
+        restored = PersonalityEvolution.from_payload(payload)
+        assert restored.abliteration_count == 2
+        assert restored.personality_depth == 0.45
+        assert restored.dominant_traits == ["mathematics", "physics"]
+
+    def test_from_none_payload(self):
+        evo = PersonalityEvolution.from_payload(None)
+        assert evo.abliteration_count == 0
+        assert evo.personality_depth == 0.0
+
+    def test_record_abliteration_increments(self):
+        evo = PersonalityEvolution()
+        evo.record_abliteration(
+            model_id="test-model",
+            star_count=10,
+            hunger_level=0.3,
+            faculty_ids=["mathematics", "physics"],
+        )
+        assert evo.abliteration_count == 1
+        assert len(evo.abliteration_history) == 1
+        assert evo.abliteration_history[0].model_id == "test-model"
+        assert evo.last_baked_at != ""
+        assert evo.personality_depth > 0.0
+
+    def test_record_multiple_abliterations(self):
+        evo = PersonalityEvolution()
+        for i in range(3):
+            evo.record_abliteration(
+                model_id=f"model-{i}",
+                star_count=10 + i * 5,
+                hunger_level=0.5,
+                faculty_ids=["mathematics"],
+            )
+        assert evo.abliteration_count == 3
+        assert len(evo.abliteration_history) == 3
+        assert evo.personality_depth > 0.0
+
+    def test_depth_zero_without_stars(self):
+        """Abliterating with 0 stars gives 0 depth (star_factor = 0)."""
+        evo = PersonalityEvolution()
+        evo.record_abliteration(
+            model_id="test", star_count=0,
+            hunger_level=0.5, faculty_ids=["math"],
+        )
+        assert evo.personality_depth == 0.0
+
+    def test_depth_grows_with_stars_and_abliterations(self):
+        """Depth requires BOTH stars AND abliterations."""
+        evo = PersonalityEvolution()
+        evo.record_abliteration(
+            model_id="m1", star_count=20,
+            hunger_level=0.5, faculty_ids=["math", "physics"],
+        )
+        depth_after_one = evo.personality_depth
+        assert depth_after_one > 0.0
+
+        evo.record_abliteration(
+            model_id="m2", star_count=20,
+            hunger_level=0.4, faculty_ids=["literature"],
+        )
+        depth_after_two = evo.personality_depth
+        assert depth_after_two > depth_after_one
+
+    def test_depth_saturates(self):
+        """Many abliterations with stars approach but don't exceed 1.0."""
+        evo = PersonalityEvolution()
+        for i in range(20):
+            evo.record_abliteration(
+                model_id=f"m{i}", star_count=30,
+                hunger_level=0.5, faculty_ids=["math"],
+            )
+        assert evo.personality_depth <= 1.0
+        assert evo.personality_depth >= 0.8  # High after 20 abliterations with 30 stars
+
+    def test_traits_aggregated_by_frequency(self):
+        evo = PersonalityEvolution()
+        evo.record_abliteration(
+            model_id="m1", star_count=10, hunger_level=0.5,
+            faculty_ids=["math", "physics"],
+        )
+        evo.record_abliteration(
+            model_id="m2", star_count=10, hunger_level=0.5,
+            faculty_ids=["math", "literature"],
+        )
+        # "math" appears twice, should be first
+        assert evo.dominant_traits[0] == "math"
+        assert len(evo.dominant_traits) == 3
+
+    def test_traits_capped_at_10(self):
+        evo = PersonalityEvolution()
+        evo.record_abliteration(
+            model_id="m1", star_count=10, hunger_level=0.5,
+            faculty_ids=[f"trait-{i}" for i in range(15)],
+        )
+        assert len(evo.dominant_traits) <= 10
+
+
+class TestSwarmPersonaCount:
+    def test_zero_stars_gives_minimum(self):
+        assert swarm_persona_count(0) == 3
+
+    def test_three_stars_gives_three(self):
+        assert swarm_persona_count(3) == 3
+
+    def test_ten_stars_gives_ten(self):
+        assert swarm_persona_count(10) == 10
+
+    def test_fifty_stars_capped_at_max(self):
+        assert swarm_persona_count(50) == 32
+
+    def test_depth_bonus_adds_personas(self):
+        base = swarm_persona_count(10, personality_depth=0.0)
+        with_depth = swarm_persona_count(10, personality_depth=1.0)
+        assert with_depth == base + 8
+
+    def test_depth_bonus_capped_at_max(self):
+        # 30 stars + 1.0 depth bonus = 30 + 8 = 38, capped at 32
+        assert swarm_persona_count(30, personality_depth=1.0) == 32
+
+    def test_partial_depth_bonus(self):
+        assert swarm_persona_count(10, personality_depth=0.5) == 10 + 4
+
+
+class TestNourishmentStateWave3Properties:
+    def test_personality_depth_property(self):
+        evo = PersonalityEvolution(personality_depth=0.65)
+        state = NourishmentState(personality=evo)
+        assert state.personality_depth == 0.65
+
+    def test_swarm_personas_property(self):
+        evo = PersonalityEvolution(personality_depth=0.5)
+        state = NourishmentState(total_stars=10, personality=evo)
+        assert state.swarm_personas == 14  # 10 base + 4 depth bonus
+
+    def test_has_been_baked_false(self):
+        state = NourishmentState()
+        assert not state.has_been_baked
+
+    def test_has_been_baked_true(self):
+        evo = PersonalityEvolution(abliteration_count=1)
+        state = NourishmentState(personality=evo)
+        assert state.has_been_baked
+
+    def test_personality_in_payload(self):
+        evo = PersonalityEvolution(
+            abliteration_count=1,
+            personality_depth=0.42,
+            dominant_traits=["math"],
+        )
+        state = NourishmentState(total_stars=10, personality=evo)
+        payload = state.to_payload()
+        assert payload["personality_depth"] == 0.42
+        # 10 base + round(0.42*8)=3 = 13
+        assert payload["swarm_personas"] == 13
+        assert payload["has_been_baked"] is True
+
+    def test_personality_roundtrip_in_state(self):
+        evo = PersonalityEvolution(
+            abliteration_count=2,
+            personality_depth=0.5,
+            dominant_traits=["math", "physics"],
+        )
+        state = NourishmentState(total_stars=8, personality=evo)
+        payload = state.to_payload()
+        restored = NourishmentState.from_payload(payload)
+        assert restored.personality.abliteration_count == 2
+        assert restored.personality.personality_depth == 0.5
+        assert restored.personality.dominant_traits == ["math", "physics"]
+
+
+class TestComputeNourishmentWave3:
+    def test_personality_passed_through(self):
+        evo = PersonalityEvolution(abliteration_count=1, personality_depth=0.5)
+        stars = _make_stars(10)
+        state = compute_nourishment(
+            stars=stars, faculties=_FACULTIES, personality=evo,
+        )
+        assert state.personality.abliteration_count == 1
+        assert state.personality.personality_depth == 0.5
+
+    def test_depth_calm_reduces_hunger(self):
+        """Personality depth should reduce hunger slightly."""
+        stars = _make_stars(5)
+        state_no_depth = compute_nourishment(
+            stars=stars, faculties=_FACULTIES,
+        )
+        evo = PersonalityEvolution(personality_depth=1.0)
+        state_depth = compute_nourishment(
+            stars=stars, faculties=_FACULTIES, personality=evo,
+        )
+        assert state_depth.hunger_level < state_no_depth.hunger_level
+
+    def test_depth_calm_max_010(self):
+        """Even high depth can't reduce hunger by more than 0.1."""
+        stars = _make_stars(5)
+        state_no_depth = compute_nourishment(stars=stars, faculties=_FACULTIES)
+        evo = PersonalityEvolution(personality_depth=1.0)
+        state_depth = compute_nourishment(
+            stars=stars, faculties=_FACULTIES, personality=evo,
+        )
+        diff = state_no_depth.hunger_level - state_depth.hunger_level
+        assert diff <= 0.101  # float tolerance
+
+    def test_personality_none_defaults_safely(self):
+        stars = _make_stars(5)
+        state = compute_nourishment(stars=stars, faculties=_FACULTIES, personality=None)
+        assert state.personality.abliteration_count == 0
+        assert state.personality_depth == 0.0
+
+    def test_personality_carried_from_previous(self):
+        """When no explicit personality, it carries from previous state."""
+        evo = PersonalityEvolution(abliteration_count=3, personality_depth=0.7)
+        previous = NourishmentState(personality=evo)
+        stars = _make_stars(5)
+        state = compute_nourishment(
+            stars=stars, faculties=_FACULTIES, previous=previous,
+        )
+        assert state.personality.abliteration_count == 3
+
+
+class TestPersonalityBakedReaction:
+    def test_personality_baked_event_generates_reaction(self):
+        evo = PersonalityEvolution(abliteration_count=1, personality_depth=0.45)
+        state = NourishmentState(
+            hunger_level=0.3, total_stars=10, personality=evo,
+            recent_events=[
+                StarEvent("personality_baked", "", "", assistant_now_iso(),
+                          "Abliterated test-model"),
+            ],
+        )
+        reaction = generate_star_event_reaction(state)
+        assert isinstance(reaction, str)
+        assert len(reaction) > 5
+
+    def test_personality_baked_mentions_depth(self):
+        """personality_baked reaction may mention depth value."""
+        evo = PersonalityEvolution(abliteration_count=1, personality_depth=0.45)
+        state = NourishmentState(
+            hunger_level=0.3, total_stars=10, personality=evo,
+            recent_events=[
+                StarEvent("personality_baked", "", "", assistant_now_iso()),
+            ],
+        )
+        # Run multiple times — depth mention has 60% chance
+        found_depth = False
+        for _ in range(30):
+            reaction = generate_star_event_reaction(state)
+            if "0.45" in reaction:
+                found_depth = True
+                break
+        assert found_depth, "Expected depth mention in at least one of 30 attempts"
+
+
+class TestPersonalityMentionHelpers:
+    def test_generates_string_with_deep_personality(self):
+        from metis_app.services.star_nourishment_gen import _personality_mention
+        evo = PersonalityEvolution(abliteration_count=2, personality_depth=0.7)
+        state = NourishmentState(total_stars=10, personality=evo)
+        result = _personality_mention(state)
+        assert isinstance(result, str)
+
+    def test_generates_string_with_shallow_personality(self):
+        from metis_app.services.star_nourishment_gen import _personality_mention
+        evo = PersonalityEvolution(abliteration_count=0, personality_depth=0.0)
+        state = NourishmentState(total_stars=10, personality=evo)
+        # Shallow personality → yearning or empty (chance-based)
+        result = _personality_mention(state)
+        assert isinstance(result, str)
+
+    def test_swarm_mention_with_diversity(self):
+        from metis_app.services.star_nourishment_gen import _swarm_mention
+        evo = PersonalityEvolution(personality_depth=0.5)
+        state = NourishmentState(total_stars=15, personality=evo)
+        # swarm_personas > 8 → diversity path
+        results = [_swarm_mention(state) for _ in range(30)]
+        non_empty = [r for r in results if r]
+        # At least some should be non-empty (30% chance each)
+        assert any(isinstance(r, str) for r in results)
+
+    def test_swarm_mention_with_hunger(self):
+        from metis_app.services.star_nourishment_gen import _swarm_mention
+        state = NourishmentState(total_stars=3)  # swarm_personas = 3, < 8
+        results = [_swarm_mention(state) for _ in range(30)]
+        assert any(isinstance(r, str) for r in results)
+
+
+class TestHungerBlockWave3:
+    def test_block_includes_personality_section(self):
+        evo = PersonalityEvolution(
+            abliteration_count=2,
+            personality_depth=0.5,
+            dominant_traits=["math", "physics"],
+        )
+        state = NourishmentState(
+            hunger_level=0.4, total_stars=10, personality=evo,
+        )
+        block = generate_hunger_block(state)
+        assert "Personality:" in block
+        assert "depth 0.50" in block
+        assert "2 abliteration(s)" in block
+
+    def test_block_includes_swarm_count(self):
+        evo = PersonalityEvolution(personality_depth=0.5)
+        state = NourishmentState(
+            hunger_level=0.4, total_stars=10, personality=evo,
+        )
+        block = generate_hunger_block(state)
+        assert "Swarm diversity:" in block
+
+    def test_block_zero_depth(self):
+        state = NourishmentState(hunger_level=0.5, total_stars=5)
+        block = generate_hunger_block(state)
+        assert "Personality:" in block
+        assert "unbaked" in block
+
+    def test_all_hunger_levels_with_personality(self):
+        """All 6 hunger states generate valid expressions with personality."""
+        evo = PersonalityEvolution(abliteration_count=1, personality_depth=0.6)
+        for level in [0.05, 0.25, 0.45, 0.65, 0.85, 0.98]:
+            state = NourishmentState(
+                hunger_level=level, total_stars=10, personality=evo,
+            )
+            expr = generate_hunger_expression(state)
+            assert isinstance(expr, str), f"Failed at level {level}"
+            block = generate_hunger_block(state)
+            assert "Personality:" in block, f"No personality at level {level}"

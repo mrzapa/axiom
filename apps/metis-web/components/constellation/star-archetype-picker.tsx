@@ -16,6 +16,18 @@ import { cn } from "@/lib/utils";
 import { suggestStarArchetypes } from "@/lib/api";
 import type { StarArchetypeSuggestion } from "@/lib/api";
 
+// Fallback archetype used when the API cannot detect a match (network error,
+// empty file list edge case, etc.).  Matches the "scroll" backend archetype.
+const DEFAULT_SCROLL_ARCHETYPE: StarArchetypeSuggestion = {
+  id: "scroll",
+  name: "Scroll",
+  description: "Long-form prose, reports, and academic papers",
+  icon_hint: "BookOpen",
+  why: "No specific archetype detected — using balanced defaults.",
+  settings_overrides: { chunk_size: 650, chunk_overlap: 160, retrieval_mode: "flat" },
+  score: 0,
+};
+
 // ---------------------------------------------------------------------------
 // Icon lookup
 // ---------------------------------------------------------------------------
@@ -230,6 +242,13 @@ export function StarArchetypePicker({ filePaths, selectedId, onSelect }: StarArc
         if (results[0].score >= 0.85 || results.length === 1) {
           onSelect(results[0]);
         }
+      }
+
+      // Fallback: if no archetypes could be detected (API error or unknown
+      // file type), silently adopt the default Scroll archetype so the build
+      // button is never permanently blocked.
+      if (results.length === 0 && !selectedId) {
+        onSelect(DEFAULT_SCROLL_ARCHETYPE);
       }
     }
 
