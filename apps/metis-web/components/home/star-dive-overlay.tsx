@@ -34,12 +34,10 @@ export function StarDiveOverlay({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const DPR = Math.min(window.devicePixelRatio ?? 1, 3);
-
     const glOrNull = canvas.getContext("webgl2", {
       alpha: true,
       premultipliedAlpha: false,
-      antialias: true,
+      antialias: false, // disc edge is shader-smooth (smoothstep); GPU MSAA adds cost without benefit
     });
     if (!glOrNull) return;
     const gl = glOrNull;
@@ -97,8 +95,10 @@ export function StarDiveOverlay({
 
       const cssW = window.innerWidth;
       const cssH = window.innerHeight;
-      const physW = Math.round(cssW * DPR);
-      const physH = Math.round(cssH * DPR);
+      // Read DPR each frame so canvas stays correct after moving to a different-DPR display
+      const dpr = Math.min(window.devicePixelRatio ?? 1, 3);
+      const physW = Math.round(cssW * dpr);
+      const physH = Math.round(cssH * dpr);
       if (canvas!.width !== physW || canvas!.height !== physH) {
         canvas!.width  = physW;
         canvas!.height = physH;
@@ -107,12 +107,14 @@ export function StarDiveOverlay({
         gl.viewport(0, 0, physW, physH);
       }
 
-      gl.uniform2f(uStarPos, view.screenX * DPR, view.screenY * DPR);
+      gl.uniform2f(uStarPos, view.screenX * dpr, view.screenY * dpr);
       gl.uniform1f(uFocusStrength, view.focusStrength);
       gl.uniform2f(uRes, physW, physH);
 
       if (wrapper) {
-        wrapper.style.opacity = String(Math.min(1, view.focusStrength * 1.8));
+        // The shader fades in via u_focusStrength — wrapper is just a visibility gate.
+        // Avoid double-attenuation by keeping wrapper at full opacity once active.
+        wrapper.style.opacity = "1";
       }
 
       if (labelContainerRef.current) {
@@ -183,7 +185,7 @@ export function StarDiveOverlay({
         pointerEvents: "none",
         zIndex: 3,
         opacity: 0,
-        transition: reducedMotion ? "opacity 0.15s" : "opacity 0.55s ease",
+        // No CSS transition — u_focusStrength in the shader controls the fade-in
         willChange: "opacity",
       }}
       aria-hidden="true"
