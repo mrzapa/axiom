@@ -74,7 +74,7 @@ def api_query_direct(payload: DirectQueryRequestModel) -> dict[str, Any]:
     return DirectQueryResultModel.from_engine(result).model_dump(mode="json")
 
 
-@get("/v1/forecast/preflight")
+@get("/v1/forecast/preflight", sync_to_thread=False)
 def api_forecast_preflight() -> dict[str, Any]:
     orchestrator = WorkspaceOrchestrator()
     return ForecastPreflightResultModel.model_validate(
