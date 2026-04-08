@@ -90,7 +90,7 @@ def api_forecast_schema(payload: ForecastSchemaRequestModel) -> dict[str, Any]:
     ).model_dump(mode="json")
 
 
-@post("/v1/query/forecast")
+@post("/v1/query/forecast", sync_to_thread=False)
 def api_query_forecast(payload: ForecastQueryRequestModel) -> dict[str, Any]:
     orchestrator = WorkspaceOrchestrator()
     result = run_engine(
