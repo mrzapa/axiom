@@ -55,6 +55,8 @@ def _parse_iso(value: str) -> datetime | None:
 class AssistantCompanionService:
     """Own the local-first companion state and reflection loop."""
 
+    _computing_nourishment: bool = False  # recursion guard
+
     def __init__(
         self,
         *,
@@ -505,6 +507,27 @@ class AssistantCompanionService:
         events: list[StarEvent] | None = None,
     ) -> NourishmentState:
         """Compute current nourishment state from settings star data."""
+        # Guard against infinite recursion:
+        # WorkspaceOrchestrator.get_workspace_graph() → get_snapshot() → here
+        if AssistantCompanionService._computing_nourishment:
+            return compute_nourishment(
+                stars=list(settings.get("landing_constellation_user_stars") or []),
+                faculties=list(
+                    settings.get("constellation_faculties") or self._DEFAULT_FACULTIES
+                ),
+            )
+        AssistantCompanionService._computing_nourishment = True
+        try:
+            return self.__compute_nourishment_inner(settings, events)
+        finally:
+            AssistantCompanionService._computing_nourishment = False
+
+    def __compute_nourishment_inner(
+        self,
+        settings: dict[str, Any],
+        events: list[StarEvent] | None = None,
+    ) -> NourishmentState:
+        """Inner implementation, called only when recursion guard allows."""
         stars = list(settings.get("landing_constellation_user_stars") or [])
         faculties = list(
             settings.get("constellation_faculties") or self._DEFAULT_FACULTIES
