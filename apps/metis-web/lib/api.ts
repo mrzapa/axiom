@@ -1356,6 +1356,21 @@ function parseSseMessage<T>(frame: string): SseMessage<T> | null {
   };
 }
 
+export async function downloadExtractedDoc(filePath: string): Promise<void> {
+  const res = await apiFetch(
+    `${await getApiBase()}/v1/index/extract-doc?path=${encodeURIComponent(filePath)}`,
+  );
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const fileName = filePath.split(/[\\/]/).pop() ?? "document";
+  a.href = url;
+  a.download = fileName.replace(/\.[^.]+$/, "") + ".md";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function fetchSessions(
   search = "",
   signal?: AbortSignal,

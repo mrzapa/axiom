@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
 from dataclasses import dataclass
 from typing import Any
 
 from litestar import Router, delete, get, post
 from litestar.exceptions import HTTPException as LitestarHTTPException
-from litestar.response import ServerSentEvent
+from litestar.response import Response as LitestarResponse, ServerSentEvent
 from pydantic import BaseModel, Field
 
 from metis_app.api.models import IndexBuildRequestModel, IndexBuildResultModel, IndexDeleteResultModel
 from metis_app.engine import list_indexes
 from metis_app.services.workspace_orchestrator import WorkspaceOrchestrator
 from metis_app.services.star_archetype import detect_archetypes, RankedArchetype
+from metis_app.utils.document_loader import load_document
 
 from metis_app.api_litestar.common import run_engine
 
@@ -152,6 +154,23 @@ def api_suggest_archetypes(data: SuggestArchetypesRequest) -> dict[str, Any]:
     }
 
 
+@get("/v1/index/extract-doc")
+def api_extract_doc(path: str) -> LitestarResponse:
+    """Extract text from a document and return it as a downloadable Markdown file."""
+    if not path:
+        raise LitestarHTTPException(status_code=400, detail="path is required.")
+    p = pathlib.Path(path).resolve()
+    if not p.exists() or not p.is_file():
+        raise LitestarHTTPException(status_code=404, detail="File not found.")
+    text = load_document(str(p))
+    stem = p.stem
+    return LitestarResponse(
+        content=text.encode("utf-8"),
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.md"'},
+    )
+
+
 router = Router(
     path="",
     route_handlers=[
@@ -160,6 +179,7 @@ router = Router(
         api_delete_index,
         api_build_index_stream,
         api_suggest_archetypes,
+        api_extract_doc,
     ],
     tags=["index"],
 )

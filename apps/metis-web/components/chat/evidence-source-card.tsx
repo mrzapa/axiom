@@ -1,7 +1,7 @@
 "use client";
 
 import { useArrowState } from "@/hooks/use-arrow-state";
-import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, Check, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { downloadExtractedDoc } from "@/lib/api";
 import type { EvidenceSource } from "@/lib/chat-types";
 
 const SNIPPET_COLLAPSE_THRESHOLD = 160;
@@ -70,6 +71,10 @@ export function EvidenceSourceCard({ source: src }: EvidenceSourceCardProps) {
     await navigator.clipboard.writeText(citation);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownload = () => {
+    if (src.file_path) void downloadExtractedDoc(src.file_path);
   };
 
   return (
@@ -135,6 +140,23 @@ export function EvidenceSourceCard({ source: src }: EvidenceSourceCardProps) {
                   {copied ? "Copied!" : `Copy citation ${citation}`}
                 </TooltipContent>
               </Tooltip>
+              {src.file_path && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={(
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Download extracted markdown"
+                      />
+                    )}
+                    onClick={handleDownload}
+                  >
+                    <Download className="size-3" />
+                  </TooltipTrigger>
+                  <TooltipContent>Download extracted markdown</TooltipContent>
+                </Tooltip>
+              )}
             </div>
           </div>
         </CardHeader>
