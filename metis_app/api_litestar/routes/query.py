@@ -118,7 +118,7 @@ def api_stream_forecast(payload: ForecastQueryRequestModel) -> ServerSentEvent:
     return ServerSentEvent(_event_generator())
 
 
-@post("/v1/openai/chat/completions")
+@post("/v1/openai/chat/completions", sync_to_thread=False)
 def api_openai_chat_completions(
     payload: OpenAIChatCompletionRequestModel,
 ) -> dict[str, Any]:
@@ -147,7 +147,11 @@ def api_openai_chat_completions(
         )
 
     prompt = next(
-        (message.content for message in reversed(payload.messages) if message.role == "user"),
+        (
+            message.content
+            for message in reversed(payload.messages)
+            if message.role == "user"
+        ),
         "",
     )
     if not prompt.strip():
@@ -184,7 +188,7 @@ def api_openai_chat_completions(
     return response.model_dump(mode="json")
 
 
-@post("/v1/query/swarm")
+@post("/v1/query/swarm", sync_to_thread=False)
 def api_query_swarm(payload: SwarmQueryRequestModel) -> dict[str, Any]:
     orchestrator = WorkspaceOrchestrator()
     result = run_engine(
@@ -214,7 +218,9 @@ def api_stream_rag(
 
     def _event_generator() -> Any:
         after_event_id = 0 if replay_after is None else replay_after
-        for event in _RAG_STREAM_MANAGER.subscribe(run_id, after_event_id=after_event_id):
+        for event in _RAG_STREAM_MANAGER.subscribe(
+            run_id, after_event_id=after_event_id
+        ):
             yield {
                 "id": event.event_id,
                 "event": "message",

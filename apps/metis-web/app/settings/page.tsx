@@ -25,6 +25,9 @@ import {
 import { AlertCircle, CheckCircle2, HelpCircle, Info, Loader2, RotateCcw, Search, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useArrowState } from "@/hooks/use-arrow-state";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+gsap.registerPlugin(ScrollTrigger);
 
 const FORECAST_MAX_CONTEXT_LIMIT = 15360;
 const FORECAST_MAX_HORIZON_LIMIT = 1000;
@@ -408,6 +411,7 @@ export default function SettingsPage() {
   const initialTab = searchParams.get("tab") === "models" ? "models" : "core";
   const initialModelsTab = searchParams.get("modelsTab");
   const initialHereticModelId = searchParams.get("model_id");
+  const [activeTab, setActiveTab] = useArrowState(initialTab);
   const [loading, setLoading] = useArrowState(true);
   const [loadError, setLoadError] = useArrowState<string | null>(null);
   const [saving, setSaving] = useArrowState(false);
@@ -492,6 +496,49 @@ export default function SettingsPage() {
       web_scrape_full_content: false,
     },
   });
+
+  // Animate section children into view with ScrollTrigger whenever the active tab changes
+  // (or when the form finishes loading). Targets all direct children of the section element
+  // inside the active glass-settings-pane — these are the natural form-field groups.
+  useEffect(() => {
+    if (loading) return;
+    let killed = false;
+    const frameId = requestAnimationFrame(() => {
+      if (killed) return;
+      const targets = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-state="active"].glass-settings-pane section > *'
+        )
+      );
+      if (!targets.length) return;
+      // Start hidden
+      gsap.set(targets, { opacity: 0, y: 22 });
+      // Scroll-reveal each block as it enters the viewport
+      targets.forEach((el) => {
+        gsap.to(el, {
+          opacity: 1,
+          y: 0,
+          duration: 0.48,
+          ease: "power2.out",
+          scrollTrigger: {
+            trigger: el,
+            start: "top 92%",
+            once: true,
+          },
+        });
+      });
+      ScrollTrigger.refresh();
+    });
+    return () => {
+      killed = true;
+      cancelAnimationFrame(frameId);
+      ScrollTrigger.getAll().forEach((t) => t.kill());
+      // Ensure elements don't stay invisible if effect re-runs before animation fires
+      document.querySelectorAll<HTMLElement>(
+        ".glass-settings-pane section > *"
+      ).forEach((el) => gsap.set(el, { clearProps: "opacity,transform" }));
+    };
+  }, [activeTab, loading]);
 
   const applyUiVariant = useCallback((nextVariant: UiVariant) => {
     setUiVariant(nextVariant);
@@ -827,7 +874,7 @@ export default function SettingsPage() {
             Loading settings…
           </div>
         ) : (
-          <Tabs defaultValue={initialTab}>
+          <Tabs defaultValue={initialTab} onValueChange={setActiveTab}>
             <TabsList className="glass-tab-rail h-auto w-full flex-wrap gap-1 p-1.5">
               <TabsTrigger value="core" className="glass-tab-pill">Core</TabsTrigger>
               <TabsTrigger value="retrieval" className="glass-tab-pill">Retrieval</TabsTrigger>
