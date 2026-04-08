@@ -27,7 +27,7 @@ classifiers = [
 # Runtime dependencies are intentionally minimal; heavy ML libs (LangChain,
 # sentence-transformers, llama-cpp-python) are optional/user-installed unless
 # the installer opts into the pinned runtime-all bundle.
-dependencies = ["psutil>=6", "PyYAML>=6"]
+dependencies = ["psutil>=6", "PyYAML>=6", "pydantic>=2.0"]
 
 [project.optional-dependencies]
 api = [
@@ -85,6 +85,9 @@ live-backends = [
 ]
 kreuzberg = [
     "kreuzberg",
+]
+opendataloader = [
+    "opendataloader-pdf",
 ]
 tribev2 = [
     "tribev2 @ git+https://github.com/facebookresearch/tribev2.git@main ; python_version >= '3.11'",

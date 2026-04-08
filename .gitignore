@@ -66,6 +66,9 @@ coverage.xml
 output/
 langextract_grounding_*.html
 
+# Next.js build output
+apps/metis-web/out/
+
 .metis_cache/
 *.ckpt
 *.pt

@@ -7,6 +7,8 @@ only for argument validation — we don't make real API calls.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from metis_app.utils.llm_providers import (
@@ -244,3 +246,69 @@ class TestPooledLLM:
         # to regular mock — this just ensures no crash
         model = create_llm(settings)
         assert model is not None
+
+    def test_quarantined_key_readmitted_after_cooldown(self, monkeypatch):
+        """Key comes back after quarantine expires."""
+        pool = CredentialPool(["k1"])
+
+        base = time.monotonic()
+        tick = {"n": 0}
+        monkeypatch.setattr(
+            "metis_app.utils.credential_pool.time",
+            type("_T", (), {"monotonic": staticmethod(lambda: base + tick["n"] * 10)})(),
+        )
+
+        pool.report_failure("k1")         # quarantines for 2 s (count=1)
+        assert pool.active_count() == 0
+
+        tick["n"] = 1                     # advance clock by 10 s > 2 s cooldown
+        assert pool.active_count() == 1   # re-admitted
+        assert pool.get_key() == "k1"
+
+    def test_exponential_backoff_grows(self, monkeypatch):
+        """Repeated failures double the quarantine period."""
+        pool = CredentialPool(["k1"])
+        t = {"v": 0.0}
+        monkeypatch.setattr(
+            "metis_app.utils.credential_pool.time",
+            type("_T", (), {"monotonic": staticmethod(lambda: t["v"])})(),
+        )
+
+        pool.report_failure("k1")   # count=1, cooldown=2 s
+        t["v"] = 3.0                # expire first quarantine
+        pool.get_key()              # re-admits k1
+        pool.report_failure("k1")  # count=2, cooldown=4 s
+        t["v"] = 6.0                # only 3 s elapsed, still quarantined
+        assert pool.active_count() == 0
+        t["v"] = 8.0                # 5 s elapsed > 4 s cooldown
+        assert pool.active_count() == 1
+
+    def test_success_resets_failure_count(self, monkeypatch):
+        """report_success resets backoff so next failure starts at 2 s again."""
+        pool = CredentialPool(["k1"])
+        t = {"v": 0.0}
+        monkeypatch.setattr(
+            "metis_app.utils.credential_pool.time",
+            type("_T", (), {"monotonic": staticmethod(lambda: t["v"])})(),
+        )
+
+        pool.report_failure("k1")   # count=1, cooldown=2 s
+        t["v"] = 3.0
+        pool.get_key()              # re-admit
+        pool.report_success("k1")  # clears failure_counts["k1"]
+        pool.report_failure("k1")  # count resets to 1 again, cooldown=2 s not 4 s
+        assert pool._failure_counts.get("k1") == 1
+
+    def test_permanent_failure_never_readmits(self, monkeypatch):
+        """permanent=True removes the key forever."""
+        pool = CredentialPool(["k1", "k2"])
+        t = {"v": 0.0}
+        monkeypatch.setattr(
+            "metis_app.utils.credential_pool.time",
+            type("_T", (), {"monotonic": staticmethod(lambda: t["v"])})(),
+        )
+
+        pool.report_failure("k1", permanent=True)
+        t["v"] = 9999.0             # far future
+        assert pool.active_count() == 1
+        assert pool.get_key() == "k2"
