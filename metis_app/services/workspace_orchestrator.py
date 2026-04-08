@@ -682,7 +682,7 @@ class WorkspaceOrchestrator:
     # Graph / Brain canvas
     # ------------------------------------------------------------------
 
-    def get_workspace_graph(self) -> BrainGraph:
+    def get_workspace_graph(self, *, skip_layout: bool = False) -> BrainGraph:
         """Build and return the :class:`~metis_app.models.brain_graph.BrainGraph`.
 
         Fetches indexes from the engine registry and sessions from the
@@ -692,7 +692,7 @@ class WorkspaceOrchestrator:
         indexes = self.list_indexes()
         sessions = self._session_repo.list_sessions()
         assistant_snapshot = self._assistant_service.get_snapshot(_settings_store.load_settings())
-        return BrainGraph().build_from_indexes_and_sessions(indexes, sessions, assistant_snapshot)
+        return BrainGraph().build_from_indexes_and_sessions(indexes, sessions, assistant_snapshot, skip_layout=skip_layout)
 
     # ------------------------------------------------------------------
     # Sessions / Memory
@@ -1033,6 +1033,11 @@ class WorkspaceOrchestrator:
     def get_improvement_entry(self, entry_id: str) -> dict[str, Any] | None:
         entry = self._improvement_repo.get_entry(entry_id)
         return entry.to_payload() if entry is not None else None
+
+    def upsert_improvement_entry(self, payload: dict[str, Any]) -> dict[str, Any]:
+        entry = ImprovementEntry.from_payload(payload)
+        saved = self._improvement_repo.upsert_entry(entry)
+        return saved.to_payload()
 
     def preview_learning_route(
         self,

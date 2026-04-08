@@ -78,3 +78,49 @@ def test_improvement_routes_round_trip_for_fastapi_and_litestar(monkeypatch) -> 
 
     assert captured["list"] == ("idea", "draft", 5)
     assert captured["get"] == "missing"
+
+
+def test_create_improvement_entry_fastapi_and_litestar(monkeypatch) -> None:
+    fastapi_improvements = import_module("metis_app.api.improvements")
+    litestar_improvements = import_module("metis_app.api_litestar.routes.improvements")
+    fastapi_app = import_module("metis_app.api.app")
+    litestar_app = import_module("metis_app.api_litestar")
+
+    created_payloads: list[dict] = []
+
+    def _fake_upsert(payload: dict) -> dict:
+        created_payloads.append(payload)
+        return {
+            **_entry_payload(),
+            "artifact_type": payload["artifact_type"],
+            "title": payload["title"],
+            "artifact_key": payload.get("artifact_key", "idea:manual:test-hypothesis:abc12345"),
+        }
+
+    class _FakeOrchestrator:
+        def upsert_improvement_entry(self, payload: dict) -> dict:
+            return _fake_upsert(payload)
+
+    monkeypatch.setattr(fastapi_improvements, "WorkspaceOrchestrator", lambda: _FakeOrchestrator())
+    monkeypatch.setattr(litestar_improvements, "WorkspaceOrchestrator", lambda: _FakeOrchestrator())
+
+    body = {"artifact_type": "idea", "title": "Test Hypothesis"}
+
+    with FastAPITestClient(fastapi_app.create_app()) as fastapi_client:
+        resp = fastapi_client.post("/v1/improvements", json=body)
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["artifact_type"] == "idea"
+        assert data["title"] == "Test Hypothesis"
+        # auto-generated key must contain artifact_type and "manual"
+        assert "idea" in data.get("artifact_key", "")
+        assert "manual" in data.get("artifact_key", "")
+
+    with LitestarTestClient(app=litestar_app.create_app()) as litestar_client:
+        resp = litestar_client.post("/v1/improvements", json=body)
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["artifact_type"] == "idea"
+        assert data["title"] == "Test Hypothesis"
+
+    assert len(created_payloads) == 2

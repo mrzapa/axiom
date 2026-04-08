@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from litestar import Router, get
+import uuid as _uuid
+
+from litestar import Router, get, post
 from litestar.exceptions import HTTPException as LitestarHTTPException
 
-from metis_app.api.models import ImprovementEntryModel
+from metis_app.api.models import ImprovementCreateRequest, ImprovementEntryModel
 from metis_app.services.workspace_orchestrator import WorkspaceOrchestrator
 
 
@@ -34,11 +36,24 @@ def get_improvement_entry(entry_id: str) -> dict:
     return ImprovementEntryModel.model_validate(entry).model_dump(mode="json")
 
 
+@post("/v1/improvements", status_code=201)
+def create_improvement_entry(data: ImprovementCreateRequest) -> dict:
+    payload = data.model_dump()
+    if not payload.get("artifact_key"):
+        slug_base = str(payload.get("title") or "entry").lower().replace(" ", "-")[:48]
+        payload["artifact_key"] = (
+            f"{payload['artifact_type']}:manual:{slug_base}:{_uuid.uuid4().hex[:8]}"
+        )
+    entry = WorkspaceOrchestrator().upsert_improvement_entry(payload)
+    return ImprovementEntryModel.model_validate(entry).model_dump(mode="json")
+
+
 router = Router(
     path="",
     route_handlers=[
         list_improvement_entries,
         get_improvement_entry,
+        create_improvement_entry,
     ],
     tags=["improvements"],
 )

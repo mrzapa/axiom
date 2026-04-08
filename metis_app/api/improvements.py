@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from metis_app.services.workspace_orchestrator import WorkspaceOrchestrator
 
-from .models import ImprovementEntryModel
+from .models import ImprovementCreateRequest, ImprovementEntryModel
 
 router = APIRouter(prefix="/v1/improvements", tags=["improvements"])
 
@@ -30,3 +30,16 @@ def get_improvement_entry(entry_id: str) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail="Improvement entry not found")
     return entry
+
+
+@router.post("", response_model=ImprovementEntryModel, status_code=201)
+def create_improvement_entry(body: ImprovementCreateRequest) -> dict:
+    import uuid as _uuid
+
+    payload = body.model_dump()
+    if not payload.get("artifact_key"):
+        slug_base = str(payload.get("title") or "entry").lower().replace(" ", "-")[:48]
+        payload["artifact_key"] = (
+            f"{payload['artifact_type']}:manual:{slug_base}:{_uuid.uuid4().hex[:8]}"
+        )
+    return WorkspaceOrchestrator().upsert_improvement_entry(payload)
