@@ -56,7 +56,7 @@ def submit_feedback(session_id: str, payload: FeedbackRequestModel) -> dict[str,
     return FeedbackResponseModel(ok=True).model_dump()
 
 
-@delete("/v1/sessions/{session_id:str}", status_code=200)
+@delete("/v1/sessions/{session_id:str}", status_code=200, sync_to_thread=False)
 def delete_session(session_id: str) -> dict[str, object]:
     """Delete a session and all associated messages and feedback."""
     repo = get_session_repo()

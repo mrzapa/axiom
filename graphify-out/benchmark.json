@@ -1,0 +1,35 @@
+{
+  "corpus_tokens": 172989,
+  "corpus_words": 129742,
+  "nodes": 2511,
+  "edges": 8321,
+  "avg_query_tokens": 104263,
+  "reduction_ratio": 1.7,
+  "per_question": [
+    {
+      "question": "What are the main entry points for RAG queries?",
+      "query_tokens": 107417,
+      "reduction": 1.6
+    },
+    {
+      "question": "Which service owns the streaming event pipeline?",
+      "query_tokens": 103396,
+      "reduction": 1.7
+    },
+    {
+      "question": "Where does the LLM provider get injected?",
+      "query_tokens": 102934,
+      "reduction": 1.7
+    },
+    {
+      "question": "What connects the engine layer to the API layer?",
+      "query_tokens": 102846,
+      "reduction": 1.7
+    },
+    {
+      "question": "How does the brain graph get built and exported?",
+      "query_tokens": 104726,
+      "reduction": 1.7
+    }
+  ]
+}

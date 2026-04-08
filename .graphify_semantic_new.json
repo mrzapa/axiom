@@ -1,0 +1,3822 @@
+{
+  "nodes": [
+    {
+      "id": "app_bootstrap",
+      "label": "Application Bootstrap",
+      "file_type": "code",
+      "source_file": "metis_app/app.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "app_run_app",
+      "label": "run_app Function",
+      "file_type": "code",
+      "source_file": "metis_app/app.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "cli_headless",
+      "label": "Headless CLI Interface",
+      "file_type": "code",
+      "source_file": "metis_app/cli.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "config_constants",
+      "label": "Configuration Constants",
+      "file_type": "code",
+      "source_file": "metis_app/config.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "config_Config",
+      "label": "Config Dataclass",
+      "file_type": "code",
+      "source_file": "metis_app/config.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "settings_store_module",
+      "label": "Settings Store & Validation",
+      "file_type": "code",
+      "source_file": "metis_app/settings_store.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "audit_parity",
+      "label": "Parity Audit Entrypoint",
+      "file_type": "code",
+      "source_file": "metis_app/audit.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_fastapi_app",
+      "label": "FastAPI Surface",
+      "file_type": "code",
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_models_adapter",
+      "label": "API Models Layer",
+      "file_type": "code",
+      "source_file": "metis_app/api/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_app_state",
+      "label": "App State KV Store",
+      "file_type": "code",
+      "source_file": "metis_app/api/app_state.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_sessions",
+      "label": "Session & Feedback Routes",
+      "file_type": "code",
+      "source_file": "metis_app/api/sessions.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_settings",
+      "label": "Settings Routes",
+      "file_type": "code",
+      "source_file": "metis_app/api/settings.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_gguf",
+      "label": "GGUF Model Management",
+      "file_type": "code",
+      "source_file": "metis_app/api/gguf.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_atlas",
+      "label": "Atlas Entry Routes",
+      "file_type": "code",
+      "source_file": "metis_app/api/atlas.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_assistant",
+      "label": "Assistant Companion Routes",
+      "file_type": "code",
+      "source_file": "metis_app/api/assistant.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_autonomous",
+      "label": "Autonomous Research Endpoints",
+      "file_type": "code",
+      "source_file": "metis_app/api/autonomous.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_comets",
+      "label": "News Comet Features",
+      "file_type": "code",
+      "source_file": "metis_app/api/comets.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_features",
+      "label": "Feature Flag Kill-Switch",
+      "file_type": "code",
+      "source_file": "metis_app/api/features.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_heretic",
+      "label": "Heretic Abliteration",
+      "file_type": "code",
+      "source_file": "metis_app/api/heretic.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_improvements",
+      "label": "Improvement Pipeline",
+      "file_type": "code",
+      "source_file": "metis_app/api/improvements.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_logs",
+      "label": "Logs & Metrics",
+      "file_type": "code",
+      "source_file": "metis_app/api/logs.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "api_observe",
+      "label": "Semantic Observability",
+      "file_type": "code",
+      "source_file": "metis_app/api/observe.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "route_list_sessions",
+      "label": "list_sessions",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "source_location": "L10-L16"
+    },
+    {
+      "id": "route_create_session",
+      "label": "create_session",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "source_location": "L19-L24"
+    },
+    {
+      "id": "route_get_session",
+      "label": "get_session",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "source_location": "L27-L35"
+    },
+    {
+      "id": "route_submit_feedback",
+      "label": "submit_feedback",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "source_location": "L38-L48"
+    },
+    {
+      "id": "route_delete_session",
+      "label": "delete_session",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "source_location": "L51-L60"
+    },
+    {
+      "id": "sessions_router",
+      "label": "sessions Router",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "source_location": "L63-L72"
+    },
+    {
+      "id": "route_api_query_rag",
+      "label": "api_query_rag",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "source_location": "L32-L40"
+    },
+    {
+      "id": "route_api_search_knowledge",
+      "label": "api_search_knowledge",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "source_location": "L43-L51"
+    },
+    {
+      "id": "route_api_query_direct",
+      "label": "api_query_direct",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "source_location": "L54-L62"
+    },
+    {
+      "id": "route_api_query_forecast",
+      "label": "api_query_forecast",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "source_location": "L81-L88"
+    },
+    {
+      "id": "route_api_forecast_preflight",
+      "label": "api_forecast_preflight",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "source_location": "L65-L72"
+    },
+    {
+      "id": "route_api_forecast_schema",
+      "label": "api_forecast_schema",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "source_location": "L75-L82"
+    },
+    {
+      "id": "route_api_build_index",
+      "label": "api_build_index",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "source_location": "L49-L59"
+    },
+    {
+      "id": "route_api_list_indexes",
+      "label": "api_list_indexes",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "source_location": "L62-L65"
+    },
+    {
+      "id": "route_api_delete_index",
+      "label": "api_delete_index",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "source_location": "L68-L76"
+    },
+    {
+      "id": "route_api_build_index_stream",
+      "label": "api_build_index_stream",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "source_location": "L79-L110"
+    },
+    {
+      "id": "route_get_settings",
+      "label": "get_settings",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/settings.py",
+      "source_location": "L9-L12"
+    },
+    {
+      "id": "route_post_settings",
+      "label": "post_settings",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/settings.py",
+      "source_location": "L15-L32"
+    },
+    {
+      "id": "settings_router",
+      "label": "settings Router",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/settings.py",
+      "source_location": "L35"
+    },
+    {
+      "id": "route_list_catalog",
+      "label": "list_catalog",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/gguf.py",
+      "source_location": "L33-L37"
+    },
+    {
+      "id": "route_get_hardware",
+      "label": "get_hardware",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/gguf.py",
+      "source_location": "L40-L43"
+    },
+    {
+      "id": "route_list_installed",
+      "label": "list_installed",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/gguf.py",
+      "source_location": "L46-L55"
+    },
+    {
+      "id": "route_validate_model",
+      "label": "validate_model",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/gguf.py",
+      "source_location": "L58-L65"
+    },
+    {
+      "id": "route_refresh_catalog",
+      "label": "refresh_catalog",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/gguf.py",
+      "source_location": "L68-L77"
+    },
+    {
+      "id": "route_get_assistant",
+      "label": "get_assistant",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "source_location": "L10-L12"
+    },
+    {
+      "id": "route_update_assistant",
+      "label": "update_assistant",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "source_location": "L15-L23"
+    },
+    {
+      "id": "route_get_assistant_status",
+      "label": "get_assistant_status",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "source_location": "L26-L29"
+    },
+    {
+      "id": "route_reflect_assistant",
+      "label": "reflect_assistant",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "source_location": "L32-L43"
+    },
+    {
+      "id": "route_bootstrap_assistant",
+      "label": "bootstrap_assistant",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "source_location": "L46-L50"
+    },
+    {
+      "id": "route_list_assistant_memory",
+      "label": "list_assistant_memory",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "source_location": "L53-L55"
+    },
+    {
+      "id": "route_clear_assistant_memory",
+      "label": "clear_assistant_memory",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "source_location": "L58-L60"
+    },
+    {
+      "id": "route_get_atlas_candidate",
+      "label": "get_atlas_candidate",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/atlas.py",
+      "source_location": "L10-L17"
+    },
+    {
+      "id": "route_save_atlas_entry",
+      "label": "save_atlas_entry",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/atlas.py",
+      "source_location": "L20-L31"
+    },
+    {
+      "id": "route_decide_atlas_candidate",
+      "label": "decide_atlas_candidate",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/atlas.py",
+      "source_location": "L34-L45"
+    },
+    {
+      "id": "route_list_atlas_entries",
+      "label": "list_atlas_entries",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/atlas.py",
+      "source_location": "L48-L54"
+    },
+    {
+      "id": "route_get_atlas_entry",
+      "label": "get_atlas_entry",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/atlas.py",
+      "source_location": "L57-L63"
+    },
+    {
+      "id": "atlas_router",
+      "label": "atlas Router",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/atlas.py",
+      "source_location": "L66-L72"
+    },
+    {
+      "id": "route_get_autonomous_status",
+      "label": "get_autonomous_status",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/autonomous.py",
+      "source_location": "L17-L27"
+    },
+    {
+      "id": "route_trigger_autonomous_research",
+      "label": "trigger_autonomous_research",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/autonomous.py",
+      "source_location": "L30-L44"
+    },
+    {
+      "id": "route_trigger_autonomous_research_stream",
+      "label": "trigger_autonomous_research_stream",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/autonomous.py",
+      "source_location": "L47-L75"
+    },
+    {
+      "id": "route_preflight",
+      "label": "preflight",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/heretic.py",
+      "source_location": "L73-L80"
+    },
+    {
+      "id": "route_list_features",
+      "label": "list_features",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/features.py",
+      "source_location": "L15-L32"
+    },
+    {
+      "id": "route_disable_feature",
+      "label": "disable_feature",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/features.py",
+      "source_location": "L35-L59"
+    },
+    {
+      "id": "route_enable_feature",
+      "label": "enable_feature",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/features.py",
+      "source_location": "L62-L86"
+    },
+    {
+      "id": "route_list_improvement_entries",
+      "label": "list_improvement_entries",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/improvements.py",
+      "source_location": "L12-L22"
+    },
+    {
+      "id": "route_get_improvement_entry",
+      "label": "get_improvement_entry",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/improvements.py",
+      "source_location": "L25-L31"
+    },
+    {
+      "id": "route_create_improvement_entry",
+      "label": "create_improvement_entry",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/improvements.py",
+      "source_location": "L34-L48"
+    },
+    {
+      "id": "route_get_log_tail",
+      "label": "get_log_tail",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/logs.py",
+      "source_location": "L7-L9"
+    },
+    {
+      "id": "route_get_trace_metrics",
+      "label": "get_trace_metrics",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/logs.py",
+      "source_location": "L12-L14"
+    },
+    {
+      "id": "route_get_discover",
+      "label": "get_discover",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/observe.py",
+      "source_location": "L12-L13"
+    },
+    {
+      "id": "route_get_trace_feedback",
+      "label": "get_trace_feedback",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/observe.py",
+      "source_location": "L16-L21"
+    },
+    {
+      "id": "route_get_run_semantic",
+      "label": "get_run_semantic",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/observe.py",
+      "source_location": "L24-L26"
+    },
+    {
+      "id": "route_post_trace_feedback",
+      "label": "post_trace_feedback",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/observe.py",
+      "source_location": "L29-L31"
+    },
+    {
+      "id": "route_export_run_as_skill",
+      "label": "export_run_as_skill",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/observe.py",
+      "source_location": "L34-L36"
+    },
+    {
+      "id": "route_export_run_as_eval",
+      "label": "export_run_as_eval",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/observe.py",
+      "source_location": "L39-L41"
+    },
+    {
+      "id": "route_list_app_state",
+      "label": "list_app_state",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/app_state.py",
+      "source_location": "L49-L57"
+    },
+    {
+      "id": "route_read_app_state",
+      "label": "read_app_state",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/app_state.py",
+      "source_location": "L60-L68"
+    },
+    {
+      "id": "route_api_build_web_graph",
+      "label": "api_build_web_graph",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/web_graph.py",
+      "source_location": "L17-L28"
+    },
+    {
+      "id": "route_api_build_web_graph_stream",
+      "label": "api_build_web_graph_stream",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/web_graph.py",
+      "source_location": "L31-L76"
+    },
+    {
+      "id": "common_run_engine",
+      "label": "run_engine",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/common.py",
+      "source_location": "L59-L68"
+    },
+    {
+      "id": "common_get_session_repo",
+      "label": "get_session_repo",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/common.py",
+      "source_location": "L71-L75"
+    },
+    {
+      "id": "common_require_token_guard",
+      "label": "require_token_guard",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/common.py",
+      "source_location": "L49-L57"
+    },
+    {
+      "id": "create_app",
+      "label": "create_app",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/app.py",
+      "source_location": "L48-L95"
+    },
+    {
+      "id": "indexing_IndexBuildRequest",
+      "label": "IndexBuildRequest",
+      "file_type": "code",
+      "source_file": "metis_app/engine/indexing.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "indexing_IndexBuildResult",
+      "label": "IndexBuildResult",
+      "file_type": "code",
+      "source_file": "metis_app/engine/indexing.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "indexing_build_index",
+      "label": "build_index()",
+      "file_type": "code",
+      "source_file": "metis_app/engine/indexing.py",
+      "source_location": "function",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "querying_RagQueryRequest",
+      "label": "RagQueryRequest",
+      "file_type": "code",
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "querying_RagQueryResult",
+      "label": "RagQueryResult",
+      "file_type": "code",
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "querying_DirectQueryRequest",
+      "label": "DirectQueryRequest",
+      "file_type": "code",
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "querying_DirectQueryResult",
+      "label": "DirectQueryResult",
+      "file_type": "code",
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "querying_KnowledgeSearchRequest",
+      "label": "KnowledgeSearchRequest",
+      "file_type": "code",
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "querying_KnowledgeSearchResult",
+      "label": "KnowledgeSearchResult",
+      "file_type": "code",
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "querying_SwarmQueryRequest",
+      "label": "SwarmQueryRequest",
+      "file_type": "code",
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "querying_SwarmQueryResult",
+      "label": "SwarmQueryResult",
+      "file_type": "code",
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "streaming_stream_rag_answer",
+      "label": "stream_rag_answer()",
+      "file_type": "code",
+      "source_file": "metis_app/engine/streaming.py",
+      "source_location": "function",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "forecasting_ForecastQueryRequest",
+      "label": "ForecastQueryRequest",
+      "file_type": "code",
+      "source_file": "metis_app/engine/forecasting.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "forecasting_ForecastQueryResult",
+      "label": "ForecastQueryResult",
+      "file_type": "code",
+      "source_file": "metis_app/engine/forecasting.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "runs_RunEvent",
+      "label": "RunEvent",
+      "file_type": "code",
+      "source_file": "metis_app/engine/runs.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "session_types_EvidenceSource",
+      "label": "EvidenceSource",
+      "file_type": "code",
+      "source_file": "metis_app/models/session_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "session_types_SessionSummary",
+      "label": "SessionSummary",
+      "file_type": "code",
+      "source_file": "metis_app/models/session_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "brain_graph_BrainGraph",
+      "label": "BrainGraph",
+      "file_type": "code",
+      "source_file": "metis_app/models/brain_graph.py",
+      "source_location": "class",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "brain_graph_BrainNode",
+      "label": "BrainNode",
+      "file_type": "code",
+      "source_file": "metis_app/models/brain_graph.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "brain_graph_BrainEdge",
+      "label": "BrainEdge",
+      "file_type": "code",
+      "source_file": "metis_app/models/brain_graph.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "comet_event_CometEvent",
+      "label": "CometEvent",
+      "file_type": "code",
+      "source_file": "metis_app/models/comet_event.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "comet_event_NewsItem",
+      "label": "NewsItem",
+      "file_type": "code",
+      "source_file": "metis_app/models/comet_event.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "assistant_types_AssistantIdentity",
+      "label": "AssistantIdentity",
+      "file_type": "code",
+      "source_file": "metis_app/models/assistant_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "assistant_types_AssistantRuntime",
+      "label": "AssistantRuntime",
+      "file_type": "code",
+      "source_file": "metis_app/models/assistant_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "assistant_types_AssistantPolicy",
+      "label": "AssistantPolicy",
+      "file_type": "code",
+      "source_file": "metis_app/models/assistant_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "assistant_types_AssistantStatus",
+      "label": "AssistantStatus",
+      "file_type": "code",
+      "source_file": "metis_app/models/assistant_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "atlas_types_AtlasEntry",
+      "label": "AtlasEntry",
+      "file_type": "code",
+      "source_file": "metis_app/models/atlas_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "improvement_types_ImprovementEntry",
+      "label": "ImprovementEntry",
+      "file_type": "code",
+      "source_file": "metis_app/models/improvement_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "parity_types_AgentProfile",
+      "label": "AgentProfile",
+      "file_type": "code",
+      "source_file": "metis_app/models/parity_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "parity_types_SkillDefinition",
+      "label": "SkillDefinition",
+      "file_type": "code",
+      "source_file": "metis_app/models/parity_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "parity_types_SkillSessionState",
+      "label": "SkillSessionState",
+      "file_type": "code",
+      "source_file": "metis_app/models/parity_types.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "star_nourishment_StarEvent",
+      "label": "StarEvent",
+      "file_type": "code",
+      "source_file": "metis_app/models/star_nourishment.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "star_nourishment_FacultyNourishment",
+      "label": "FacultyNourishment",
+      "file_type": "code",
+      "source_file": "metis_app/models/star_nourishment.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "star_nourishment_TopologySignal",
+      "label": "TopologySignal",
+      "file_type": "code",
+      "source_file": "metis_app/models/star_nourishment.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "sht_SHTNode",
+      "label": "SHTNode",
+      "file_type": "code",
+      "source_file": "metis_app/models/sht.py",
+      "source_location": "dataclass",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "app_model_AppModel",
+      "label": "AppModel",
+      "file_type": "code",
+      "source_file": "metis_app/models/app_model.py",
+      "source_location": "class",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "app_controller_AppController",
+      "label": "AppController",
+      "file_type": "code",
+      "source_file": "metis_app/controllers/app_controller.py",
+      "source_location": "class",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "web_graph_api_build_web_graph",
+      "label": "api_build_web_graph()",
+      "file_type": "code",
+      "source_file": "metis_app/api_litestar/routes/web_graph.py",
+      "source_location": "function",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "trace_event_schema_EventType",
+      "label": "Event Type Enumeration",
+      "file_type": "code",
+      "source_file": "metis_app/models/trace_event_schema.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "app_state_service_AppStateService",
+      "label": "App State SQLite Store",
+      "file_type": "code",
+      "source_file": "metis_app/services/app_state_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "assistant_companion_AssistantCompanionService",
+      "label": "Companion Reflection & State",
+      "file_type": "code",
+      "source_file": "metis_app/services/assistant_companion.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "behavior_discovery_BehaviorDiscoveryService",
+      "label": "Semantic Observability & Behavior Discovery",
+      "file_type": "code",
+      "source_file": "metis_app/services/behavior_discovery.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "brain_pass_placement",
+      "label": "Brain-Inspired Faculty Placement",
+      "file_type": "code",
+      "source_file": "metis_app/services/brain_pass.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "comet_decision_engine_CometDecisionEngine",
+      "label": "Comet Relevance Scoring",
+      "file_type": "code",
+      "source_file": "metis_app/services/comet_decision_engine.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "index_service_orchestrator",
+      "label": "Index Build & Retrieval Orchestrator",
+      "file_type": "code",
+      "source_file": "metis_app/services/index_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "knowledge_cache_QueryResultCache",
+      "label": "DuckDB Query Result Cache",
+      "file_type": "code",
+      "source_file": "metis_app/services/knowledge_cache.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "artifact_converter_ArtifactConverter",
+      "label": "Trace-to-Artifact Converter",
+      "file_type": "code",
+      "source_file": "metis_app/services/artifact_converter.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "assistant_repository_AssistantRepository",
+      "label": "Companion SQLite Persistence",
+      "file_type": "code",
+      "source_file": "metis_app/services/assistant_repository.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "atlas_repository_AtlasRepository",
+      "label": "Atlas Entry Persistence",
+      "file_type": "code",
+      "source_file": "metis_app/services/atlas_repository.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "autonomous_research_AutonomousResearchService",
+      "label": "Web Research & Synthesis Pipeline",
+      "file_type": "code",
+      "source_file": "metis_app/services/autonomous_research_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "forecast_service_TimesFM",
+      "label": "Time-series Forecasting",
+      "file_type": "code",
+      "source_file": "metis_app/services/forecast_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "gguf_serialization_helpers",
+      "label": "GGUF Validation & Serialization",
+      "file_type": "code",
+      "source_file": "metis_app/services/gguf_serialization.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "grep_retriever_GrepRetriever",
+      "label": "rga-backed Keyword Retriever",
+      "file_type": "code",
+      "source_file": "metis_app/services/grep_retriever.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "heretic_service_integration",
+      "label": "Heretic Abliteration Pipeline",
+      "file_type": "code",
+      "source_file": "metis_app/services/heretic_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "hybrid_scorer_hybrid_rerank",
+      "label": "BM25 + Vector Alpha-Blend Scorer",
+      "file_type": "code",
+      "source_file": "metis_app/services/hybrid_scorer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "improvement_repository_ImprovementRepository",
+      "label": "Improvement Artifact Persistence",
+      "file_type": "code",
+      "source_file": "metis_app/services/improvement_repository.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "learning_route_LearningRouteService",
+      "label": "Learning Route Planning",
+      "file_type": "code",
+      "source_file": "metis_app/services/learning_route_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "local_llm_recommender_LocalLlmRecommenderService",
+      "label": "Hardware-Aware GGUF Recommender",
+      "file_type": "code",
+      "source_file": "metis_app/services/local_llm_recommender.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "local_model_registry_LocalModelRegistryService",
+      "label": "Local Model Registry Normalization",
+      "file_type": "code",
+      "source_file": "metis_app/services/local_model_registry.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "response_pipeline_PipelineResult",
+      "label": "PipelineResult (Response Pipeline Result)",
+      "file_type": "code",
+      "source_file": "metis_app/services/response_pipeline.py",
+      "source_location": 14,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "retrieval_pipeline_RetrievalPlan",
+      "label": "RetrievalPlan (Staged Retrieval Plan)",
+      "file_type": "code",
+      "source_file": "metis_app/services/retrieval_pipeline.py",
+      "source_location": 78,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "reranker_reciprocal_rank_fusion",
+      "label": "Reciprocal Rank Fusion (RRF)",
+      "file_type": "code",
+      "source_file": "metis_app/services/reranker.py",
+      "source_location": 26,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "reranker_bm25_score_chunks",
+      "label": "BM25-lite Keyword Scoring",
+      "file_type": "code",
+      "source_file": "metis_app/services/reranker.py",
+      "source_location": 80,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "semantic_chunker_chunk_text_semantic",
+      "label": "Semantic-Aware Text Chunking",
+      "file_type": "code",
+      "source_file": "metis_app/services/semantic_chunker.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "monte_carlo_sampler_mces",
+      "label": "Monte Carlo Evidence Sampling (MCES)",
+      "file_type": "code",
+      "source_file": "metis_app/services/monte_carlo_sampler.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "news_ingest_service_ingest",
+      "label": "News Ingestion Service (RSS/HN/Reddit)",
+      "file_type": "code",
+      "source_file": "metis_app/services/news_ingest_service.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "stream_events_normalize_stream_event",
+      "label": "Stream Event Normalization (AG-UI envelope)",
+      "file_type": "code",
+      "source_file": "metis_app/services/stream_events.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "stream_replay_StreamReplayEvent",
+      "label": "Stream Replay (SSE Event Persistence)",
+      "file_type": "code",
+      "source_file": "metis_app/services/stream_replay.py",
+      "source_location": 85,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "trace_store_audit_log",
+      "label": "Trace Store (Audit Log & Event Persistence)",
+      "file_type": "code",
+      "source_file": "metis_app/services/trace_store.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "swarm_service_SwarmAgent",
+      "label": "Swarm Service (Multi-Agent Simulation)",
+      "file_type": "code",
+      "source_file": "metis_app/services/swarm_service.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "summary_service_generate_document_summary",
+      "label": "Document Summary Service (Map-Reduce)",
+      "file_type": "code",
+      "source_file": "metis_app/services/summary_service.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "session_repository_SessionRepository",
+      "label": "Session Repository (SQLite Persistence)",
+      "file_type": "code",
+      "source_file": "metis_app/services/session_repository.py",
+      "source_location": 37,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "skill_repository_parse_skill_file",
+      "label": "Skill Repository (YAML parsing & validation)",
+      "file_type": "code",
+      "source_file": "metis_app/services/skill_repository.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "nyx_runtime_NyxRuntime",
+      "label": "Nyx Runtime (Intent Detection & Artifact Assembly)",
+      "file_type": "code",
+      "source_file": "metis_app/services/nyx_runtime.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "nyx_catalog_NyxCatalogBroker",
+      "label": "Nyx Catalog Broker (UI Component Registry)",
+      "file_type": "code",
+      "source_file": "metis_app/services/nyx_catalog.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "profile_repository_ProfileRepository",
+      "label": "Profile Repository (Agent Profiles & Strategies)",
+      "file_type": "code",
+      "source_file": "metis_app/services/profile_repository.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "topo_scaffold_ScaffoldResult",
+      "label": "Topological Scaffold (Persistence Homology)",
+      "file_type": "code",
+      "source_file": "metis_app/services/topo_scaffold.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "monte_carlo_sampler_sliding_fuzzy_anchors",
+      "label": "Sliding Fuzzy Anchors (Phase 1 MCES)",
+      "file_type": "code",
+      "source_file": "metis_app/services/monte_carlo_sampler.py",
+      "source_location": 57,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "reranker_hybrid_rerank",
+      "label": "Hybrid Reranking (Vector + BM25 fusion)",
+      "file_type": "code",
+      "source_file": "metis_app/services/reranker.py",
+      "source_location": 1,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "news_ingest_SourceHealth",
+      "label": "Source Health Tracking (Failure backoff)",
+      "file_type": "code",
+      "source_file": "metis_app/services/news_ingest_service.py",
+      "source_location": 72,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "vector_store_VectorStoreAdapter",
+      "label": "VectorStoreAdapter",
+      "file_type": "code",
+      "source_file": "metis_app/services/vector_store.py",
+      "source_location": "class VectorStoreAdapter(ABC)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "vector_store_JsonVectorStoreAdapter",
+      "label": "JsonVectorStoreAdapter",
+      "file_type": "code",
+      "source_file": "metis_app/services/vector_store.py",
+      "source_location": "class JsonVectorStoreAdapter(VectorStoreAdapter)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "vector_store_ChromaVectorStoreAdapter",
+      "label": "ChromaVectorStoreAdapter",
+      "file_type": "code",
+      "source_file": "metis_app/services/vector_store.py",
+      "source_location": "class ChromaVectorStoreAdapter(VectorStoreAdapter)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "llm_providers_create_llm",
+      "label": "create_llm()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "def create_llm(settings: dict[str, Any]) -> Any",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "llm_providers_PooledLLM",
+      "label": "PooledLLM",
+      "file_type": "code",
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "class PooledLLM",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "llm_providers_MockChatModel",
+      "label": "MockChatModel",
+      "file_type": "code",
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "class MockChatModel",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "llm_providers_LocalLlamaCppChatModel",
+      "label": "LocalLlamaCppChatModel",
+      "file_type": "code",
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "class LocalLlamaCppChatModel",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "llm_backends_LocalGGUFBackend",
+      "label": "LocalGGUFBackend",
+      "file_type": "code",
+      "source_file": "metis_app/utils/llm_backends.py",
+      "source_location": "class LocalGGUFBackend",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "llm_backends_LocalGGUFConfig",
+      "label": "LocalGGUFConfig",
+      "file_type": "code",
+      "source_file": "metis_app/utils/llm_backends.py",
+      "source_location": "class LocalGGUFConfig",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "embedding_providers_create_embeddings",
+      "label": "create_embeddings()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/embedding_providers.py",
+      "source_location": "def create_embeddings(settings: dict[str, Any]) -> Any",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "embedding_providers_LocalSentenceTransformerEmbeddings",
+      "label": "LocalSentenceTransformerEmbeddings",
+      "file_type": "code",
+      "source_file": "metis_app/utils/embedding_providers.py",
+      "source_location": "class LocalSentenceTransformerEmbeddings",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "mock_embeddings_MockEmbeddings",
+      "label": "MockEmbeddings",
+      "file_type": "code",
+      "source_file": "metis_app/utils/mock_embeddings.py",
+      "source_location": "class MockEmbeddings",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "knowledge_graph_KnowledgeGraph",
+      "label": "KnowledgeGraph",
+      "file_type": "code",
+      "source_file": "metis_app/utils/knowledge_graph.py",
+      "source_location": "class KnowledgeGraph",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "knowledge_graph_extract_entities_and_relations",
+      "label": "extract_entities_and_relations()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/knowledge_graph.py",
+      "source_location": "def extract_entities_and_relations(chunk: str)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "web_search_WebSearchResult",
+      "label": "WebSearchResult",
+      "file_type": "code",
+      "source_file": "metis_app/utils/web_search.py",
+      "source_location": "class WebSearchResult",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "web_search_create_web_search",
+      "label": "create_web_search()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/web_search.py",
+      "source_location": "def create_web_search(settings: dict[str, Any])",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "web_graph_service_WebGraphService",
+      "label": "WebGraphService",
+      "file_type": "code",
+      "source_file": "metis_app/services/web_graph_service.py",
+      "source_location": "class WebGraphService",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "workspace_orchestrator_WorkspaceOrchestrator",
+      "label": "WorkspaceOrchestrator",
+      "file_type": "code",
+      "source_file": "metis_app/services/workspace_orchestrator.py",
+      "source_location": "class WorkspaceOrchestrator",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "feature_flags_FeatureFlag",
+      "label": "FeatureFlag",
+      "file_type": "code",
+      "source_file": "metis_app/utils/feature_flags.py",
+      "source_location": "class FeatureFlag(StrEnum)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "feature_flags_FeatureStatus",
+      "label": "FeatureStatus",
+      "file_type": "code",
+      "source_file": "metis_app/utils/feature_flags.py",
+      "source_location": "class FeatureStatus",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "document_loader_is_kreuzberg_available",
+      "label": "is_kreuzberg_available()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/document_loader.py",
+      "source_location": "def is_kreuzberg_available() -> bool",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "document_loader_batch_extract_pdfs",
+      "label": "batch_extract_pdfs()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/document_loader.py",
+      "source_location": "def batch_extract_pdfs(paths: list[str | pathlib.Path])",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "model_caps_get_model_caps",
+      "label": "get_model_caps()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/model_caps.py",
+      "source_location": "def get_model_caps(provider: str, model: str)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "model_caps_get_capped_output_tokens",
+      "label": "get_capped_output_tokens()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/model_caps.py",
+      "source_location": "def get_capped_output_tokens(provider: str, model: str, requested_max_tokens: int)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "background_BackgroundRunner",
+      "label": "BackgroundRunner",
+      "file_type": "code",
+      "source_file": "metis_app/utils/background.py",
+      "source_location": "class BackgroundRunner",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "background_CancelToken",
+      "label": "CancelToken",
+      "file_type": "code",
+      "source_file": "metis_app/utils/background.py",
+      "source_location": "class CancelToken",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "dependency_bootstrap_install_packages",
+      "label": "install_packages()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/dependency_bootstrap.py",
+      "source_location": "def install_packages(packages: list[str], *, logger: logging.Logger, progress_callback)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "wizard_recommendation_gather_auto_metadata",
+      "label": "gather_auto_metadata()",
+      "file_type": "code",
+      "source_file": "metis_app/services/wizard_recommendation.py",
+      "source_location": "def gather_auto_metadata(*, file_path: str | None = None, index_path: str | None = None)",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "vector_store_normalize_weaviate_settings",
+      "label": "normalize_weaviate_settings()",
+      "file_type": "code",
+      "source_file": "metis_app/services/vector_store.py",
+      "source_location": "def normalize_weaviate_settings(settings: dict[str, Any])",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "logging_setup_setup_logging",
+      "label": "setup_logging()",
+      "file_type": "code",
+      "source_file": "metis_app/utils/logging_setup.py",
+      "source_location": "def setup_logging(log_dir: str | pathlib.Path, level: str | int = \"DEBUG\")",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "app_bootstrap",
+      "target": "api_fastapi_app",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "app_run_app",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "cli_headless",
+      "target": "config_constants",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/cli.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "cli_headless",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/cli.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_sessions",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_settings",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_gguf",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_atlas",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_assistant",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_autonomous",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_comets",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_features",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_heretic",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_improvements",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_logs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_observe",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_models_adapter",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_fastapi_app",
+      "target": "api_app_state",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_models_adapter",
+      "target": "config_constants",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/models.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_sessions",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/sessions.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_settings",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/settings.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_gguf",
+      "target": "config_constants",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/gguf.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_atlas",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/atlas.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_assistant",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/assistant.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_autonomous",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/autonomous.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_comets",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/comets.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_features",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/features.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_logs",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/logs.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_observe",
+      "target": "settings_store_module",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/observe.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_settings",
+      "target": "api_app_state",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/api/settings.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_atlas",
+      "target": "api_assistant",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/api/atlas.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_autonomous",
+      "target": "api_assistant",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/api/autonomous.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_comets",
+      "target": "api_observe",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.65,
+      "source_file": "metis_app/api/comets.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_heretic",
+      "target": "api_gguf",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api/heretic.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_improvements",
+      "target": "api_observe",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/api/improvements.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "api_sessions",
+      "target": "api_observe",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/api/sessions.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "route_list_sessions",
+      "target": "common_get_session_repo",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_create_session",
+      "target": "common_get_session_repo",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_get_session",
+      "target": "common_get_session_repo",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_submit_feedback",
+      "target": "common_get_session_repo",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_delete_session",
+      "target": "common_get_session_repo",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_query_rag",
+      "target": "common_run_engine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_search_knowledge",
+      "target": "common_run_engine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_query_direct",
+      "target": "common_run_engine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_query_forecast",
+      "target": "common_run_engine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_build_index",
+      "target": "common_run_engine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_list_indexes",
+      "target": "common_run_engine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_delete_index",
+      "target": "common_run_engine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_build_web_graph",
+      "target": "common_run_engine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/routes/web_graph.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_query_rag",
+      "target": "route_api_search_knowledge",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_search_knowledge",
+      "target": "route_api_query_direct",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api_litestar/routes/query.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_build_index_stream",
+      "target": "route_api_build_web_graph_stream",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_trigger_autonomous_research_stream",
+      "target": "route_api_build_index_stream",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/api_litestar/routes/autonomous.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_list_catalog",
+      "target": "route_list_installed",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/api_litestar/routes/gguf.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_list_improvement_entries",
+      "target": "route_get_improvement_entry",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api_litestar/routes/improvements.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_get_session",
+      "target": "route_get_atlas_entry",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_get_assistant",
+      "target": "route_get_autonomous_status",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_trigger_autonomous_research",
+      "target": "route_trigger_autonomous_research_stream",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/api_litestar/routes/autonomous.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_build_index",
+      "target": "route_api_build_index_stream",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/api_litestar/routes/index.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_api_build_web_graph",
+      "target": "route_api_build_web_graph_stream",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/api_litestar/routes/web_graph.py",
+      "weight": 1.0
+    },
+    {
+      "source": "sessions_router",
+      "target": "create_app",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "metis_app/api_litestar/app.py",
+      "weight": 1.0
+    },
+    {
+      "source": "settings_router",
+      "target": "create_app",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "metis_app/api_litestar/app.py",
+      "weight": 1.0
+    },
+    {
+      "source": "atlas_router",
+      "target": "create_app",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "metis_app/api_litestar/app.py",
+      "weight": 1.0
+    },
+    {
+      "source": "create_app",
+      "target": "common_require_token_guard",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api_litestar/app.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_list_sessions",
+      "target": "route_create_session",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api_litestar/routes/sessions.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_disable_feature",
+      "target": "route_enable_feature",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/api_litestar/routes/features.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_save_atlas_entry",
+      "target": "route_decide_atlas_candidate",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api_litestar/routes/atlas.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_get_assistant_status",
+      "target": "route_get_assistant",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "weight": 1.0
+    },
+    {
+      "source": "route_clear_assistant_memory",
+      "target": "route_list_assistant_memory",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api_litestar/routes/assistant.py",
+      "weight": 1.0
+    },
+    {
+      "source": "indexing_IndexBuildRequest",
+      "target": "indexing_IndexBuildResult",
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/indexing.py",
+      "source_location": "Request\u2192Result pair",
+      "weight": 1.0
+    },
+    {
+      "source": "indexing_build_index",
+      "target": "indexing_IndexBuildRequest",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/indexing.py",
+      "source_location": "function parameter",
+      "weight": 1.0
+    },
+    {
+      "source": "indexing_build_index",
+      "target": "indexing_IndexBuildResult",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/indexing.py",
+      "source_location": "function return",
+      "weight": 1.0
+    },
+    {
+      "source": "querying_RagQueryRequest",
+      "target": "querying_RagQueryResult",
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "Request\u2192Result pair",
+      "weight": 1.0
+    },
+    {
+      "source": "querying_DirectQueryRequest",
+      "target": "querying_DirectQueryResult",
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "Request\u2192Result pair",
+      "weight": 1.0
+    },
+    {
+      "source": "querying_KnowledgeSearchRequest",
+      "target": "querying_KnowledgeSearchResult",
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "Request\u2192Result pair",
+      "weight": 1.0
+    },
+    {
+      "source": "querying_SwarmQueryRequest",
+      "target": "querying_SwarmQueryResult",
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "Request\u2192Result pair",
+      "weight": 1.0
+    },
+    {
+      "source": "querying_RagQueryResult",
+      "target": "session_types_EvidenceSource",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/querying.py",
+      "source_location": "RagQueryResult has sources field (list[dict])",
+      "weight": 1.0
+    },
+    {
+      "source": "streaming_stream_rag_answer",
+      "target": "querying_RagQueryRequest",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/streaming.py",
+      "source_location": "imports RagQueryRequest",
+      "weight": 1.0
+    },
+    {
+      "source": "streaming_stream_rag_answer",
+      "target": "runs_RunEvent",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/engine/streaming.py",
+      "source_location": "emits stream events with run_id tracking",
+      "weight": 1.0
+    },
+    {
+      "source": "forecasting_ForecastQueryRequest",
+      "target": "forecasting_ForecastQueryResult",
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/forecasting.py",
+      "source_location": "Request\u2192Result pair",
+      "weight": 1.0
+    },
+    {
+      "source": "brain_graph_BrainGraph",
+      "target": "brain_graph_BrainNode",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/models/brain_graph.py",
+      "source_location": "BrainGraph.nodes dict stores BrainNode",
+      "weight": 1.0
+    },
+    {
+      "source": "brain_graph_BrainGraph",
+      "target": "brain_graph_BrainEdge",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/models/brain_graph.py",
+      "source_location": "BrainGraph.edges list stores BrainEdge",
+      "weight": 1.0
+    },
+    {
+      "source": "comet_event_CometEvent",
+      "target": "comet_event_NewsItem",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/models/comet_event.py",
+      "source_location": "CometEvent has news_item field",
+      "weight": 1.0
+    },
+    {
+      "source": "assistant_types_AssistantIdentity",
+      "target": "assistant_types_AssistantRuntime",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/models/assistant_types.py",
+      "source_location": "companion identity + runtime execution config",
+      "weight": 1.0
+    },
+    {
+      "source": "assistant_types_AssistantRuntime",
+      "target": "assistant_types_AssistantPolicy",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/models/assistant_types.py",
+      "source_location": "runtime config \u2192 policy constraints",
+      "weight": 1.0
+    },
+    {
+      "source": "assistant_types_AssistantPolicy",
+      "target": "assistant_types_AssistantStatus",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/models/assistant_types.py",
+      "source_location": "policy enforcement drives status state",
+      "weight": 1.0
+    },
+    {
+      "source": "star_nourishment_StarEvent",
+      "target": "star_nourishment_FacultyNourishment",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/models/star_nourishment.py",
+      "source_location": "stars emit events \u2192 faculty nourishment computed",
+      "weight": 1.0
+    },
+    {
+      "source": "star_nourishment_FacultyNourishment",
+      "target": "star_nourishment_TopologySignal",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/models/star_nourishment.py",
+      "source_location": "faculty nourishment integrated into topology signals",
+      "weight": 1.0
+    },
+    {
+      "source": "app_model_AppModel",
+      "target": "brain_graph_BrainGraph",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/models/app_model.py",
+      "source_location": "AppModel.brain_graph field",
+      "weight": 1.0
+    },
+    {
+      "source": "app_controller_AppController",
+      "target": "app_model_AppModel",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/controllers/app_controller.py",
+      "source_location": "type annotation self.model: AppModel",
+      "weight": 1.0
+    },
+    {
+      "source": "atlas_types_AtlasEntry",
+      "target": "session_types_EvidenceSource",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/models/atlas_types.py",
+      "source_location": "AtlasEntry.sources matches EvidenceSource shape",
+      "weight": 1.0
+    },
+    {
+      "source": "improvement_types_ImprovementEntry",
+      "target": "session_types_SessionSummary",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/models/improvement_types.py",
+      "source_location": "both track session_id + run_id",
+      "weight": 1.0
+    },
+    {
+      "source": "parity_types_AgentProfile",
+      "target": "parity_types_SkillDefinition",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/models/parity_types.py",
+      "source_location": "profiles define retrieval strategy \u2192 skills apply it",
+      "weight": 1.0
+    },
+    {
+      "source": "parity_types_SkillDefinition",
+      "target": "parity_types_SkillMatch",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/models/parity_types.py",
+      "source_location": "SkillDefinition \u2192 SkillMatch runtime selection",
+      "weight": 1.0
+    },
+    {
+      "source": "parity_types_SkillMatch",
+      "target": "parity_types_SkillSessionState",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/models/parity_types.py",
+      "source_location": "match pins/mutes tracked in session state",
+      "weight": 1.0
+    },
+    {
+      "source": "assistant_companion_AssistantCompanionService",
+      "target": "assistant_repository_AssistantRepository",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/assistant_companion.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "assistant_companion_AssistantCompanionService",
+      "target": "local_llm_recommender_LocalLlmRecommenderService",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/assistant_companion.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "assistant_companion_AssistantCompanionService",
+      "target": "local_model_registry_LocalModelRegistryService",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/assistant_companion.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "behavior_discovery_BehaviorDiscoveryService",
+      "target": "trace_event_schema_EventType",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/behavior_discovery.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "index_service_orchestrator",
+      "target": "brain_pass_placement",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/index_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "index_service_orchestrator",
+      "target": "knowledge_cache_QueryResultCache",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/index_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "index_service_orchestrator",
+      "target": "hybrid_scorer_hybrid_rerank",
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/services/index_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "grep_retriever_GrepRetriever",
+      "target": "hybrid_scorer_hybrid_rerank",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/grep_retriever.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "knowledge_cache_QueryResultCache",
+      "target": "index_service_orchestrator",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/knowledge_cache.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "autonomous_research_AutonomousResearchService",
+      "target": "brain_pass_placement",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/autonomous_research_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "autonomous_research_AutonomousResearchService",
+      "target": "index_service_orchestrator",
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/autonomous_research_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "artifact_converter_ArtifactConverter",
+      "target": "behavior_discovery_BehaviorDiscoveryService",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/artifact_converter.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "comet_decision_engine_CometDecisionEngine",
+      "target": "brain_pass_placement",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/comet_decision_engine.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "atlas_repository_AtlasRepository",
+      "target": "app_state_service_AppStateService",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/services/atlas_repository.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "improvement_repository_ImprovementRepository",
+      "target": "app_state_service_AppStateService",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/services/improvement_repository.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "learning_route_LearningRouteService",
+      "target": "index_service_orchestrator",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/services/learning_route_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "gguf_serialization_helpers",
+      "target": "local_llm_recommender_LocalLlmRecommenderService",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/gguf_serialization.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "heretic_service_integration",
+      "target": "gguf_serialization_helpers",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/heretic_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "local_llm_recommender_LocalLlmRecommenderService",
+      "target": "gguf_serialization_helpers",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/local_llm_recommender.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "assistant_companion_AssistantCompanionService",
+      "target": "behavior_discovery_BehaviorDiscoveryService",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/assistant_companion.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "retrieval_pipeline_RetrievalPlan",
+      "target": "reranker_reciprocal_rank_fusion",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/retrieval_pipeline.py",
+      "source_location": 17,
+      "weight": 1.0
+    },
+    {
+      "source": "retrieval_pipeline_RetrievalPlan",
+      "target": "reranker_bm25_score_chunks",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/services/retrieval_pipeline.py",
+      "source_location": 1,
+      "weight": 0.8
+    },
+    {
+      "source": "response_pipeline_PipelineResult",
+      "target": "retrieval_pipeline_RetrievalPlan",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/response_pipeline.py",
+      "source_location": 1,
+      "weight": 0.9
+    },
+    {
+      "source": "semantic_chunker_chunk_text_semantic",
+      "target": "retrieval_pipeline_RetrievalPlan",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/semantic_chunker.py",
+      "source_location": 1,
+      "weight": 0.9
+    },
+    {
+      "source": "monte_carlo_sampler_sliding_fuzzy_anchors",
+      "target": "monte_carlo_sampler_mces",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/monte_carlo_sampler.py",
+      "source_location": 57,
+      "weight": 1.0
+    },
+    {
+      "source": "monte_carlo_sampler_mces",
+      "target": "retrieval_pipeline_RetrievalPlan",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/monte_carlo_sampler.py",
+      "source_location": 1,
+      "weight": 0.7
+    },
+    {
+      "source": "news_ingest_service_ingest",
+      "target": "news_ingest_SourceHealth",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/news_ingest_service.py",
+      "source_location": 72,
+      "weight": 1.0
+    },
+    {
+      "source": "stream_replay_StreamReplayEvent",
+      "target": "stream_events_normalize_stream_event",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/stream_replay.py",
+      "source_location": 127,
+      "weight": 1.0
+    },
+    {
+      "source": "stream_events_normalize_stream_event",
+      "target": "trace_store_audit_log",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/stream_events.py",
+      "source_location": 1,
+      "weight": 0.9
+    },
+    {
+      "source": "trace_store_audit_log",
+      "target": "stream_replay_StreamReplayEvent",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/trace_store.py",
+      "source_location": 1,
+      "weight": 0.8
+    },
+    {
+      "source": "swarm_service_SwarmAgent",
+      "target": "response_pipeline_PipelineResult",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/services/swarm_service.py",
+      "source_location": 1,
+      "weight": 0.7
+    },
+    {
+      "source": "summary_service_generate_document_summary",
+      "target": "response_pipeline_PipelineResult",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/services/summary_service.py",
+      "source_location": 1,
+      "weight": 0.85
+    },
+    {
+      "source": "session_repository_SessionRepository",
+      "target": "stream_replay_StreamReplayEvent",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/session_repository.py",
+      "source_location": 37,
+      "weight": 0.85
+    },
+    {
+      "source": "skill_repository_parse_skill_file",
+      "target": "response_pipeline_PipelineResult",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.65,
+      "source_file": "metis_app/services/skill_repository.py",
+      "source_location": 1,
+      "weight": 0.7
+    },
+    {
+      "source": "nyx_runtime_NyxRuntime",
+      "target": "nyx_catalog_NyxCatalogBroker",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/nyx_runtime.py",
+      "source_location": 10,
+      "weight": 1.0
+    },
+    {
+      "source": "profile_repository_ProfileRepository",
+      "target": "retrieval_pipeline_RetrievalPlan",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/profile_repository.py",
+      "source_location": 1,
+      "weight": 0.8
+    },
+    {
+      "source": "topo_scaffold_ScaffoldResult",
+      "target": "response_pipeline_PipelineResult",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.6,
+      "source_file": "metis_app/services/topo_scaffold.py",
+      "source_location": 1,
+      "weight": 0.65
+    },
+    {
+      "source": "reranker_hybrid_rerank",
+      "target": "reranker_reciprocal_rank_fusion",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/reranker.py",
+      "source_location": 1,
+      "weight": 1.0
+    },
+    {
+      "source": "reranker_hybrid_rerank",
+      "target": "reranker_bm25_score_chunks",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/reranker.py",
+      "source_location": 1,
+      "weight": 1.0
+    },
+    {
+      "source": "vector_store_JsonVectorStoreAdapter",
+      "target": "vector_store_VectorStoreAdapter",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/vector_store.py",
+      "source_location": "class JsonVectorStoreAdapter(VectorStoreAdapter)",
+      "weight": 1.0
+    },
+    {
+      "source": "vector_store_ChromaVectorStoreAdapter",
+      "target": "vector_store_VectorStoreAdapter",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/vector_store.py",
+      "source_location": "class ChromaVectorStoreAdapter(VectorStoreAdapter)",
+      "weight": 1.0
+    },
+    {
+      "source": "llm_providers_PooledLLM",
+      "target": "llm_providers_create_llm",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "return PooledLLM(pool=_pool, factory=_llm_factory, initial_key=_initial_key)",
+      "weight": 1.0
+    },
+    {
+      "source": "llm_providers_MockChatModel",
+      "target": "llm_providers_create_llm",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "if provider == \"mock\": return MockChatModel()",
+      "weight": 1.0
+    },
+    {
+      "source": "llm_providers_LocalLlamaCppChatModel",
+      "target": "llm_providers_create_llm",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "provider = \"local_gguf\"",
+      "weight": 1.0
+    },
+    {
+      "source": "llm_backends_LocalGGUFBackend",
+      "target": "llm_backends_LocalGGUFConfig",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/llm_backends.py",
+      "source_location": "def __init__(self, config: LocalGGUFConfig) -> None",
+      "weight": 1.0
+    },
+    {
+      "source": "embedding_providers_LocalSentenceTransformerEmbeddings",
+      "target": "embedding_providers_create_embeddings",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/embedding_providers.py",
+      "source_location": "return LocalSentenceTransformerEmbeddings(model_name=resolved, ...)",
+      "weight": 1.0
+    },
+    {
+      "source": "mock_embeddings_MockEmbeddings",
+      "target": "embedding_providers_create_embeddings",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/embedding_providers.py",
+      "source_location": "from metis_app.utils.mock_embeddings import MockEmbeddings; return MockEmbeddings()",
+      "weight": 1.0
+    },
+    {
+      "source": "embedding_providers_create_embeddings",
+      "target": "vector_store_VectorStoreAdapter",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/vector_store.py",
+      "source_location": "from metis_app.utils.embedding_providers import create_embeddings",
+      "weight": 1.0
+    },
+    {
+      "source": "knowledge_graph_KnowledgeGraph",
+      "target": "knowledge_graph_extract_entities_and_relations",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/utils/knowledge_graph.py",
+      "source_location": "Entity and relation extraction adds nodes/edges to KnowledgeGraph",
+      "weight": 1.0
+    },
+    {
+      "source": "web_graph_service_WebGraphService",
+      "target": "web_search_create_web_search",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/web_graph_service.py",
+      "source_location": "self._web_search = web_search",
+      "weight": 1.0
+    },
+    {
+      "source": "web_graph_service_WebGraphService",
+      "target": "llm_providers_create_llm",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/services/web_graph_service.py",
+      "source_location": "llm = create_llm(settings)",
+      "weight": 1.0
+    },
+    {
+      "source": "web_search_WebSearchResult",
+      "target": "web_search_create_web_search",
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/web_search.py",
+      "source_location": "def search(...) -> list[WebSearchResult]",
+      "weight": 1.0
+    },
+    {
+      "source": "workspace_orchestrator_WorkspaceOrchestrator",
+      "target": "llm_providers_create_llm",
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/services/workspace_orchestrator.py",
+      "source_location": "from metis_app.utils.llm_providers import ...",
+      "weight": 1.0
+    },
+    {
+      "source": "workspace_orchestrator_WorkspaceOrchestrator",
+      "target": "embedding_providers_create_embeddings",
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/workspace_orchestrator.py",
+      "source_location": "orchestrator delegates to indexing engine",
+      "weight": 1.0
+    },
+    {
+      "source": "feature_flags_FeatureStatus",
+      "target": "feature_flags_FeatureFlag",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/feature_flags.py",
+      "source_location": "name: str (relates to FeatureFlag enum)",
+      "weight": 1.0
+    },
+    {
+      "source": "model_caps_get_capped_output_tokens",
+      "target": "model_caps_get_model_caps",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/model_caps.py",
+      "source_location": "caps = get_model_caps(provider, model)",
+      "weight": 1.0
+    },
+    {
+      "source": "llm_providers_create_llm",
+      "target": "model_caps_get_capped_output_tokens",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "output_max = get_capped_output_tokens(provider, model_name, requested_max)",
+      "weight": 1.0
+    },
+    {
+      "source": "background_CancelToken",
+      "target": "background_BackgroundRunner",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/utils/background.py",
+      "source_location": "pass cancel_token to worker functions",
+      "weight": 1.0
+    },
+    {
+      "source": "wizard_recommendation_gather_auto_metadata",
+      "target": "document_loader_batch_extract_pdfs",
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/services/wizard_recommendation.py",
+      "source_location": "estimate page count for PDF metadata",
+      "weight": 1.0
+    },
+    {
+      "source": "vector_store_ChromaVectorStoreAdapter",
+      "target": "vector_store_normalize_weaviate_settings",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.65,
+      "source_file": "metis_app/services/vector_store.py",
+      "source_location": "Weaviate settings normalization used by adapters",
+      "weight": 1.0
+    },
+    {
+      "source": "llm_providers_create_llm",
+      "target": "logging_setup_setup_logging",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.6,
+      "source_file": "metis_app/utils/llm_providers.py",
+      "source_location": "_log = logging.getLogger(__name__)",
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "configuration_management_hub",
+      "label": "Settings & Config Management Hub",
+      "nodes": [
+        "settings_store_module",
+        "config_constants",
+        "api_settings"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/settings_store.py"
+    },
+    {
+      "id": "api_route_orchestration",
+      "label": "API Route Module Orchestration",
+      "nodes": [
+        "api_fastapi_app",
+        "api_sessions",
+        "api_settings",
+        "api_atlas",
+        "api_assistant"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/api/app.py"
+    },
+    {
+      "id": "workspace_context_features",
+      "label": "Workspace-Aware Features",
+      "nodes": [
+        "api_atlas",
+        "api_assistant",
+        "api_autonomous",
+        "api_improvements"
+      ],
+      "relation": "implement",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api/assistant.py"
+    },
+    {
+      "id": "session_management_surface",
+      "label": "Session Management API Surface",
+      "nodes": [
+        "route_list_sessions",
+        "route_create_session",
+        "route_get_session",
+        "route_submit_feedback",
+        "route_delete_session"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.95,
+      "source_file": "metis_app/api_litestar/routes/sessions.py"
+    },
+    {
+      "id": "sse_streaming_patterns",
+      "label": "SSE Streaming Build Operations",
+      "nodes": [
+        "route_api_build_index_stream",
+        "route_api_build_web_graph_stream",
+        "route_trigger_autonomous_research_stream"
+      ],
+      "relation": "implement",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/api_litestar/routes/query.py"
+    },
+    {
+      "id": "query_orchestration_api",
+      "label": "Query Orchestration API Surface",
+      "nodes": [
+        "route_api_query_rag",
+        "route_api_search_knowledge",
+        "route_api_query_direct"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/api_litestar/routes/query.py"
+    },
+    {
+      "id": "model_management_surface",
+      "label": "GGUF Model Management API Surface",
+      "nodes": [
+        "route_list_catalog",
+        "route_get_hardware",
+        "route_list_installed",
+        "route_validate_model",
+        "route_refresh_catalog"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/api_litestar/routes/gguf.py"
+    },
+    {
+      "id": "assistant_state_management",
+      "label": "Assistant State & Memory Management",
+      "nodes": [
+        "route_get_assistant",
+        "route_update_assistant",
+        "route_get_assistant_status",
+        "route_reflect_assistant",
+        "route_list_assistant_memory",
+        "route_clear_assistant_memory"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/api_litestar/routes/assistant.py"
+    },
+    {
+      "id": "knowledge_artifact_management",
+      "label": "Knowledge Artifact Management API",
+      "nodes": [
+        "route_get_atlas_candidate",
+        "route_save_atlas_entry",
+        "route_decide_atlas_candidate",
+        "route_list_atlas_entries",
+        "route_get_atlas_entry"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/api_litestar/routes/atlas.py"
+    },
+    {
+      "id": "autonomous_research_surface",
+      "label": "Autonomous Research Triggering",
+      "nodes": [
+        "route_get_autonomous_status",
+        "route_trigger_autonomous_research",
+        "route_trigger_autonomous_research_stream"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/api_litestar/routes/autonomous.py"
+    },
+    {
+      "id": "settings_feature_control",
+      "label": "Settings & Feature Control API",
+      "nodes": [
+        "route_get_settings",
+        "route_post_settings",
+        "route_list_features",
+        "route_disable_feature",
+        "route_enable_feature"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/api_litestar/routes/settings.py"
+    },
+    {
+      "id": "artifact_tracking_surface",
+      "label": "Improvement & Artifact Tracking",
+      "nodes": [
+        "route_list_improvement_entries",
+        "route_get_improvement_entry",
+        "route_create_improvement_entry"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api_litestar/routes/improvements.py"
+    },
+    {
+      "id": "observability_trace_api",
+      "label": "Observability & Trace Analysis",
+      "nodes": [
+        "route_get_discover",
+        "route_get_trace_feedback",
+        "route_get_run_semantic",
+        "route_post_trace_feedback",
+        "route_export_run_as_skill",
+        "route_export_run_as_eval"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/api_litestar/routes/observe.py"
+    },
+    {
+      "id": "rag_pipeline_sequence",
+      "label": "RAG Query Pipeline",
+      "nodes": [
+        "indexing_IndexBuildRequest",
+        "indexing_IndexBuildResult",
+        "querying_RagQueryRequest",
+        "querying_RagQueryResult",
+        "streaming_stream_rag_answer",
+        "session_types_EvidenceSource"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/engine/*.py"
+    },
+    {
+      "id": "companion_subsystem",
+      "label": "METIS Companion Runtime",
+      "nodes": [
+        "assistant_types_AssistantIdentity",
+        "assistant_types_AssistantRuntime",
+        "assistant_types_AssistantPolicy",
+        "assistant_types_AssistantStatus"
+      ],
+      "relation": "implement",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/models/assistant_types.py"
+    },
+    {
+      "id": "brain_graph_structure",
+      "label": "Brain Graph Composite",
+      "nodes": [
+        "brain_graph_BrainGraph",
+        "brain_graph_BrainNode",
+        "brain_graph_BrainEdge"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "metis_app/models/brain_graph.py"
+    },
+    {
+      "id": "reflection_introspection_flow",
+      "label": "Reflection & Introspection Pipeline",
+      "nodes": [
+        "assistant_companion_AssistantCompanionService",
+        "behavior_discovery_BehaviorDiscoveryService",
+        "trace_event_schema_EventType",
+        "artifact_converter_ArtifactConverter"
+      ],
+      "relation": "participate_in",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "metis_app/services/assistant_companion.py"
+    },
+    {
+      "id": "indexing_orchestration_flow",
+      "label": "Document Indexing & Retrieval Pipeline",
+      "nodes": [
+        "index_service_orchestrator",
+        "brain_pass_placement",
+        "knowledge_cache_QueryResultCache",
+        "grep_retriever_GrepRetriever",
+        "hybrid_scorer_hybrid_rerank"
+      ],
+      "relation": "form",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/services/index_service.py"
+    },
+    {
+      "id": "autonomous_research_synthesis_flow",
+      "label": "Autonomous Research & Constellation Growth",
+      "nodes": [
+        "autonomous_research_AutonomousResearchService",
+        "comet_decision_engine_CometDecisionEngine",
+        "index_service_orchestrator",
+        "artifact_converter_ArtifactConverter",
+        "atlas_repository_AtlasRepository"
+      ],
+      "relation": "participate_in",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/autonomous_research_service.py"
+    },
+    {
+      "id": "rag_retrieval_response_flow",
+      "label": "RAG End-to-End Flow (Retrieval \u2192 Rerank \u2192 Response)",
+      "nodes": [
+        "retrieval_pipeline_RetrievalPlan",
+        "reranker_hybrid_rerank",
+        "response_pipeline_PipelineResult"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.95,
+      "source_file": "metis_app/services/retrieval_pipeline.py"
+    },
+    {
+      "id": "stream_event_persistence_replay",
+      "label": "Stream Event Lifecycle (Emit \u2192 Normalize \u2192 Persist \u2192 Replay)",
+      "nodes": [
+        "stream_events_normalize_stream_event",
+        "stream_replay_StreamReplayEvent",
+        "trace_store_audit_log"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.9,
+      "source_file": "metis_app/services/stream_events.py"
+    },
+    {
+      "id": "evidence_augmentation_pipeline",
+      "label": "Evidence Augmentation & Sampling (Chunking \u2192 Sampling \u2192 Absorption)",
+      "nodes": [
+        "semantic_chunker_chunk_text_semantic",
+        "monte_carlo_sampler_mces",
+        "news_ingest_service_ingest"
+      ],
+      "relation": "participate_in",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "metis_app/services/semantic_chunker.py"
+    },
+    {
+      "id": "agent_multi_response_synthesis",
+      "label": "Multi-Agent Response Synthesis (Swarm Simulation \u2192 Summary \u2192 Response)",
+      "nodes": [
+        "swarm_service_SwarmAgent",
+        "summary_service_generate_document_summary",
+        "response_pipeline_PipelineResult"
+      ],
+      "relation": "implement",
+      "confidence": "INFERRED",
+      "confidence_score": 0.7,
+      "source_file": "metis_app/services/swarm_service.py"
+    },
+    {
+      "id": "component_intent_detection_artifacts",
+      "label": "Nyx Intent & Artifact Flow (Runtime Detection \u2192 Catalog \u2192 Installation)",
+      "nodes": [
+        "nyx_runtime_NyxRuntime",
+        "nyx_catalog_NyxCatalogBroker",
+        "response_pipeline_PipelineResult"
+      ],
+      "relation": "participate_in",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "metis_app/services/nyx_runtime.py"
+    },
+    {
+      "id": "llm_provider_stack",
+      "label": "LLM Provider Stack",
+      "nodes": [
+        "llm_providers_create_llm",
+        "llm_providers_PooledLLM",
+        "llm_providers_MockChatModel",
+        "llm_providers_LocalLlamaCppChatModel",
+        "llm_backends_LocalGGUFBackend",
+        "model_caps_get_capped_output_tokens"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.95,
+      "source_file": "metis_app/utils/llm_providers.py"
+    },
+    {
+      "id": "embedding_provider_stack",
+      "label": "Embedding Provider Stack",
+      "nodes": [
+        "embedding_providers_create_embeddings",
+        "embedding_providers_LocalSentenceTransformerEmbeddings",
+        "mock_embeddings_MockEmbeddings",
+        "vector_store_VectorStoreAdapter"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.92,
+      "source_file": "metis_app/utils/embedding_providers.py"
+    },
+    {
+      "id": "vector_store_adapter_layer",
+      "label": "Vector Store Adapter Layer",
+      "nodes": [
+        "vector_store_VectorStoreAdapter",
+        "vector_store_JsonVectorStoreAdapter",
+        "vector_store_ChromaVectorStoreAdapter",
+        "vector_store_normalize_weaviate_settings"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.98,
+      "source_file": "metis_app/services/vector_store.py"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

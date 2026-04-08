@@ -1,0 +1,1 @@
+{"nodes": [{"id": "nyx_catalog_NyxCatalogBroker", "label": "Nyx Catalog Broker (UI Component Registry)", "file_type": "code", "source_file": "metis_app/services/nyx_catalog.py", "source_location": 1, "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}
