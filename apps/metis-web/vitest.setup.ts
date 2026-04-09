@@ -287,6 +287,7 @@ vi.mock("lucide-react", () => {
     Home: Icon,
     Info: Icon,
     LibraryBig: Icon,
+    Lightbulb: Icon,
     List: Icon,
     Loader2: Icon,
     MessageSquare: Icon,

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useArrowState } from "@/hooks/use-arrow-state";
 import { Button } from "@/components/ui/button";
 import { GlowCard } from "@/components/ui/glow-card";
@@ -39,6 +40,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { CONSTELLATION_FACULTIES, getFacultyColor } from "@/lib/constellation-home";
+import { getFacultyArtDefinition } from "@/lib/constellation-faculty-art";
 
 function Section({
   title,
@@ -69,6 +72,68 @@ export default function DesignPage() {
           Kitchen-sink preview of shadcn/ui primitives.
         </p>
       </div>
+
+      <Separator />
+
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold tracking-tight">Constellation Faculties</h2>
+          <p className="text-sm text-muted-foreground">
+            Preview grid for the METIS faculty glyph set used on the landing constellation and detail panel.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {CONSTELLATION_FACULTIES.map((faculty) => {
+            const art = getFacultyArtDefinition(faculty.id);
+            const [r, g, b] = getFacultyColor(faculty.id);
+
+            return (
+              <div
+                key={faculty.id}
+                className="relative overflow-hidden rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(8,11,20,0.96),rgba(11,15,26,0.92))] p-4"
+                style={{
+                  boxShadow: `0 18px 48px rgba(${r}, ${g}, ${b}, 0.12)`,
+                }}
+              >
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: `radial-gradient(circle at 24% 16%, rgba(${r}, ${g}, ${b}, 0.16), transparent 36%),
+                      radial-gradient(circle at 80% 8%, rgba(243, 191, 110, 0.14), transparent 24%)`,
+                  }}
+                />
+                <div className="relative flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-base font-semibold text-white">{faculty.label}</p>
+                    <p className="mt-1 text-xs leading-6 text-slate-400">{faculty.description}</p>
+                  </div>
+                  <div
+                    className="mt-1 size-3 rounded-full"
+                    style={{ backgroundColor: `rgb(${r}, ${g}, ${b})`, boxShadow: `0 0 18px rgba(${r}, ${g}, ${b}, 0.6)` }}
+                  />
+                </div>
+                <div className="relative mt-4 h-64 overflow-hidden rounded-[1.2rem] border border-white/8 bg-black/40">
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background: `radial-gradient(circle at center, rgba(${r}, ${g}, ${b}, 0.16), transparent 62%)`,
+                    }}
+                  />
+                  {art ? (
+                    <Image
+                      src={art.src}
+                      alt={`${faculty.label} faculty glyph`}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                      className="object-contain p-4 drop-shadow-[0_0_24px_rgba(176,226,255,0.28)]"
+                    />
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <Separator />
 

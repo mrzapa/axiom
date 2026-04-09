@@ -25,12 +25,12 @@ describe("constellation faculty art manifest", () => {
       expect(
         existsSync(path.join(process.cwd(), "public", art?.src.replace(/^\//, "") ?? "")),
       ).toBe(true);
-      expect(art?.scale).toBeGreaterThan(0.2);
-      expect(art?.scale).toBeLessThan(0.5);
-      expect(art?.idleOpacity).toBeGreaterThanOrEqual(0.08);
-      expect(art?.idleOpacity).toBeLessThanOrEqual(0.1);
+      expect(art?.scale).toBeGreaterThan(0.35);
+      expect(art?.scale).toBeLessThanOrEqual(0.5);
+      expect(art?.idleOpacity).toBeGreaterThanOrEqual(0.15);
+      expect(art?.idleOpacity).toBeLessThanOrEqual(0.18);
       expect(art?.activeOpacity).toBeGreaterThan(art?.idleOpacity ?? 0);
-      expect(art?.activeOpacity).toBeLessThanOrEqual(0.24);
+      expect(art?.activeOpacity).toBeLessThanOrEqual(0.36);
     });
   });
 });

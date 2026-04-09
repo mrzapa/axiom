@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { getApiBase } from "@/lib/api";
 import { LaunchStage } from "@/components/shell/launch-stage";
 import { Button } from "@/components/ui/button";
@@ -145,7 +144,7 @@ export function DesktopReadyGuard({ children }: DesktopReadyGuardProps) {
               </div>
             </div>
             <p className="text-sm leading-7 text-muted-foreground">
-              This usually takes a few seconds. If it stalls, diagnostics stays available and you can retry without restarting the whole UI.
+              This usually takes a few seconds. If it stalls, you can retry without restarting the whole UI.
             </p>
           </div>
         }
@@ -157,19 +156,14 @@ export function DesktopReadyGuard({ children }: DesktopReadyGuardProps) {
     <LaunchStage
       eyebrow="METIS Launch"
       title="The local API did not come up cleanly."
-      description="The desktop shell is running, but the local service failed its startup checks. You can retry immediately or inspect diagnostics for logs and version compatibility."
+      description="The desktop shell is running, but the local service failed its startup checks. You can retry immediately while METIS re-checks the local service."
       statusLabel="Launch interrupted"
       statusTone="disconnected"
       actions={
-        <>
-          <Button onClick={handleRetry} variant="outline" className="gap-2">
-            <AnimatedLucideIcon icon={RefreshCw} mode="hoverLift" className="size-4" />
-            Try again
-          </Button>
-          <Link href="/diagnostics">
-            <Button>Open diagnostics</Button>
-          </Link>
-        </>
+        <Button onClick={handleRetry} variant="outline" className="gap-2">
+          <AnimatedLucideIcon icon={RefreshCw} mode="hoverLift" className="size-4" />
+          Try again
+        </Button>
       }
       aside={
         <div className="space-y-4">
@@ -185,7 +179,7 @@ export function DesktopReadyGuard({ children }: DesktopReadyGuardProps) {
             </p>
           </div>
           <p className="text-sm leading-7 text-muted-foreground">
-            Diagnostics surfaces safe settings, versions, and a redacted log tail so startup failures are easier to recover from.
+            METIS keeps launch details, safe settings, and version checks available for troubleshooting if the issue persists.
           </p>
         </div>
       }

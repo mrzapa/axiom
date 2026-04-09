@@ -9,7 +9,7 @@
       <stop offset="0" stop-color="#F0B85A"/>
       <stop offset="1" stop-color="#FFF2C7"/>
     </linearGradient>
-    <filter id="glow" x="318" y="156" width="1408" height="1720" color-interpolation-filters="sRGB">
+    <filter id="glow" x="318" y="156" width="1408" height="1720" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
       <feGaussianBlur stdDeviation="10" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>

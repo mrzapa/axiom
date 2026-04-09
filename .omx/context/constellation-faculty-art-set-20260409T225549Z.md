@@ -1,0 +1,24 @@
+# Context Snapshot: constellation-faculty-art-set
+
+- Task statement: create and implement constellation artwork for every METIS faculty on the landing constellation page, styled like Skyrim constellation art with Greek-myth motifs.
+- Desired outcome: all 11 faculties have actual image assets, those assets render by default on the main constellation, and the detail dialog shows the selected faculty art clearly.
+- Known facts/evidence:
+  - Faculty ids already exist in `apps/metis-web/lib/constellation-home.ts`.
+  - A frontend art manifest and wiring already exist in `apps/metis-web/lib/constellation-faculty-art.ts`, `apps/metis-web/app/page.tsx`, and `apps/metis-web/components/constellation/star-observatory-dialog.tsx`.
+  - Current assets are handcrafted SVG placeholders in `apps/metis-web/public/constellation/faculties/`.
+  - OpenAI imagegen CLI path is unavailable here: no `scripts/image_gen.py`, no `OPENAI_API_KEY`.
+  - Hugging Face `gr1_z_image_turbo_generate` is available and can generate usable icy constellation-style figures on black backgrounds.
+- Constraints:
+  - No new runtime dependencies.
+  - Need frontend-ready assets under the current web app.
+  - Must preserve fallback behavior if any image asset fails.
+- Unknowns/open questions:
+  - Whether the generated figures will be consistent enough across all 11 faculties.
+  - Whether background stripping from black to transparent will preserve glow edges cleanly.
+  - Whether landing-page opacity/scale tuning needs adjustment once raster assets are in place.
+- Likely codebase touchpoints:
+  - `apps/metis-web/public/constellation/faculties/*`
+  - `apps/metis-web/lib/constellation-faculty-art.ts`
+  - `apps/metis-web/app/page.tsx`
+  - `apps/metis-web/components/constellation/faculty-glyph-panel.tsx`
+  - `apps/metis-web/components/constellation/star-observatory-dialog.tsx`

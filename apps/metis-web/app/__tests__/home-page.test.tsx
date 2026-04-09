@@ -102,6 +102,7 @@ function createCanvasContext(): CanvasRenderingContext2D {
     closePath: vi.fn(),
     setLineDash: vi.fn(),
     clip: vi.fn(),
+    drawImage: vi.fn(),
     createLinearGradient: vi.fn(() => gradient),
     createRadialGradient: vi.fn(() => gradient),
     font: "",

@@ -3294,7 +3294,11 @@ export default function Home() {
       const drawY = py - artSize / 2 + artSize * art.offsetY;
 
       ctx!.save();
-      ctx!.globalAlpha = Math.min(0.28, artOpacity);
+      ctx!.filter = `blur(${Math.max(6, artSize * 0.03)}px)`;
+      ctx!.globalAlpha = Math.min(0.22, artOpacity * 0.58);
+      ctx!.drawImage(artState.image, drawX - artSize * 0.02, drawY - artSize * 0.02, artSize * 1.04, artSize * 1.04);
+      ctx!.filter = "none";
+      ctx!.globalAlpha = Math.min(0.42, artOpacity);
       ctx!.drawImage(artState.image, drawX, drawY, artSize, artSize);
       ctx!.restore();
     }
