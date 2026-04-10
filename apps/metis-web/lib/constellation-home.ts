@@ -13,7 +13,7 @@ export const STAR_DIVE_ZOOM_THRESHOLD = 200;
 export const STAR_DIVE_FULL_ZOOM = 800;
 export const CONSTELLATION_FACULTY_CENTER_X = CORE_CENTER_X;
 export const CONSTELLATION_FACULTY_CENTER_Y = CORE_CENTER_Y;
-export const CONSTELLATION_FACULTY_RING_RADIUS = 0.34;
+export const CONSTELLATION_FACULTY_RING_RADIUS = 0.38;
 export const CONSTELLATION_FACULTY_BRIDGE_RATIO = 1.15;
 
 const ADDABLE_EDGE_INSET_X = 0.03;
@@ -128,15 +128,52 @@ function createConstellationFaculty(
 }
 
 export const CONSTELLATION_FACULTIES: ConstellationFacultyMetadata[] = [
-  // Perception (top) — Perseus-inspired 6-star arc chain
+  // Perception (top) — Eye of Horus-inspired 6-star eye + brow
   createConstellationFaculty("perception", "Perception", "Sensory intake, pattern detection, and direct observation.", -Math.PI / 2, {
-    stars: [{dx:0,dy:0},{dx:-0.080,dy:0.032},{dx:-0.140,dy:0.008},{dx:0.068,dy:-0.024},{dx:0.120,dy:0.040},{dx:-0.040,dy:-0.040}],
-    edges: [[0,1],[1,2],[0,3],[3,4],[0,5]],
+    stars: [
+      { dx: 0, dy: 0 },          // pupil / iris center
+      { dx: -0.082, dy: -0.03 }, // upper-left lid
+      { dx: -0.155, dy: 0.018 }, // left corner
+      { dx: -0.075, dy: 0.055 }, // lower-left lid
+      { dx: 0.084, dy: -0.028 }, // upper-right lid
+      { dx: 0.158, dy: 0.022 },  // right corner
+      { dx: 0.086, dy: 0.054 },  // lower-right lid
+      { dx: -0.116, dy: -0.122 },// brow-left
+      { dx: 0, dy: -0.136 },     // brow-center
+      { dx: 0.118, dy: -0.12 },  // brow-right
+      { dx: 0.056, dy: 0.102 },  // tear/tail start
+      { dx: 0.156, dy: 0.146 },  // tear/tail tip
+    ],
+    edges: [
+      [7,8],[8,9],
+      [2,1],[1,4],[4,5],
+      [2,3],[3,6],[6,5],
+      [0,1],[0,3],[0,4],[0,6],
+      [0,10],[10,11],
+    ],
   }),
-  // Knowledge (upper-right) — Auriga-inspired 5-star pentagon
+  // Knowledge (upper-right) — brain silhouette with spiral cortex
   createConstellationFaculty("knowledge", "Knowledge", "Structured facts, concepts, and durable associations.", -Math.PI / 2 + (Math.PI * 2) / 11, {
-    stars: [{dx:0,dy:0},{dx:0.060,dy:0},{dx:0.080,dy:0.060},{dx:0.020,dy:0.100},{dx:-0.040,dy:0.060}],
-    edges: [[0,1],[1,2],[2,3],[3,4],[4,0]],
+    stars: [
+      { dx: 0, dy: 0 },          // spiral core
+      { dx: -0.108, dy: -0.05 }, // upper-left lobe
+      { dx: -0.19, dy: 0.006 },  // left outer lobe
+      { dx: -0.124, dy: 0.094 }, // lower-left lobe
+      { dx: -0.022, dy: -0.144 },// top crest
+      { dx: 0.106, dy: -0.064 }, // upper-right lobe
+      { dx: 0.19, dy: 0.012 },   // right outer lobe
+      { dx: 0.146, dy: 0.114 },  // lower-right lobe
+      { dx: 0.088, dy: 0.214 },  // cerebellum
+      { dx: 0.028, dy: 0.314 },  // brain stem tip
+      { dx: -0.056, dy: 0.184 }, // rear lower lobe
+    ],
+    edges: [
+      [2,1],[1,4],[4,5],[5,6],
+      [6,7],[7,8],[8,9],
+      [10,3],[3,2],
+      [0,1],[0,4],[0,5],[0,10],[0,7],
+      [3,10],[10,8],
+    ],
   }),
   // Memory (right) — Draco-inspired 5-star winding chain
   createConstellationFaculty("memory", "Memory", "Retention, recall, and context continuity.", -Math.PI / 2 + (Math.PI * 4) / 11, {

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048" fill="none">
+  <defs>
+    <linearGradient id="filament" x1="650" y1="340" x2="1420" y2="1708" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#95E7FF"/>
+      <stop offset="0.52" stop-color="#FAFDFF"/>
+      <stop offset="1" stop-color="#82C4FF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="838" y1="430" x2="1240" y2="1504" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5EE49B"/>
+      <stop offset="0.7" stop-color="#FFF6D7"/>
+      <stop offset="1" stop-color="#F0B85A"/>
+    </linearGradient>
+    <radialGradient id="wash" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1024 1114) rotate(90) scale(640 400)">
+      <stop offset="0" stop-color="#7BE5B1" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#7BE5B1" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="560" y="320" width="940" height="1420" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#glow)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M898 760C946 728 990 712 1026 712C1064 712 1108 728 1154 760C1206 824 1234 916 1234 1038C1234 1214 1166 1384 1032 1548C896 1386 828 1216 828 1038C828 916 852 824 898 760Z" fill="url(#wash)"/>
+    <circle cx="1026" cy="452" r="96" stroke="url(#filament)" stroke-width="22"/>
+    <path d="M900 760C952 728 994 712 1026 712C1060 712 1102 728 1152 760" stroke="url(#filament)" stroke-width="26"/>
+    <path d="M906 766L874 1000L928 1518" stroke="url(#filament)" stroke-width="20"/>
+    <path d="M1146 766L1178 1000L1124 1518" stroke="url(#filament)" stroke-width="20"/>
+    <path d="M1026 714V1546" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M834 1070H1218L1168 1186H882L834 1070Z" stroke="url(#filament)" stroke-width="22"/>
+    <path d="M918 954L790 850" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M790 850L718 664" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M718 664L782 620" stroke="url(#accent)" stroke-width="16"/>
+    <path d="M778 662L842 612" stroke="url(#accent)" stroke-width="14"/>
+    <path d="M1132 950L1248 844" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M1248 844L1312 682" stroke="url(#filament)" stroke-width="18"/>
+    <path d="M1312 682L1260 640" stroke="url(#accent)" stroke-width="16"/>
+    <path d="M894 1124L832 1260" stroke="url(#accent)" stroke-width="14"/>
+    <path d="M1158 1124L1220 1260" stroke="url(#accent)" stroke-width="14"/>
+    <path d="M968 866H1086" stroke="url(#accent)" stroke-width="14"/>
+    <path d="M1026 866V944" stroke="url(#accent)" stroke-width="14"/>
+    <circle cx="1026" cy="452" r="16" fill="#F6FCFF"/>
+    <circle cx="718" cy="664" r="16" fill="#F6FCFF"/>
+    <circle cx="1312" cy="682" r="16" fill="#F6FCFF"/>
+    <circle cx="834" cy="1070" r="16" fill="#F6FCFF"/>
+    <circle cx="1218" cy="1070" r="16" fill="#F6FCFF"/>
+    <circle cx="882" cy="1186" r="14" fill="#F6FCFF"/>
+    <circle cx="1168" cy="1186" r="14" fill="#F6FCFF"/>
+    <circle cx="928" cy="1518" r="14" fill="#F6FCFF"/>
+    <circle cx="1124" cy="1518" r="14" fill="#F6FCFF"/>
+  </g>
+</svg>

@@ -1,6 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteIndex, fetchIndexes, fetchSettings, updateSettings } from "@/lib/api";
+import {
+  deleteIndex,
+  fetchBrainScaffold,
+  fetchIndexes,
+  fetchSettings,
+  postNourishmentEvent,
+  subscribeCompanionActivity,
+  updateSettings,
+} from "@/lib/api";
 import type { IndexSummary } from "@/lib/api";
 import type { UserStar } from "@/lib/constellation-types";
 
@@ -12,9 +20,12 @@ vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...actual,
+    fetchBrainScaffold: vi.fn(() => new Promise(() => {})),
     deleteIndex: vi.fn(),
     fetchIndexes: vi.fn().mockResolvedValue([]),
     fetchSettings: vi.fn().mockResolvedValue({}),
+    postNourishmentEvent: vi.fn(),
+    subscribeCompanionActivity: vi.fn(() => vi.fn()),
     updateSettings: vi.fn().mockResolvedValue({}),
   };
 });
@@ -35,7 +46,7 @@ vi.mock("@/components/constellation/star-observatory-dialog", () => ({
     star: UserStar | null;
     entryMode: "new" | "existing";
   }) => (
-    open ? (
+    (open || (entryMode === "new" && star !== null)) ? (
       <div data-testid="star-details-panel">
         <div>{entryMode}</div>
         <div>{star?.label ?? "Unnamed star"}</div>
@@ -137,7 +148,7 @@ function makeIndex(overrides: Partial<IndexSummary> = {}): IndexSummary {
 }
 
 async function prepareCanvas() {
-  const canvas = document.querySelector("canvas") as HTMLCanvasElement;
+  const canvas = document.querySelector("#universe") as HTMLCanvasElement;
   expect(canvas).toBeTruthy();
 
   Object.defineProperty(canvas, "getBoundingClientRect", {
@@ -159,6 +170,24 @@ async function prepareCanvas() {
   return canvas;
 }
 
+function tapCanvasAt(canvas: HTMLCanvasElement, x: number, y: number, pointerId = 1) {
+  fireEvent.pointerMove(canvas, {
+    clientX: x,
+    clientY: y,
+    pointerId,
+  });
+  fireEvent.pointerDown(canvas, {
+    clientX: x,
+    clientY: y,
+    pointerId,
+  });
+  fireEvent.pointerUp(canvas, {
+    clientX: x,
+    clientY: y,
+    pointerId,
+  });
+}
+
 describe("Home page", () => {
   let getContextSpy: ReturnType<typeof vi.spyOn>;
   let elementFromPointMock: ReturnType<typeof vi.fn>;
@@ -174,6 +203,13 @@ describe("Home page", () => {
     }));
     vi.mocked(fetchIndexes).mockResolvedValue([]);
     vi.mocked(fetchSettings).mockResolvedValue({});
+    vi.mocked(postNourishmentEvent).mockResolvedValue({
+      status: "ok",
+      reaction: "",
+      nourishment: {},
+      reflection: null,
+    });
+    vi.mocked(subscribeCompanionActivity).mockImplementation(() => vi.fn());
     vi.mocked(updateSettings).mockResolvedValue({});
 
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1000 });
@@ -225,6 +261,8 @@ describe("Home page", () => {
   });
 
   afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
     getContextSpy.mockRestore();
     window.localStorage.clear();
     vi.unstubAllGlobals();
@@ -257,16 +295,7 @@ describe("Home page", () => {
     const canvas = await prepareCanvas();
     elementFromPointMock.mockImplementation(() => canvas);
 
-    fireEvent.pointerDown(canvas, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(window, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
+    tapCanvasAt(canvas, 250, 240);
 
     await waitFor(() => {
       expect(canvas).toHaveAttribute("data-focus-phase", "focusing");
@@ -367,16 +396,7 @@ describe("Home page", () => {
     const canvas = await prepareCanvas();
     elementFromPointMock.mockImplementation(() => canvas);
 
-    fireEvent.pointerDown(canvas, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(window, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
+    tapCanvasAt(canvas, 250, 240);
 
     await waitFor(() => {
       expect(screen.getByTestId("star-details-panel")).toBeInTheDocument();
@@ -399,8 +419,8 @@ describe("Home page", () => {
       landing_constellation_user_stars: [
         {
           label: "Settings star",
-          x: 0.25,
-          y: 0.3,
+          x: 0.88,
+          y: 0.82,
           primaryDomainId: "knowledge",
           linkedManifestPath: "/indexes/settings-star.json",
         },
@@ -423,27 +443,20 @@ describe("Home page", () => {
     const canvas = await prepareCanvas();
     elementFromPointMock.mockImplementation(() => canvas);
 
-    fireEvent.pointerDown(canvas, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(window, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
+    tapCanvasAt(canvas, 880, 656);
 
     await waitFor(() => {
-      expect(screen.getByTestId("star-details-panel")).toBeInTheDocument();
-      expect(screen.getByText("existing")).toBeInTheDocument();
-      expect(screen.getByText("Settings star")).toBeInTheDocument();
+      const panel = screen.getByTestId("star-details-panel");
+      expect(panel).toBeInTheDocument();
+      expect(within(panel).getByText("existing")).toBeInTheDocument();
+      expect(within(panel).getByText("Settings star")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Save edited star" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Edited settings star")).toBeInTheDocument();
+      const panel = screen.getByTestId("star-details-panel");
+      expect(within(panel).getByText("Edited settings star")).toBeInTheDocument();
     });
 
     const stored = JSON.parse(window.localStorage.getItem("metis_constellation_user_stars") ?? "[]");
@@ -481,16 +494,7 @@ describe("Home page", () => {
     const canvas = await prepareCanvas();
     elementFromPointMock.mockImplementation(() => canvas);
 
-    fireEvent.pointerDown(canvas, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(window, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
+    tapCanvasAt(canvas, 250, 240);
 
     await waitFor(() => {
       expect(screen.getByTestId("star-details-panel")).toBeInTheDocument();
@@ -509,6 +513,12 @@ describe("Home page", () => {
   });
 
   it("cascade deletes a selected star, scrubs deleted manifests, and clears the active chat index", async () => {
+    let scheduledFrame: FrameRequestCallback | null = null;
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      scheduledFrame = callback;
+      return 1;
+    }));
+
     reducedMotion = true;
     const deletedPrimary = "/indexes/atlas-a.json";
     const deletedSecondary = "/indexes/atlas-b.json";
@@ -574,21 +584,15 @@ describe("Home page", () => {
     await renderHomePage();
     const canvas = await prepareCanvas();
     elementFromPointMock.mockImplementation(() => canvas);
+    scheduledFrame?.(16);
+    scheduledFrame?.(32);
 
-    fireEvent.pointerDown(canvas, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
-    fireEvent.pointerUp(window, {
-      clientX: 250,
-      clientY: 240,
-      pointerId: 1,
-    });
+    tapCanvasAt(canvas, 250, 240);
 
     await waitFor(() => {
-      expect(screen.getByTestId("star-details-panel")).toBeInTheDocument();
-      expect(screen.getByText("Mapped star")).toBeInTheDocument();
+      const panel = screen.getByTestId("star-details-panel");
+      expect(panel).toBeInTheDocument();
+      expect(within(panel).getByText("Mapped star")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Delete star and sources" }));
@@ -625,6 +629,12 @@ describe("Home page", () => {
   });
 
   it("removes a hovered star from the tooltip and restores it with undo", async () => {
+    let scheduledFrame: FrameRequestCallback | null = null;
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      scheduledFrame = callback;
+      return 1;
+    }));
+
     const originalStars: UserStar[] = [
       {
         id: "star-anchor",
@@ -652,8 +662,16 @@ describe("Home page", () => {
 
     await renderHomePage();
     const canvas = await prepareCanvas();
+    elementFromPointMock.mockImplementation(() => canvas);
+    scheduledFrame?.(16);
+    scheduledFrame?.(32);
 
     fireEvent.pointerMove(canvas, {
+      clientX: 250,
+      clientY: 240,
+      pointerId: 1,
+    });
+    fireEvent.pointerMove(window, {
       clientX: 250,
       clientY: 240,
       pointerId: 1,
@@ -682,24 +700,41 @@ describe("Home page", () => {
   });
 
   it("opens star details panel when the pointer lands on the visible label outside the node circle", async () => {
-    let hasRenderedFrame = false;
+    let scheduledFrame: FrameRequestCallback | null = null;
     vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
-      if (!hasRenderedFrame) {
-        hasRenderedFrame = true;
-        callback(16);
-      }
+      scheduledFrame = callback;
       return 1;
     }));
+    reducedMotion = true;
 
+    vi.mocked(fetchIndexes).mockResolvedValueOnce([makeIndex()]);
     await renderHomePage();
     const canvas = await prepareCanvas();
     elementFromPointMock.mockImplementation(() => canvas);
 
+    // Enable "add" mode — requires hasUserContent, which needs availableIndexes.length > 0
+    const addToolBtn = screen.getByRole("button", { name: "Add star tool" });
+    await waitFor(() => expect(addToolBtn).not.toBeDisabled());
+    fireEvent.click(addToolBtn);
+    // activeCanvasTool changes → canvas effect re-runs with a fresh closure where
+    // activeCanvasTool === "add", new context, and a new scheduledFrame callback
+
+    for (let frame = 1; frame <= 24; frame += 1) {
+      scheduledFrame?.(frame * 16);
+    }
+
     const canvasContexts = getContextSpy.mock.results
-      .map((result) => result.value)
-      .filter((value): value is CanvasRenderingContext2D & { fillText: ReturnType<typeof vi.fn> } => (
-        Boolean(value) && typeof (value as { fillText?: unknown }).fillText === "function"
-      ));
+      .map((result, index) => ({
+        instance: getContextSpy.mock.instances[index],
+        value: result.value,
+      }))
+      .filter(({ instance, value }): value is CanvasRenderingContext2D & { fillText: ReturnType<typeof vi.fn> } => (
+        instance instanceof HTMLCanvasElement
+        && instance.id === "universe"
+        && Boolean(value)
+        && typeof (value as { fillText?: unknown }).fillText === "function"
+      ))
+      .map(({ value }) => value);
 
     await waitFor(() => {
       expect(
@@ -709,29 +744,37 @@ describe("Home page", () => {
 
     const perceptionLabelCall = canvasContexts
       .flatMap((context) => context.fillText.mock.calls)
+      .reverse()
       .find(([text]) => text === "Perception");
     expect(perceptionLabelCall).toBeTruthy();
 
     const [, labelX, labelY] = perceptionLabelCall as [string, number, number];
-    const clickX = labelX + 28;
-    const clickY = labelY - 6;
+    // Conservative offset: inside label hit region but outside node circle
+    const clickX = labelX + 10;
+    const clickY = labelY - 2;
 
-    fireEvent.pointerMove(canvas, {
+    // pointermove on document for deterministic document-listener path
+    fireEvent.pointerMove(document, {
       clientX: clickX,
       clientY: clickY,
       pointerId: 1,
     });
-
+    // pointerdown on canvas
     fireEvent.pointerDown(canvas, {
       clientX: clickX,
       clientY: clickY,
       pointerId: 1,
     });
-    fireEvent.pointerUp(window, {
+    // pointerup on canvas (not window) so onCanvasPress gets canvas target via bubbling
+    fireEvent.pointerUp(canvas, {
       clientX: clickX,
       clientY: clickY,
       pointerId: 1,
     });
+
+    for (let frame = 25; frame <= 60; frame += 1) {
+      scheduledFrame?.(frame * 16);
+    }
 
     await waitFor(() => {
       expect(screen.getByTestId("star-details-panel")).toBeInTheDocument();
