@@ -16,7 +16,7 @@ from metis_app.api.sessions import _hydrate_session_actions
 from metis_app.api_litestar.common import get_session_repo
 
 
-@get("/v1/sessions")
+@get("/v1/sessions", sync_to_thread=False)
 def list_sessions(search: str = "", skill: str = "") -> list[dict[str, object]]:
     """List session summaries with optional search and skill filtering."""
     repo = get_session_repo()
@@ -24,7 +24,7 @@ def list_sessions(search: str = "", skill: str = "") -> list[dict[str, object]]:
     return [SessionSummaryModel.from_dataclass(item).model_dump() for item in summaries]
 
 
-@post("/v1/sessions", status_code=201)
+@post("/v1/sessions", status_code=201, sync_to_thread=False)
 def create_session(payload: CreateSessionRequestModel) -> dict[str, object]:
     """Create a new session."""
     repo = get_session_repo()
@@ -32,7 +32,7 @@ def create_session(payload: CreateSessionRequestModel) -> dict[str, object]:
     return SessionSummaryModel.from_dataclass(summary).model_dump()
 
 
-@get("/v1/sessions/{session_id:str}")
+@get("/v1/sessions/{session_id:str}", sync_to_thread=False)
 def get_session(session_id: str) -> dict[str, object]:
     """Return session detail, including hydrated action results."""
     repo = get_session_repo()
@@ -43,7 +43,7 @@ def get_session(session_id: str) -> dict[str, object]:
     return SessionDetailModel.from_dataclass(detail).model_dump()
 
 
-@post("/v1/sessions/{session_id:str}/feedback")
+@post("/v1/sessions/{session_id:str}/feedback", sync_to_thread=False)
 def submit_feedback(session_id: str, payload: FeedbackRequestModel) -> dict[str, bool]:
     """Persist feedback for a run in a session."""
     repo = get_session_repo()
@@ -56,7 +56,7 @@ def submit_feedback(session_id: str, payload: FeedbackRequestModel) -> dict[str,
     return FeedbackResponseModel(ok=True).model_dump()
 
 
-@delete("/v1/sessions/{session_id:str}", status_code=200)
+@delete("/v1/sessions/{session_id:str}", status_code=200, sync_to_thread=False)
 def delete_session(session_id: str) -> dict[str, object]:
     """Delete a session and all associated messages and feedback."""
     repo = get_session_repo()
