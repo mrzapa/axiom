@@ -543,9 +543,7 @@ export default function SettingsPage() {
           chat_path:
             rawChatPath === "Direct"
               ? "Direct"
-              : rawChatPath === "Forecast"
-                ? "Forecast"
-                : "RAG",
+              : "RAG", // legacy "Forecast" is coerced to "RAG"; forecasting is now triggered by file attachment
           selected_mode: (raw.selected_mode as string) ?? "Q&A",
           output_style: (raw.output_style as string) ?? "Default answer",
           chat_history_max_turns: (raw.chat_history_max_turns as number) ?? 6,
@@ -872,7 +870,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <FieldLabel htmlFor="chat_path_rag" tooltip="RAG grounds answers in your documents via retrieval. Direct sends prompts straight to the LLM without any context.">Query path</FieldLabel>
+                    <FieldLabel htmlFor="chat_path_RAG" tooltip="RAG grounds answers in your documents via retrieval. Direct sends prompts straight to the LLM without any context.">Query path</FieldLabel>
                     <div className="flex gap-4">
                       {(["RAG", "Direct"] as const).map((path) => (
                         <label key={path} htmlFor={`chat_path_${path}`} className="flex cursor-pointer items-center gap-2 text-sm">

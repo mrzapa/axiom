@@ -263,9 +263,8 @@ export function ChatPanel({
   }
 
   function handleSend() {
-    if (isSending || isStreamingRag) return;
+    if (!canSend) return;
     const trimmedDraft = draft.trim();
-    if (queryMode !== "forecast" && !trimmedDraft) return;
     const text = trimmedDraft || "Generate a forecast for this dataset.";
     setDraft("");
     if (queryMode === "direct" && onDirectSend) {
@@ -901,8 +900,21 @@ export function ChatPanel({
                   ? "text-primary hover:text-primary/80"
                   : "text-muted-foreground hover:text-foreground",
               )}
-              onClick={() => forecastFileInputRef.current?.click()}
-              title={forecastSchema?.file_name ? `Dataset: ${forecastSchema.file_name}` : "Attach CSV/TSV to forecast"}
+              onClick={() => {
+                if (forecastSchema) {
+                  // Dataset already loaded — switch back to forecast mode without re-uploading
+                  setQueryMode("forecast");
+                } else {
+                  forecastFileInputRef.current?.click();
+                }
+              }}
+              title={
+                forecastSchema?.file_name
+                  ? queryMode === "forecast"
+                    ? `Dataset: ${forecastSchema.file_name}`
+                    : `Back to forecast — ${forecastSchema.file_name}`
+                  : "Attach CSV/TSV to forecast"
+              }
               aria-label="Attach time series data"
             >
               <FileSpreadsheet className="size-4" />
