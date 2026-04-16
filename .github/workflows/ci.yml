@@ -39,6 +39,9 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
+      - name: Type-check (mypy, opt-in surface)
+        run: mypy
+
       - name: Run tests with coverage
         run: python -m pytest --cov=metis_app --cov-report=xml --cov-report=term
 

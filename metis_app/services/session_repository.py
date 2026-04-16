@@ -34,9 +34,10 @@ class SessionRepository:
     """Store and retrieve chat sessions using the monolith's SQLite schema."""
 
     def __init__(self, db_path: str | pathlib.Path | None = None) -> None:
-        self.db_path = (
-            pathlib.Path(db_path) if db_path not in (None, ":memory:") else db_path
-        )
+        if db_path is None or db_path == ":memory:":
+            self.db_path: str | pathlib.Path | None = db_path
+        else:
+            self.db_path = pathlib.Path(db_path)
         self._db_target = (
             ":memory:"
             if db_path == ":memory:"
