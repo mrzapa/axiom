@@ -33,8 +33,8 @@ Qwik, or a React with concurrent features). This experiment answers the question
 - The Python API running locally:
   ```bash
   # from repo root
-  python -m metis_app.api
-  # starts FastAPI on http://127.0.0.1:8000
+  python -m metis_app.api_litestar
+  # starts Litestar on http://127.0.0.1:8000
   ```
 - At least one index built via `apps/metis-web` or the Python CLI (the chat page
   needs a `manifest_path` to send a RAG query).

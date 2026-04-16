@@ -4,9 +4,9 @@
     Build the metis-api sidecar binary for Tauri desktop bundling (WOR-14).
 
 .DESCRIPTION
-    Produces a standalone one-file console binary of metis_app.api and places it
-    at apps/metis-desktop/src-tauri/binaries/metis-api-{target-triple}.exe, which
-    is the naming convention Tauri v2 requires for externalBin sidecar binaries.
+    Produces a standalone one-file console binary of metis_app.api_litestar and
+    places it at apps/metis-desktop/src-tauri/binaries/metis-api-{target-triple}.exe,
+    which is the naming convention Tauri v2 requires for externalBin sidecar binaries.
 
     Prerequisites: Python environment with metis-app[api] installed, Rust toolchain
     Usage: powershell -File scripts/build_api_sidecar.ps1
@@ -58,7 +58,7 @@ if (Test-Path $BuildDir) {
 # ── Build sidecar binary ────────────────────────────────────────────────────
 $AssetsData       = "${RepoRoot}\metis_app\assets;metis_app/assets"
 $SettingsData     = "${RepoRoot}\metis_app\default_settings.json;metis_app"
-$EntryPoint       = Join-Path $RepoRoot "metis_app" "api" "__main__.py"
+$EntryPoint       = Join-Path $RepoRoot "metis_app" "api_litestar" "__main__.py"
 
 if (-not (Test-Path $EntryPoint)) {
     Write-Error "Entry point not found: $EntryPoint"
