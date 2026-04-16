@@ -164,10 +164,10 @@ python main.py --cli query --file docs/my_notes.txt --question "What are the key
 ### API only
 
 ```bash
-python -m metis_app.api
+python -m metis_app.api_litestar
 ```
 
-Runs the API at `http://127.0.0.1:8000`. Full API reference is available at `http://127.0.0.1:8000/docs` while the server is running.
+Runs the API at `http://127.0.0.1:8000`. Full API reference is available at `http://127.0.0.1:8000/schema` while the server is running.
 
 ### API + Next.js dev UI
 

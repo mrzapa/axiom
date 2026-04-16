@@ -77,7 +77,7 @@ import Shell from "../layouts/Shell.astro";
     } catch {
       indexSelect.innerHTML = '<option value="">Could not reach API</option>';
       submitBtn.disabled = true;
-      setStatus("API unreachable — is `python -m metis_app.api` running?", true);
+      setStatus("API unreachable — is `python -m metis_app.api_litestar` running?", true);
     }
   }
 

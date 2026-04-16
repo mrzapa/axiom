@@ -45,7 +45,7 @@ desktop window pointing at it. The METIS API server must also be running:
 
 ```bash
 # In a separate terminal from the repo root:
-python -m metis_app.api
+python -m metis_app.api_litestar
 ```
 
 ---
@@ -55,7 +55,7 @@ python -m metis_app.api
 ### 1. Sidecar (Python API binary)
 
 Build the standalone `metis-api` sidecar binary before bundling. This packages
-`metis_app.api` as a one-file console executable that Tauri embeds and spawns at launch.
+`metis_app.api_litestar` as a one-file console executable that Tauri embeds and spawns at launch.
 
 ```bash
 # From repo root — requires PyInstaller and Rust toolchain in PATH:
@@ -91,5 +91,5 @@ and then compiles the Tauri app with the frontend and sidecar binary bundled.
 ## Architecture
 
 - `metis-web/` — Next.js frontend
-- `metis_app.api` — FastAPI backend
+- `metis_app.api_litestar` — Litestar backend
 - Tauri — native desktop container

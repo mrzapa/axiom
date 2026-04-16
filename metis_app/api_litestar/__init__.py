@@ -1,10 +1,8 @@
-"""Experimental Litestar shadow port of the METIS API.
+"""METIS Litestar ASGI application.
 
-This module provides an alternative ASGI implementation using Litestar
-for evaluation purposes. The FastAPI implementation in metis_app.api
-remains the production default.
-
-Do not modify this module as part of normal development.
+This is the production API implementation. FastAPI was retired in favour of
+Litestar (see docs/experiments/deprecated/litestar_api.md for the migration
+history).
 """
 
 from .app import create_app
