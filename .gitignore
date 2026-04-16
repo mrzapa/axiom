@@ -65,6 +65,8 @@ coverage.xml
 # Test output / screenshots
 output/
 langextract_grounding_*.html
+tmp/
+.codex_tmp_*.csv
 
 # Next.js build output
 apps/metis-web/out/

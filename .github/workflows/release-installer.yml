@@ -32,7 +32,6 @@ jobs:
           pnpm build
           # Package the static export so end users can skip the Node.js requirement
           tar -czf ../../metis-web-dist.tar.gz -C out .
-        continue-on-error: true
 
       - name: Prepare release artifacts
         run: |
