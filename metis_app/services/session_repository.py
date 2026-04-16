@@ -34,9 +34,10 @@ class SessionRepository:
     """Store and retrieve chat sessions using the monolith's SQLite schema."""
 
     def __init__(self, db_path: str | pathlib.Path | None = None) -> None:
-        self.db_path = (
-            pathlib.Path(db_path) if db_path not in (None, ":memory:") else db_path
-        )
+        if db_path is None or db_path == ":memory:":
+            self.db_path: str | pathlib.Path | None = db_path
+        else:
+            self.db_path = pathlib.Path(db_path)
         self._db_target = (
             ":memory:"
             if db_path == ":memory:"
@@ -93,6 +94,12 @@ class SessionRepository:
         finally:
             if conn and conn != self._shared_conn:
                 conn.close()
+
+    def _require_session(self, session_id: str) -> SessionDetail:
+        detail = self.get_session(session_id)
+        if detail is None:
+            raise FileNotFoundError(f"Session not found: {session_id}")
+        return detail
 
     def init_db(self) -> None:
         with self._connect() as conn:
@@ -240,7 +247,7 @@ class SessionRepository:
                 """,
                 payload,
             )
-        return self.get_session(session_id).summary  # type: ignore[union-attr]
+        return self._require_session(session_id).summary
 
     def upsert_session(
         self,
@@ -337,7 +344,7 @@ class SessionRepository:
                 """,
                 payload,
             )
-        return self.get_session(session_id).summary  # type: ignore[union-attr]
+        return self._require_session(session_id).summary
 
     def list_sessions(
         self,
@@ -555,7 +562,7 @@ class SessionRepository:
                 "UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ?",
                 (normalized, _now_iso(), session_id),
             )
-        return self.get_session(session_id).summary  # type: ignore[union-attr]
+        return self._require_session(session_id).summary
 
     def duplicate_session(
         self,
@@ -563,9 +570,7 @@ class SessionRepository:
         *,
         title: str | None = None,
     ) -> SessionSummary:
-        detail = self.get_session(session_id)
-        if detail is None:
-            raise FileNotFoundError(f"Session not found: {session_id}")
+        detail = self._require_session(session_id)
         summary = detail.summary
         clone = self.create_session(
             title=str(title or f"{summary.title} Copy").strip(),
@@ -593,14 +598,12 @@ class SessionRepository:
                 artifacts=message.artifacts,
                 actions=message.actions,
             )
-        return self.get_session(clone.session_id).summary  # type: ignore[union-attr]
+        return self._require_session(clone.session_id).summary
 
     def export_session(
         self, session_id: str, save_dir: str | pathlib.Path
     ) -> tuple[pathlib.Path, pathlib.Path]:
-        detail = self.get_session(session_id)
-        if detail is None:
-            raise FileNotFoundError(f"Session not found: {session_id}")
+        detail = self._require_session(session_id)
 
         save_dir = pathlib.Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)

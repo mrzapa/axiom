@@ -175,11 +175,8 @@ class AppModel:
     # ------------------------------------------------------------------
 
     def set_documents(self, paths: list[Any]) -> None:
-        """Replace the current document list.
-
-        TODO: validate paths, update index_state accordingly.
-        """
-        self.documents = list(paths)  # TODO: enrich with metadata
+        """Replace the current document list."""
+        self.documents = list(paths)
 
     # ------------------------------------------------------------------
     # Status

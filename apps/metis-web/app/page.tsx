@@ -24,7 +24,7 @@ const StarDiveOverlay = dynamic(
 import { StarDetailsPanel } from "@/components/constellation/star-observatory-dialog";
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
 import { useCometNews } from "@/hooks/use-news-comets";
-import { deleteIndex, fetchBrainScaffold, fetchIndexes, previewLearningRoute, subscribeCompanionActivity } from "@/lib/api";
+import { deleteIndex, fetchBrainScaffold, fetchIndexes, fetchSettings, previewLearningRoute, subscribeCompanionActivity } from "@/lib/api";
 import type { BrainScaffoldEdge, BrainScaffoldResponse } from "@/lib/api";
 import { noise2D } from "@/lib/simplex-noise";
 import gsap from "gsap";
@@ -748,8 +748,25 @@ export default function Home() {
   } = useConstellationStars();
 
   // Comet-news: subscribe to live news events rendered as comets.
-  // TODO: wire news_comets_enabled from user settings when settings context is available.
-  const { comets: serverComets } = useCometNews(true);
+  // Start enabled to preserve the pre-settings-wiring UX, then reconcile to
+  // the stored value (news_comets_enabled) once fetchSettings resolves.
+  const [cometsEnabled, setCometsEnabled] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    fetchSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        const raw = settings["news_comets_enabled"];
+        if (typeof raw === "boolean") setCometsEnabled(raw);
+      })
+      .catch(() => {
+        // Keep the default-on fallback when the API is unreachable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const { comets: serverComets } = useCometNews(cometsEnabled);
   const serverCometsRef = useRef(serverComets);
   serverCometsRef.current = serverComets;
 
