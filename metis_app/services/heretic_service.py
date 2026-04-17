@@ -222,14 +222,15 @@ def _run_heretic_interactive(
     )
     assert proc.stdout is not None
     assert proc.stdin is not None
+    proc_stdin = proc.stdin
 
     # Write all stdin responses upfront then close so questionary sees EOF
     # after consuming the expected responses.
     def _write_stdin() -> None:
         try:
-            proc.stdin.write(stdin_text)  # type: ignore[union-attr]
-            proc.stdin.flush()            # type: ignore[union-attr]
-            proc.stdin.close()            # type: ignore[union-attr]
+            proc_stdin.write(stdin_text)
+            proc_stdin.flush()
+            proc_stdin.close()
         except (BrokenPipeError, OSError):
             pass
 
