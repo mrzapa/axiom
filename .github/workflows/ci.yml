@@ -208,9 +208,6 @@ jobs:
 
   desktop-tauri:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/metis-desktop/src-tauri
 
     steps:
       - name: Checkout
@@ -231,6 +228,12 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -240,17 +243,22 @@ jobs:
             apps/metis-desktop/src-tauri/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('apps/metis-desktop/src-tauri/Cargo.lock') }}
 
-      - name: Create sidecar stub (externalBin in tauri.conf.json)
+      - name: Install metis-app with API extra
         run: |
-          mkdir -p binaries
-          printf '#!/bin/sh\nexit 0\n' > binaries/metis-api-x86_64-unknown-linux-gnu
-          chmod +x binaries/metis-api-x86_64-unknown-linux-gnu
+          python -m pip install --upgrade pip
+          pip install -e ".[api]"
+
+      - name: Build metis-api sidecar (real PyInstaller build)
+        run: bash scripts/build_api_sidecar.sh
 
       - name: Format check
+        working-directory: apps/metis-desktop/src-tauri
         run: cargo fmt --all -- --check
 
       - name: Clippy
+        working-directory: apps/metis-desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Test
+        working-directory: apps/metis-desktop/src-tauri
         run: cargo test --all
