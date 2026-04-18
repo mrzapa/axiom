@@ -77,6 +77,7 @@ Anyone who has ever thought *I wish I could just try that* about an AI paper, tr
 7. **Preserve and productise.** The codebase is an asset. Surface what exists before building what doesn't.
 8. **One interface.** Next.js in Tauri, backed by a local Litestar API (per ADR 0004).
 9. **No capability without a star.** If a feature has no home in the constellation, it doesn't ship.
+10. **Stars are knowledge, not astronomy.** Diving into a star reveals its content — the document, the companion's notes, the trace — not a simulated stellar surface. Different content types get visually distinct 2D star archetypes (see ADR 0006).
 
 ## Business model
 

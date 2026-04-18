@@ -40,3 +40,4 @@ Use one of these statuses:
 - [0003-2026-tech-stack-review.md](0003-2026-tech-stack-review.md) - Superseded by 0004
 - [0004-one-interface-tauri-next-fastapi.md](0004-one-interface-tauri-next-fastapi.md)
 - [0005-product-vision-living-ai-workspace.md](0005-product-vision-living-ai-workspace.md) - Draft
+- [0006-constellation-design-2d-primary.md](0006-constellation-design-2d-primary.md) - Draft
