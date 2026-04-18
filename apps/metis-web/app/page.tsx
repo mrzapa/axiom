@@ -93,7 +93,12 @@ import {
   STAR_FOCUS_CLOSE_LOCK_MS,
   STAR_FOCUS_SETTLE_TIMEOUT_MS,
 } from "@/lib/constellation-focus";
-import { generateStellarProfile, type StellarProfile } from "@/lib/landing-stars";
+import {
+  generateStellarProfile,
+  type StarContentType,
+  type StellarProfile,
+} from "@/lib/landing-stars";
+import { deriveUserStarContentType } from "@/lib/user-star-content-type";
 import { buildLandingStarRenderPlan } from "@/lib/landing-stars/landing-star-lod";
 import {
   getLandingStarInteractionHitRadius,
@@ -103,7 +108,7 @@ import {
   buildLandingStarSpatialHash,
   findClosestLandingStarHitTarget,
 } from "@/lib/landing-stars/landing-star-spatial-index";
-import { StarCatalogue, DEFAULT_CATALOGUE_CONFIG, fnv1a32, SeededRNG, generateStarName } from "@/lib/star-catalogue";
+import { StarCatalogue, DEFAULT_CATALOGUE_CONFIG, fnv1a32, SeededRNG, generateClassicalDesignation } from "@/lib/star-catalogue";
 import type { CatalogueStar } from "@/lib/star-catalogue";
 import {
   buildCanvasFont,
@@ -221,7 +226,7 @@ interface WorldStarData {
   hasDiffraction: boolean;
   revealZoomFactor: number;
   profile: StellarProfile;
-  catalogueName: string;
+  catalogueName: string | null;
 }
 
 interface HomeRagPulseState {
@@ -246,7 +251,7 @@ interface HomeToastState {
 
 interface LandingWorldStarRenderState extends LandingStarHitTarget {
   addable: boolean;
-  catalogueName?: string;
+  catalogueName?: string | null;
   profile: StellarProfile;
 }
 
@@ -2291,7 +2296,7 @@ export default function Home() {
     let lastVisibleStarfieldY = Number.NaN;
     let lastVisibleWorldZoom = Number.NaN;
     let visibleWorldStars: WorldStarData[] = [];
-    const visibleStarNameMap = new Map<string, string>();
+    const visibleStarNameMap = new Map<string, string | null>();
     let lastConstellationProjectionWidth = -1;
     let lastConstellationProjectionHeight = -1;
     let lastConstellationProjectionZoom = Number.NaN;
@@ -2306,14 +2311,21 @@ export default function Home() {
       };
     }
 
-    function getCachedStellarProfile(starId: string): StellarProfile {
-      const cachedProfile = landingStarProfileCacheRef.current.get(starId);
+    function getCachedStellarProfile(
+      starId: string,
+      contentType: StarContentType | null = null,
+    ): StellarProfile {
+      // Include content type in the cache key so a user star whose content
+      // type changes (e.g. a learning route is attached) re-derives a fresh
+      // archetype on next read instead of returning a stale profile.
+      const cacheKey = `${starId}|${contentType ?? ""}`;
+      const cachedProfile = landingStarProfileCacheRef.current.get(cacheKey);
       if (cachedProfile) {
         return cachedProfile;
       }
 
-      const nextProfile = generateStellarProfile(starId);
-      landingStarProfileCacheRef.current.set(starId, nextProfile);
+      const nextProfile = generateStellarProfile(starId, { contentType });
+      landingStarProfileCacheRef.current.set(cacheKey, nextProfile);
       return nextProfile;
     }
 
@@ -2752,7 +2764,7 @@ export default function Home() {
           ringCount: getStageRingCount(star.stage),
           selected: currentSelectedStarId === star.id,
           star,
-          stellarProfile: getCachedStellarProfile(star.id),
+          stellarProfile: getCachedStellarProfile(star.id, deriveUserStarContentType(star)),
           target,
         });
       });
@@ -3788,7 +3800,14 @@ export default function Home() {
               x: backgroundCamera.x + (target.screenX - W / 2) / scale,
               y: backgroundCamera.y + (target.screenY - H / 2) / scale,
             };
-            starDiveFocusProfileRef.current = getCachedStellarProfile(target.id);
+            const focusedUserStar = userStarsRef.current.find((star) => star.id === target.id);
+            const focusedContentType = focusedUserStar
+              ? deriveUserStarContentType(focusedUserStar)
+              : null;
+            starDiveFocusProfileRef.current = getCachedStellarProfile(
+              target.id,
+              focusedContentType,
+            );
             starDiveFocusNameRef.current = visibleStarNameMap.get(target.id) ?? null;
           }
         }
@@ -4071,7 +4090,7 @@ export default function Home() {
       const faculty = resolveStarFaculty(star);
       const title = star.label?.trim() || (() => {
         const rng = new SeededRNG(fnv1a32(star.id));
-        return generateStarName(rng, Math.max(1, 7 - (star.size * 2.5)));
+        return generateClassicalDesignation(rng, Math.max(1, 7 - (star.size * 2.5)));
       })();
       const description = getStarTooltipDescription(star, faculty);
       const domainLabel = faculty.label;
@@ -4387,7 +4406,8 @@ export default function Home() {
 
       if (hover < 0) {
         const catHit = getHoveredCatalogueStar(e.clientX, e.clientY);
-        if (catHit && !catHit.addable) {
+        // ADR 0006: field stars (no name) hover silently.
+        if (catHit && !catHit.addable && catHit.catalogueName) {
           showCatalogueTooltip(catHit, e.clientX, e.clientY);
         } else {
           hideCatalogueTooltip();

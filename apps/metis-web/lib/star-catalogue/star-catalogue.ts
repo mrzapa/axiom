@@ -1,13 +1,17 @@
 import { fnv1a32, SeededRNG } from "./rng";
 import { galaxyDensityFactor } from "./galaxy-distribution";
-import { generateStarName } from "./star-name-generator";
 import type { CatalogueStar, CatalogueSector, SectorKey, StarCatalogueConfig } from "./types";
 
 // NOTE: This import path assumes lib/landing-stars/stellar-profile.ts exports generateStellarProfile.
 // In the actual codebase this would be:
 //   import { generateStellarProfile } from "@/lib/landing-stars/stellar-profile";
 // For now we declare the dependency explicitly.
-type StellarProfileGenerator = (seed: string | number) => import("@/lib/landing-stars/types").StellarProfile;
+type StellarProfileOptions =
+  import("@/lib/landing-stars/stellar-profile").GenerateStellarProfileOptions;
+type StellarProfileGenerator = (
+  seed: string | number,
+  options?: StellarProfileOptions,
+) => import("@/lib/landing-stars/types").StellarProfile;
 
 const MAX_CACHED_SECTORS = 512;
 
@@ -89,15 +93,12 @@ export class StarCatalogue {
       const baseMag = 5.0 - 2.5 * Math.log10(Math.max(luminosity, 0.0001));
       const apparentMagnitude = Math.max(0, Math.min(6.5, baseMag + starRng.range(-0.5, 0.5)));
 
-      const nameRng = new SeededRNG(starSeed + 1);
-      const name = generateStarName(nameRng, apparentMagnitude);
-
       stars.push({
         id: `cat-${this.cfg.galaxySeed}-${key}-${i}`,
         wx: sectorWx,
         wy: sectorWy,
         profile,
-        name,
+        name: null,
         apparentMagnitude,
         depthLayer,
       });
