@@ -1,7 +1,7 @@
 ---
 Milestone: M02 — Constellation 2D refactor
 Status: In progress
-Claim: claude/m02-camera-dive (Phase 2) — Phase 0 + 0.3 + 1 landed
+Claim: claude/m02-closeup-archetype (Phase 3 scaffold) — Phases 0/0.3/1/2 landed
 Last updated: 2026-04-18 by claude-opus-4-7
 Vision pillar: Cosmos
 ADR: docs/adr/0006-constellation-design-2d-primary.md
@@ -122,6 +122,63 @@ landing.
 `pnpm exec tsc --noEmit` → exit 0. `pnpm lint` → 0 errors (pre-existing
 warnings only).
 
+**Phase 3 — Closeup shader tier with archetype branches (scaffold +
+first two archetypes ✅, 2026-04-18 by claude-opus-4-7):**
+- 3.1 ✅ — `closeup` tier in `landing-star-lod.ts` was already a first-class
+  entry in `LandingStarRenderBatches` and `tierCounts`. This PR adds the
+  missing unit tests: the dive focus target is promoted regardless of
+  zoom/brightness, and it lands in `batches.closeup` without being double-
+  bucketed into the sprite batch.
+- 3.2 ✅ — Architecture decision recorded: **one uber-shader with an
+  archetype attribute, not a family of specialised programs.** A new
+  `aArchetype` 1-float-per-vertex attribute is appended to the existing
+  combined buffer in `landing-starfield-webgl.tsx`. The shader reads it
+  as a `vArchetype` varying and branches on integer ids defined in
+  `STAR_VISUAL_ARCHETYPE_IDS` (`apps/metis-web/lib/landing-stars/star-visual-archetype.ts`).
+  The ids are an ABI between the GPU shader and the CPU attribute packer
+  (`fillStarAttributes`) and are covered by a dedicated unit test that
+  asserts uniqueness, non-negativity, integer-ness, and that
+  `main_sequence` is 0 so the default path is the baseline. The
+  archetype attribute is *only consulted on the closeup tier*
+  (`vTier > 2.5`) — ambient/point/sprite/hero rendering stays untouched,
+  so Phase 3 cannot regress the galaxy view.
+- 3.3 ✅ **(first two archetypes only):**
+  - `main_sequence` — baseline. The closeup branch is a no-op; output is
+    bit-identical to the pre-Phase-3 renderer once the attribute is
+    omitted or pinned to 0.
+  - `pulsar` — ~3 Hz size pulsation (vertex: `sin(uTime * 18.85) * 0.18`),
+    tightened halo (halo alpha × 0.72, core alpha × 1.35), and sharpened
+    diffraction rays (×1.9 boost + steeper exp falloff) so the Bayer
+    spikes read as lighthouse beams. Pulsation also modulates final
+    alpha so spikes breathe with the size beat.
+  - Remaining 10 archetypes (`quasar`, `brown_dwarf`, `red_giant`,
+    `binary`, `nebula`, `black_hole`, `comet`, `constellation`,
+    `variable`, `wolf_rayet`) are **deferred to follow-up slices** per
+    ADR 0006 "one PR per archetype is fine" guidance. Scaffold is
+    ready; each archetype can ship as a short PR that adds its id
+    branches in the vertex/fragment shader without buffer-layout
+    churn.
+- 3.4 ✅ — Render-plan tests assert the closeup tier wiring. Shader-side
+  archetype effect visual tests are intentionally out of scope (vitest
+  runs in jsdom, no WebGL context). Plumbing the render params through
+  the attribute encoding is test-covered on the CPU side via
+  `getStarVisualArchetypeId`.
+
+**Verification:** `pnpm test` → 241 passed, 10 skipped, 0 failed (up from
+216). `pnpm exec tsc --noEmit` → exit 0. `pnpm exec eslint` on touched
+files → 0 errors, 0 warnings.
+
+**Open Phase 3 items for future slices:**
+- Mobile perf ceiling number (ADR 0006 open question, Phase 3 DoD):
+  still unmeasured. With the uber-shader approach the hot path is a
+  handful of constant-time branches per fragment; should be cheap on
+  mobile but needs a real device pass.
+- CPU-side `visualArchetype` was not previously read by the renderer;
+  now it is. `StellarProfile` has made `visualArchetype` a required
+  field since Phase 0, so no additional plumbing was needed — this
+  is flagged for the next agent only if they find a star path that
+  builds a profile without going through `generateStellarProfile`.
+
 ## Next up
 
 - **Phase 1.4 wiring for individual landmark stars** (follow-up): today
@@ -130,15 +187,15 @@ warnings only).
   follow-up phase should decide where per-star labels appear (likely
   Phase 4 Orbital Observatory when faculty stars become individually
   inspectable).
-- **Phase 3** can now start (closeup shader tier with archetype branches).
-  Two enabling pieces are in: (a) real archetypes flow from user-tagged
-  content via `deriveUserStarContentType`, and (b) the dive focus uniforms
-  on `landing-starfield-webgl.tsx` (`uFocusCenter`, `uFocusStrength`,
-  `uFocusRadius`, `uFocusFalloff`) sit on the right side of the shader
-  for archetype-specific effects to build on. Revisit the
-  `deriveUserStarContentType` inference table if user research surfaces a
-  richer content-type signal on `UserStar` (e.g. an explicit `contentType`
-  field from the backend).
+- **Phase 3 follow-up archetypes** — 10 remaining archetypes can land
+  incrementally. Suggested priority (demo-value first): `nebula`,
+  `black_hole`, `comet`, `quasar`, `red_giant`, `binary`,
+  `brown_dwarf`, `variable`, `wolf_rayet`, `constellation`. Each PR
+  should touch only the vertex/fragment branch blocks marked by
+  archetype id and add one render-plan param test. No buffer-layout
+  changes needed.
+- **Phase 4 Orbital Observatory** — unblocked by Phases 0+1+2+3 scaffold.
+  Suggested claim: `claude/m02-orbital-observatory`.
 
 ## Blockers
 

@@ -13,6 +13,8 @@ export type {
 export {
   CONTENT_TYPE_ARCHETYPE_MAP,
   DEFAULT_VISUAL_ARCHETYPE,
+  STAR_VISUAL_ARCHETYPE_IDS,
+  getStarVisualArchetypeId,
   selectStarVisualArchetype,
 } from "./star-visual-archetype";
 export type { GenerateStellarProfileOptions } from "./stellar-profile";

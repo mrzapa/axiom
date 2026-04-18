@@ -66,4 +66,28 @@ describe("landing star LOD", () => {
     expect(plan.batches.sprite[0].id).toBe("hero-3");
     expect(plan.tierCounts).toEqual({ closeup: 0, hero: 2, point: 1, sprite: 1 });
   });
+
+  it("promotes the dive focus target to closeup regardless of zoom or brightness", () => {
+    const dim = makeStar({ id: "focus", apparentSize: 0.4, brightness: 0.05 });
+
+    expect(classifyLandingStarRenderTier(dim, 0, undefined, "focus")).toBe("closeup");
+    expect(classifyLandingStarRenderTier(dim, 1024, undefined, "focus")).toBe("closeup");
+  });
+
+  it("routes the closeup star into its own batch without demoting it", () => {
+    const plan = buildLandingStarRenderPlan(
+      [
+        makeStar({ id: "focus", apparentSize: 0.4, brightness: 0.05 }),
+        makeStar({ id: "neighbour", apparentSize: 2.6, brightness: 0.4 }),
+      ],
+      DEFAULT_LANDING_STAR_LOD_THRESHOLDS.spriteZoomFactor,
+      undefined,
+      "focus",
+    );
+
+    expect(plan.batches.closeup).toHaveLength(1);
+    expect(plan.batches.closeup[0].id).toBe("focus");
+    expect(plan.tierCounts.closeup).toBe(1);
+    expect(plan.batches.sprite.some((s) => s.id === "focus")).toBe(false);
+  });
 });

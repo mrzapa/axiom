@@ -62,3 +62,36 @@ export function selectStarVisualArchetype(
   }
   return CONTENT_TYPE_ARCHETYPE_MAP[contentType] ?? DEFAULT_VISUAL_ARCHETYPE;
 }
+
+/**
+ * Stable integer encoding of `StarVisualArchetype` for passing the value
+ * through a WebGL vertex attribute (floats only). Renderers must branch on
+ * the archetype using these exact IDs — they are an ABI between the GPU
+ * shader (`landing-starfield-webgl.tsx`) and the CPU attribute packer.
+ *
+ * `main_sequence` is 0 so an unset / default archetype naturally falls back
+ * to the baseline path.
+ */
+export const STAR_VISUAL_ARCHETYPE_IDS: Record<StarVisualArchetype, number> = {
+  main_sequence: 0,
+  pulsar: 1,
+  quasar: 2,
+  brown_dwarf: 3,
+  red_giant: 4,
+  binary: 5,
+  nebula: 6,
+  black_hole: 7,
+  comet: 8,
+  constellation: 9,
+  variable: 10,
+  wolf_rayet: 11,
+};
+
+export function getStarVisualArchetypeId(
+  archetype: StarVisualArchetype | null | undefined,
+): number {
+  if (archetype == null) {
+    return STAR_VISUAL_ARCHETYPE_IDS[DEFAULT_VISUAL_ARCHETYPE];
+  }
+  return STAR_VISUAL_ARCHETYPE_IDS[archetype] ?? STAR_VISUAL_ARCHETYPE_IDS[DEFAULT_VISUAL_ARCHETYPE];
+}

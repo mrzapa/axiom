@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CONTENT_TYPE_ARCHETYPE_MAP,
   DEFAULT_VISUAL_ARCHETYPE,
+  STAR_VISUAL_ARCHETYPE_IDS,
+  getStarVisualArchetypeId,
   selectStarVisualArchetype,
   type StarContentType,
   type StarVisualArchetype,
@@ -53,6 +55,44 @@ describe("selectStarVisualArchetype", () => {
 
     for (const contentType of contentTypes) {
       expect(CONTENT_TYPE_ARCHETYPE_MAP[contentType]).toBeDefined();
+    }
+  });
+});
+
+describe("getStarVisualArchetypeId", () => {
+  it("assigns main_sequence the id 0 so defaults fall back to baseline", () => {
+    expect(STAR_VISUAL_ARCHETYPE_IDS.main_sequence).toBe(0);
+    expect(getStarVisualArchetypeId(null)).toBe(0);
+    expect(getStarVisualArchetypeId(undefined)).toBe(0);
+  });
+
+  it("assigns a unique integer to every archetype", () => {
+    const archetypes: StarVisualArchetype[] = [
+      "main_sequence",
+      "pulsar",
+      "quasar",
+      "brown_dwarf",
+      "red_giant",
+      "binary",
+      "nebula",
+      "black_hole",
+      "comet",
+      "constellation",
+      "variable",
+      "wolf_rayet",
+    ];
+    const ids = archetypes.map(getStarVisualArchetypeId);
+    expect(new Set(ids).size).toBe(archetypes.length);
+    for (const id of ids) {
+      expect(Number.isInteger(id)).toBe(true);
+      expect(id).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("round-trips via the map", () => {
+    const archetypes = Object.keys(STAR_VISUAL_ARCHETYPE_IDS) as StarVisualArchetype[];
+    for (const archetype of archetypes) {
+      expect(getStarVisualArchetypeId(archetype)).toBe(STAR_VISUAL_ARCHETYPE_IDS[archetype]);
     }
   });
 });

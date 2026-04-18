@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { MutableRefObject } from "react";
+import { getStarVisualArchetypeId } from "@/lib/landing-stars/star-visual-archetype";
 import type { LandingWebglStar, LandingStarfieldFrame, LandingStarRenderTier } from "./landing-starfield-webgl.types";
 
 export type { LandingWebglStar, LandingStarfieldFrame } from "./landing-starfield-webgl.types";
@@ -18,6 +19,7 @@ attribute vec4 aColorB;
 attribute vec4 aColorC;
 attribute vec4 aShape;
 attribute vec2 aTwinkle;
+attribute float aArchetype;
 
 uniform float uDpr;
 uniform float uTime;
@@ -36,6 +38,8 @@ varying float vTier;
 varying float vTwinkle;
 varying float vFocusDim;
 varying float vFocusBlur;
+varying float vArchetype;
+varying float vArchetypePulse;
 varying vec3 vAccentColor;
 varying vec3 vCoreColor;
 varying vec3 vHaloColor;
@@ -60,7 +64,16 @@ void main() {
   float dim = 1.0 - falloff * 0.85;
   float blur = 1.0 + falloff * 0.6;
 
-  gl_PointSize = max(1.0, aShape.z * uDpr * tierBoost * heroGlow * twinkle * zoomSizeScale * blur);
+  // Archetype branches only fire for the closeup (focused) star. Other
+  // tiers ignore archetype so point / sprite / hero rendering stays
+  // untouched.
+  // Pulsar (id 1): ~3 Hz size pulsation on top of twinkle.
+  float archetypePulse = 1.0;
+  if (isFocused > 0.5 && aArchetype > 0.5 && aArchetype < 1.5) {
+    archetypePulse = 1.0 + sin(uTime * 18.85) * 0.18;
+  }
+
+  gl_PointSize = max(1.0, aShape.z * uDpr * tierBoost * heroGlow * twinkle * zoomSizeScale * blur * archetypePulse);
 
   vAddable = aColorA.w;
   vBloom = aColorC.w;
@@ -71,6 +84,8 @@ void main() {
   vTwinkle = twinkle;
   vFocusDim = dim;
   vFocusBlur = falloff;
+  vArchetype = aArchetype;
+  vArchetypePulse = archetypePulse;
   vAccentColor = aColorA.rgb;
   vCoreColor = aColorB.rgb;
   vHaloColor = aColorC.rgb;
@@ -87,6 +102,8 @@ varying float vTier;
 varying float vTwinkle;
 varying float vFocusDim;
 varying float vFocusBlur;
+varying float vArchetype;
+varying float vArchetypePulse;
 varying vec3 vAccentColor;
 varying vec3 vCoreColor;
 varying vec3 vHaloColor;
@@ -122,10 +139,18 @@ void main() {
     color += vAccentColor * accent;
   }
 
+  // Archetype: pulsar (id 1, closeup only) sharpens diffraction rays so the
+  // twin spikes read as lighthouse beams. Baseline main_sequence (id 0) and
+  // all other archetypes keep the standard diffraction strength.
+  bool isCloseup = vTier > 2.5;
+  bool isPulsar = isCloseup && vArchetype > 0.5 && vArchetype < 1.5;
+  float diffractionBoost = isPulsar ? 1.9 : 1.0;
+  float diffractionFalloff = isPulsar ? 19.0 : 13.0;
+
   if (vDiffraction > 0.02) {
-    float crossX = exp(-abs(uv.x) * 13.0);
-    float crossY = exp(-abs(uv.y) * 13.0);
-    float diffraction = max(crossX, crossY) * (1.0 - dist) * vDiffraction * (0.18 + tierBlend * 0.2);
+    float crossX = exp(-abs(uv.x) * diffractionFalloff);
+    float crossY = exp(-abs(uv.y) * diffractionFalloff);
+    float diffraction = max(crossX, crossY) * (1.0 - dist) * vDiffraction * (0.18 + tierBlend * 0.2) * diffractionBoost;
     color += vAccentColor * diffraction;
   }
 
@@ -133,9 +158,16 @@ void main() {
     color = mix(color, vec3(0.95, 0.82, 0.55), 0.12);
   }
 
+  // Pulsar tightens the visible disc: halo contribution dims, core brightens,
+  // and the ~3 Hz size pulsation from the vertex stage also modulates alpha
+  // so the spikes breathe in sync with the size beat.
+  float haloScale = isPulsar ? 0.72 : 1.0;
+  float coreScale = isPulsar ? 1.35 : 1.0;
+  float pulseAlpha = isPulsar ? (0.85 + vArchetypePulse * 0.3) : 1.0;
+
   float alphaBase = (0.18 + vBrightness * 0.46) * vTwinkle;
-  float alpha = haloMask * alphaBase + coreMask * 0.28 + rimMask * 0.08;
-  alpha = clamp(alpha * (0.9 + vBloom * 0.12), 0.0, 1.0);
+  float alpha = haloMask * alphaBase * haloScale + coreMask * 0.28 * coreScale + rimMask * 0.08;
+  alpha = clamp(alpha * (0.9 + vBloom * 0.12) * pulseAlpha, 0.0, 1.0);
 
   // Depth-of-field: ambient stars dim and soften outside the focus radius.
   // vFocusBlur ∈ [0,1]; larger values shift alpha away from the core toward the halo.
@@ -206,10 +238,11 @@ function fillStarAttributes(frame: LandingStarfieldFrame) {
   const colorC = new Float32Array(starCount * 4);
   const shape = new Float32Array(starCount * 4);
   const twinkle = new Float32Array(starCount * 2);
+  const archetype = new Float32Array(starCount);
 
   for (let index = 0; index < starCount; index += 1) {
     const star = stars[index];
-    const { palette, stellarType, visual } = star.profile;
+    const { palette, stellarType, visual, visualArchetype } = star.profile;
     const pointSize = getPointSize(star);
     const normalizedAccent = normalizeRgb(palette.accent);
     const normalizedCore = normalizeRgb(palette.core);
@@ -240,9 +273,11 @@ function fillStarAttributes(frame: LandingStarfieldFrame) {
     shape[packedIndex + 3] = getTierValue(star.renderTier);
     twinkle[twinkleIndex] = visual.twinklePhase;
     twinkle[twinkleIndex + 1] = visual.twinkleSpeed * 500;
+    archetype[index] = getStarVisualArchetypeId(visualArchetype);
   }
 
   return {
+    archetype,
     colorA,
     colorB,
     colorC,
@@ -335,6 +370,7 @@ export function LandingStarfieldWebgl({ className, frameRef }: LandingStarfieldW
       geometry.setAttribute("aColorC", new THREE.BufferAttribute(attributes.colorC, 4));
       geometry.setAttribute("aShape", new THREE.BufferAttribute(attributes.shape, 4));
       geometry.setAttribute("aTwinkle", new THREE.BufferAttribute(attributes.twinkle, 2));
+      geometry.setAttribute("aArchetype", new THREE.BufferAttribute(attributes.archetype, 1));
       geometry.computeBoundingSphere();
     };
 
