@@ -1,7 +1,7 @@
 ---
 Milestone: M02 — Constellation 2D refactor
 Status: In progress
-Claim: claude/m02-archetypes-nebula-bh-rg (Phase 3: all 12 archetypes) — Phases 0/0.3/1/2/3-scaffold+pulsar landed
+Claim: claude/m02-orbital-observatory (Phase 4) — Phases 0/1/2/3 landed
 Last updated: 2026-04-18 by claude-opus-4-7
 Vision pillar: Cosmos
 ADR: docs/adr/0006-constellation-design-2d-primary.md
@@ -70,8 +70,27 @@ aligns the constellation with the vision.
 no new errors or warnings (existing `page.tsx` pre-existing warnings are
 unchanged).
 
-**Phase 1 — Tiered naming (in progress, 2026-04-18 by claude-opus-4-7):**
-See the Phase 1 task boxes below for per-task status as the work lands.
+**Phase 1 — Tiered naming (done modulo Phase 4 follow-up, 2026-04-18 by claude-opus-4-7):**
+- 1.1 ✅ — `generateStarName` accepts `nameTier: "field" | "landmark" | "user"`;
+  field → null, landmark → classical name, user → caller-supplied.
+  (`apps/metis-web/lib/star-catalogue/star-name-generator.ts:17-74`)
+- 1.2 ✅ — `GeneratedStarName` returns `{ name, kind }` where
+  `NameKind = "classical" | "user" | null`. `CatalogueStar.name` widened to
+  `string | null`.
+- 1.3 ⚠️ **Deferred to Phase 4.** Faculty constellation stars render as
+  anchor + edges in the starfield today; they are not individual
+  `CatalogueStar` rows, so `generateStarName` is never called for them.
+  Per-star `landmark` wiring requires making faculty stars individually
+  inspectable — the Orbital Observatory scope. User stars: legacy fallback
+  still uses `generateClassicalDesignation` at `apps/metis-web/app/page.tsx:4122`;
+  explicit `user`-tier wiring rolls in with Observatory's user-star surface.
+- 1.4 ⚠️ **Deferred to Phase 4.** Field-star hover suppression is in place
+  (`page.tsx:4410` gates the catalogue tooltip on non-null `catalogueName`).
+  Per-landmark classical-name tooltip with "Bayer/Flamsteed convention" footer
+  and user-name bold styling roll in with the Observatory hover surface.
+- 1.5 ✅ — 16 unit tests in
+  `apps/metis-web/lib/star-catalogue/__tests__/star-name-generator.test.ts`
+  cover all tier branches, determinism, and error cases.
 
 **Errata — 8 vs 11 faculty landmarks:** ADR 0006 line 103 and the Phase 1
 section below say "eight faculty landmarks (Perseus, Auriga, Draco,
