@@ -86,6 +86,7 @@ import {
   STAR_FOCUS_SETTLE_TIMEOUT_MS,
 } from "@/lib/constellation-focus";
 import {
+  deriveStarAnnotations,
   generateStellarProfile,
   type StarContentType,
   type StellarProfile,
@@ -2762,6 +2763,18 @@ export default function Home() {
         );
 
         projectedUserStarTargets.push(target);
+        const cachedStellarProfile = getCachedStellarProfile(
+          star.id,
+          deriveUserStarContentType(star),
+        );
+        // Phase 6 — layer user-star annotations (halo / ring / satellites)
+        // onto the stellar profile copy used for rendering. The cache
+        // entry itself stays profile-pure; we spread a shallow copy
+        // so successive frames do not accumulate stale annotations.
+        const userStarAnnotations = deriveStarAnnotations(star);
+        const stellarProfileForRender: StellarProfile = userStarAnnotations
+          ? { ...cachedStellarProfile, annotations: userStarAnnotations }
+          : cachedStellarProfile;
         projectedUserStarRenderState.set(star.id, {
           attachmentCount: getStarAttachmentCount(star),
           dragging: dragStateRef.current?.starId === star.id && dragStateRef.current.moved,
@@ -2772,7 +2785,7 @@ export default function Home() {
           ringCount: getStageRingCount(star.stage),
           selected: currentSelectedStarId === star.id,
           star,
-          stellarProfile: getCachedStellarProfile(star.id, deriveUserStarContentType(star)),
+          stellarProfile: stellarProfileForRender,
           target,
         });
       });
@@ -3812,10 +3825,21 @@ export default function Home() {
             const focusedContentType = focusedUserStar
               ? deriveUserStarContentType(focusedUserStar)
               : null;
-            starDiveFocusProfileRef.current = getCachedStellarProfile(
+            const focusedProfile = getCachedStellarProfile(
               target.id,
               focusedContentType,
             );
+            // Phase 6 — attach user-star annotations to the dive focus
+            // profile so the closeup-tier shader sees halo / ring /
+            // satellite attributes when the focused target is a user
+            // star. Catalogue fallback stars have no user metadata, so
+            // annotations stay undefined.
+            const focusedAnnotations = focusedUserStar
+              ? deriveStarAnnotations(focusedUserStar)
+              : undefined;
+            starDiveFocusProfileRef.current = focusedAnnotations
+              ? { ...focusedProfile, annotations: focusedAnnotations }
+              : focusedProfile;
             starDiveFocusNameRef.current = visibleStarNameMap.get(target.id) ?? null;
           }
         }
