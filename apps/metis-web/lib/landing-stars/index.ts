@@ -68,3 +68,5 @@ export {
   findClosestLandingStarHitTarget,
   queryLandingStarSpatialHash,
 } from "./landing-star-spatial-index";
+export type { FocusedUserStarWebglEntry } from "./star-webgl-injection";
+export { injectFocusedUserStarIntoWebglBatch } from "./star-webgl-injection";

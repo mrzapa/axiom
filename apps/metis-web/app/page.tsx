@@ -93,6 +93,7 @@ import {
 } from "@/lib/landing-stars";
 import { deriveUserStarContentType } from "@/lib/user-star-content-type";
 import { buildLandingStarRenderPlan } from "@/lib/landing-stars/landing-star-lod";
+import { injectFocusedUserStarIntoWebglBatch, type FocusedUserStarWebglEntry } from "@/lib/landing-stars/star-webgl-injection";
 import {
   getLandingStarInteractionHitRadius,
   getLandingStarSelectableApparentSize,
@@ -2317,6 +2318,11 @@ export default function Home() {
     let lastVisibleStarfieldZoom = Number.NaN;
     let lastVisibleStarfieldX = Number.NaN;
     let lastVisibleStarfieldY = Number.NaN;
+    // Phase 6 follow-up — when the focused user-star id changes we must
+    // rebuild the WebGL batch so the new (or cleared) user sprite enters
+    // the geometry buffer. Camera/zoom/viewport churn already triggers
+    // a refresh; this tracks dive-focus transitions independently.
+    let lastVisibleStarfieldFocusedUserStarId: string | null = null;
     let lastVisibleWorldZoom = Number.NaN;
     let visibleWorldStars: WorldStarData[] = [];
     const visibleStarNameMap = new Map<string, string | null>();
@@ -2427,6 +2433,51 @@ export default function Home() {
         }
       }
       return nearest;
+    }
+
+    /**
+     * Phase 6 follow-up — build the closeup-tier entry for the focused
+     * user star (if any) so its annotations render via the WebGL
+     * uber-shader. Returns `null` when the dive is inactive or the
+     * focused target is a catalogue star (catalogue stars already flow
+     * through `visibleWorldStars` and have no annotations). The focus
+     * state refs (`starDiveFocusedStarIdRef`, `starDiveFocusProfileRef`,
+     * `starDiveFocusViewRef`) are populated earlier in the render tick
+     * before `refreshVisibleStars` runs, so we always read fresh values.
+     */
+    function buildFocusedUserStarWebglEntry(): FocusedUserStarWebglEntry | null {
+      const focusedId = starDiveFocusedStarIdRef.current;
+      if (!focusedId) {
+        return null;
+      }
+      const focusedUserStar = userStarsRef.current.find((star) => star.id === focusedId);
+      if (!focusedUserStar) {
+        // Catalogue-star focus — already in the batch, no injection needed.
+        return null;
+      }
+      const focusProfile = starDiveFocusProfileRef.current;
+      const focusView = starDiveFocusViewRef.current;
+      if (!focusProfile || !focusView) {
+        return null;
+      }
+      // Use the dive-view screen projection (fresh as of this tick) so
+      // the WebGL sprite tracks the camera auto-drift exactly. The size
+      // mirrors the focused-catalogue-star boost used on line ~2641 so
+      // closeup-tier scaling matches whether the target is a user star
+      // or a catalogue star.
+      const focusStr = starDiveFocusStrengthRef.current;
+      const baseSize = Math.max(1, focusedUserStar.size);
+      const apparentSize = focusStr > 0
+        ? baseSize + (H * 0.6 - baseSize) * focusStr
+        : baseSize;
+      return {
+        id: focusedId,
+        x: focusView.screenX,
+        y: focusView.screenY,
+        apparentSize,
+        brightness: 1,
+        profile: focusProfile,
+      };
     }
 
     function refreshVisibleStars(backgroundCamera: BackgroundCameraState) {
@@ -2668,7 +2719,7 @@ export default function Home() {
         ...renderPlan.batches.hero,
         ...renderPlan.batches.closeup,
       ];
-      const nextWebglStars: LandingWebglStar[] = flattenedRenderPlan.map((star) => ({
+      const catalogueWebglStars: LandingWebglStar[] = flattenedRenderPlan.map((star) => ({
         addable: star.addable,
         apparentSize: star.apparentSize,
         brightness: star.brightness,
@@ -2678,6 +2729,17 @@ export default function Home() {
         x: star.x,
         y: star.y,
       }));
+      // Phase 6 follow-up — inject the focused user star into the batch
+      // so halo / ring / satellite annotations render on the real WebGL
+      // sprite during a Star Dive. Catalogue stars have no annotations,
+      // so the field / landmark tiers stay visually identical; only the
+      // closeup tier changes when a user star is focused.
+      const focusedUserStarEntry = buildFocusedUserStarWebglEntry();
+      const nextWebglStars: LandingWebglStar[] = injectFocusedUserStarIntoWebglBatch(
+        catalogueWebglStars,
+        focusedUserStarEntry,
+      );
+      lastVisibleStarfieldFocusedUserStarId = focusedUserStarEntry?.id ?? null;
       const addableTargets = landingRenderableStars.filter((star) => star.addable);
 
       // Hash ALL renderable stars for interaction (hover/click), not just addable ones
@@ -3943,13 +4005,23 @@ export default function Home() {
       }
 
       syncConstellationLayout(backgroundCamera);
+      // Phase 6 follow-up — rebuild the WebGL batch whenever the focused
+      // user-star transition (acquire / release / switch) changes which
+      // user star needs to be injected. Catalogue-star focus is already
+      // handled via the normal camera-drift refresh path.
+      const currentFocusedUserStarId = (() => {
+        const focusedId = starDiveFocusedStarIdRef.current;
+        if (!focusedId) return null;
+        return userStarsRef.current.some((star) => star.id === focusedId) ? focusedId : null;
+      })();
       const shouldRefreshVisibleStars =
         lastVisibleStarfieldWidth !== W
         || lastVisibleStarfieldHeight !== H
         || lastVisibleStarfieldRevision !== starfieldRevisionRef.current
         || Math.abs(lastVisibleStarfieldZoom - backgroundCamera.zoomFactor) > 0.0005
         || Math.abs(lastVisibleStarfieldX - backgroundCamera.x) > STARFIELD_CAMERA_REBUILD_EPSILON
-        || Math.abs(lastVisibleStarfieldY - backgroundCamera.y) > STARFIELD_CAMERA_REBUILD_EPSILON;
+        || Math.abs(lastVisibleStarfieldY - backgroundCamera.y) > STARFIELD_CAMERA_REBUILD_EPSILON
+        || lastVisibleStarfieldFocusedUserStarId !== currentFocusedUserStarId;
       if (shouldRefreshVisibleStars) {
         refreshVisibleStars(backgroundCamera);
 
