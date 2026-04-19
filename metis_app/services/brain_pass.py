@@ -327,44 +327,50 @@ def _audited_snapshot_download(**snapshot_kwargs: Any) -> str:
     # future airplane-mode toggle applies here too.
     spec = classify_host(host)
     if is_provider_blocked(spec.key, settings):
-        try:
-            store.append(
-                _build_snapshot_event(
-                    host=host,
-                    path_prefix=path_prefix,
-                    latency_ms=None,
-                    blocked=True,
-                    status_code=None,
-                ),
-            )
-        except Exception:  # noqa: BLE001 -- audit must never crash caller
-            _LOG.warning(
-                "network_audit: failed to append blocked snapshot event for %s",
-                repo_id,
-                exc_info=True,
-            )
+        # store may be None if runtime.get_default_store() caught a SQLite
+        # construction error (read-only FS, invalid path). Silently skip
+        # event recording; the NetworkBlockedError still surfaces the
+        # block to the caller.
+        if store is not None:
+            try:
+                store.append(
+                    _build_snapshot_event(
+                        host=host,
+                        path_prefix=path_prefix,
+                        latency_ms=None,
+                        blocked=True,
+                        status_code=None,
+                    ),
+                )
+            except Exception:  # noqa: BLE001 -- audit must never crash caller
+                _LOG.warning(
+                    "network_audit: failed to append blocked snapshot event for %s",
+                    repo_id,
+                    exc_info=True,
+                )
         raise NetworkBlockedError(
             _HF_HUB_PROVIDER_KEY,
             "huggingface_hub blocked by audit kill switch",
         )
 
     # --- Pre-call event --------------------------------------------------
-    try:
-        store.append(
-            _build_snapshot_event(
-                host=host,
-                path_prefix=path_prefix,
-                latency_ms=None,
-                blocked=False,
-                status_code=None,
-            ),
-        )
-    except Exception:  # noqa: BLE001 -- audit must never crash caller
-        _LOG.warning(
-            "network_audit: failed to append pre-call snapshot event for %s",
-            repo_id,
-            exc_info=True,
-        )
+    if store is not None:
+        try:
+            store.append(
+                _build_snapshot_event(
+                    host=host,
+                    path_prefix=path_prefix,
+                    latency_ms=None,
+                    blocked=False,
+                    status_code=None,
+                ),
+            )
+        except Exception:  # noqa: BLE001 -- audit must never crash caller
+            _LOG.warning(
+                "network_audit: failed to append pre-call snapshot event for %s",
+                repo_id,
+                exc_info=True,
+            )
 
     # --- Library call + post-call event ---------------------------------
     start = time.perf_counter()
@@ -376,22 +382,23 @@ def _audited_snapshot_download(**snapshot_kwargs: Any) -> str:
         return result
     finally:
         latency_ms = int((time.perf_counter() - start) * 1000)
-        try:
-            store.append(
-                _build_snapshot_event(
-                    host=host,
-                    path_prefix=path_prefix,
-                    latency_ms=latency_ms,
-                    blocked=False,
-                    status_code=status_code,
-                ),
-            )
-        except Exception:  # noqa: BLE001 -- audit must never crash caller
-            _LOG.warning(
-                "network_audit: failed to append post-call snapshot event for %s",
-                repo_id,
-                exc_info=True,
-            )
+        if store is not None:
+            try:
+                store.append(
+                    _build_snapshot_event(
+                        host=host,
+                        path_prefix=path_prefix,
+                        latency_ms=latency_ms,
+                        blocked=False,
+                        status_code=status_code,
+                    ),
+                )
+            except Exception:  # noqa: BLE001 -- audit must never crash caller
+                _LOG.warning(
+                    "network_audit: failed to append post-call snapshot event for %s",
+                    repo_id,
+                    exc_info=True,
+                )
 
 
 def _download_tribev2_snapshot(
