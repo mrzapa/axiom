@@ -49,7 +49,7 @@ void main() {
 
 // Instance buffer stride: 8 floats = screen_x, screen_y, point_size, pad, r, g, b, brightness
 const FLOATS_PER_STAR = 8;
-const MAX_VISIBLE_STARS = 15_000;
+export const MAX_VISIBLE_STARS = 15_000;
 
 /**
  * Frustum-cull margin in pixels. Point sprites can extend beyond their
@@ -73,6 +73,7 @@ export class StarCatalogueRenderer {
   private aColor: number;
   private aBrightness: number;
   private uResolution: WebGLUniformLocation;
+  private disposed = false;
 
   constructor(canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", {
@@ -152,6 +153,7 @@ export class StarCatalogueRenderer {
     canvasW: number,
     canvasH: number,
   ): void {
+    if (this.disposed) return;
     const { gl, instanceData } = this;
 
     gl.viewport(0, 0, canvasW, canvasH);
@@ -219,6 +221,8 @@ export class StarCatalogueRenderer {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     const { gl } = this;
     gl.deleteBuffer(this.instanceBuffer);
     gl.deleteVertexArray(this.vao);
