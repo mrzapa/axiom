@@ -20,4 +20,3 @@ export {
 export { sampleGalaxyPosition, galaxyDensityFactor } from "./galaxy-distribution";
 export type { GalaxyDistributionConfig } from "./galaxy-distribution";
 export { StarCatalogue } from "./star-catalogue";
-export { StarCatalogueRenderer, MAX_VISIBLE_STARS } from "./star-catalogue-renderer";
