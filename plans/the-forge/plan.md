@@ -200,7 +200,7 @@ is to give each a card, a description, a toggle, and a home.
 | **Arrow artifact runtime** | 🔧 | `enable_arrow_artifacts`, `enable_arrow_artifact_runtime` (lines 184–185) | `metis_app/services/artifact_converter.py` | Hidden in settings |
 | **Agent Lightning** | 🧠 | `agent_lightning_enabled` (line 190) | `metis_app/services/runtime_resolution.py` | **Audit** — may be stub |
 | **Semantic chunking** | 🧠 | `structure_aware_ingestion`, `semantic_layout_ingestion`, `chunk_strategy: "fixed" \| "semantic"` | `metis_app/services/semantic_chunker.py` | Hidden in settings |
-| **Skill library (9 shipped skills)** | 🌱🧠 | `settings["skills"]["enabled"][<id>]` bool | `metis_app/services/skill_repository.py`; YAML frontmatter in `skills/<id>/skill.md` | No surface — silently activated by query modes |
+| **Skill library (9 shipped skills)** | 🌱🧠 | `settings["skills"]["enabled"][<id>]` bool | `metis_app/services/skill_repository.py`; YAML frontmatter in `skills/<id>/SKILL.md` | No surface — silently activated by query modes |
 | **User-submitted technique (post-v1)** | 🌱 | — (new) | — (new; may tie to M13 ingestion) | Phase 4 below |
 
 **The inventory is also a harvest audit.** Before shipping, walk
@@ -354,7 +354,7 @@ VISION paragraph explicitly promises.
   identify which existing technique most closely matches,
   (b) propose settings changes that activate adjacent
   techniques in a new combination, (c) produce a
-  `skills/<id>/skill.md` draft (YAML frontmatter + body)
+  `skills/<id>/SKILL.md` draft (YAML frontmatter + body)
   with `runtime_overrides` that the user reviews and
   activates. This is a conservative scope that delivers the
   *feel* without the impossible scope of "arbitrary code
@@ -378,7 +378,7 @@ accept/reject UI. Cross-user sharing scoped *out*.
   page (second-class to the main technique gallery).
   Each candidate shows: the originating query, convergence
   score, trace excerpt, proposed runtime overrides.
-  Accept → writes a `skills/<id>/skill.md` file + flips
+  Accept → writes a `skills/<id>/SKILL.md` file + flips
   `settings["skills"]["enabled"][id] = true` + calls
   `mark_candidate_promoted(id)`. Reject → just marks
   promoted=1 with a `rejected=1` side column (new column).
@@ -481,7 +481,7 @@ discoverability search, any remote component.
   doesn't need to source that content, just exhibit it.
 - **M06 (Skill self-evolution, Ready)** is the writer of
   skill candidates. Phase 5 is the reader. Specify the
-  `SkillCandidate` → `skills/<id>/skill.md` translator as a
+  `SkillCandidate` → `skills/<id>/SKILL.md` translator as a
   single module (`metis_app/services/skill_promoter.py`?)
   and reference it from both M06's promoter and the Forge's
   accept handler so neither side re-implements the logic.
@@ -608,7 +608,7 @@ ADRs (new):
   the vision ADR. Any Forge decision must pass its smell test.
 - `docs/adr/0006-constellation-design-2d-primary.md` — for
   how Phase 2's technique stars fit the 2D archetype language.
-- `skills/qa-core/skill.md` and `skills/swarm-critique/skill.md`
+- `skills/qa-core/SKILL.md` and `skills/swarm-critique/SKILL.md`
   — two of the nine shipped skills. The Forge must not break
   them; its accept-a-candidate writer must produce the same
   YAML shape.
