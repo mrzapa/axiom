@@ -51,19 +51,49 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _extract_url_and_method(
-    url_or_req: str | urllib.request.Request,
-) -> tuple[str, str]:
-    """Return ``(url, method)`` for either a string or a ``Request`` object.
+def _byte_len(body: Any) -> int | None:
+    """Return ``len(body)`` if the body is a sized type; ``None`` otherwise.
 
-    For a bare string the method defaults to ``"GET"`` (the stdlib
-    default). For a ``Request``, ``get_method()`` returns the correctly
-    uppercased verb, taking into account an explicit ``method=`` kwarg
-    or the presence of a body.
+    Request bodies may be bytes, bytearray, memoryview, str, or an
+    iterable / file-like object per stdlib semantics. Only the sized
+    forms have a knowable outbound size; for iterables we return
+    ``None`` rather than consume them to measure.
+    """
+    if body is None:
+        return None
+    try:
+        return len(body)
+    except TypeError:
+        return None
+
+
+def _extract_call_metadata(
+    url_or_req: str | urllib.request.Request,
+    data: bytes | None,
+) -> tuple[str, str, int | None]:
+    """Return ``(url, method, size_bytes_out)`` for the call.
+
+    For a bare string URL the method is ``"POST"`` if ``data`` is
+    non-``None`` (matching stdlib ``urlopen(url, data=...)`` semantics,
+    which promotes the request to POST), else ``"GET"``. Outbound size
+    is ``len(data)`` when ``data`` is set.
+
+    For a ``Request`` object ``get_method()`` returns the correctly
+    uppercased verb, honouring an explicit ``method=`` kwarg and the
+    implicit-POST-from-body rule. Outbound size resolves by the same
+    rule ``urllib.request.urlopen`` applies: if the caller passes a
+    ``data=`` kwarg it effectively replaces the Request's own body, so
+    the kwarg wins; otherwise we fall back to ``Request.data``.
     """
     if isinstance(url_or_req, urllib.request.Request):
-        return url_or_req.full_url, url_or_req.get_method()
-    return str(url_or_req), "GET"
+        if data is not None:
+            size = _byte_len(data)
+        else:
+            size = _byte_len(url_or_req.data)
+        return url_or_req.full_url, url_or_req.get_method(), size
+
+    method = "POST" if data is not None else "GET"
+    return str(url_or_req), method, _byte_len(data)
 
 
 def _safe_append(store: NetworkAuditStore, event: NetworkAuditEvent) -> None:
@@ -148,7 +178,7 @@ def audited_urlopen(
         NetworkBlockedError: If the destination provider is currently
             blocked by :func:`is_provider_blocked`.
     """
-    url, method = _extract_url_and_method(url_or_req)
+    url, method, size_bytes_out = _extract_call_metadata(url_or_req, data)
     host, path_prefix = sanitize_url(url)
     spec = classify_host(host)
     provider_key = spec.key
@@ -175,7 +205,7 @@ def audited_urlopen(
                     provider_key=provider_key,
                     trigger_feature=trigger_feature,
                     size_bytes_in=None,
-                    size_bytes_out=len(data) if data is not None else None,
+                    size_bytes_out=size_bytes_out,
                     latency_ms=None,
                     status_code=None,
                     user_initiated=user_initiated,
@@ -217,7 +247,7 @@ def audited_urlopen(
                     provider_key=provider_key,
                     trigger_feature=trigger_feature,
                     size_bytes_in=None,
-                    size_bytes_out=len(data) if data is not None else None,
+                    size_bytes_out=size_bytes_out,
                     latency_ms=latency_ms,
                     status_code=status_code,
                     user_initiated=user_initiated,

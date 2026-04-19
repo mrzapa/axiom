@@ -300,6 +300,82 @@ def test_audited_urlopen_accepts_request_object(
     assert events[0].url_path_prefix == "/api"
 
 
+def test_audited_urlopen_infers_post_from_data_kwarg_on_string_url(
+    tmp_store: NetworkAuditStore,
+) -> None:
+    """``urlopen(url_string, data=b'...')`` sends POST; the audit event
+    must record POST too, not the stdlib ``urlopen``-signature default
+    of GET. Caught by Codex review on PR #517."""
+    body = b'{"ping": 1}'
+
+    with patch("urllib.request.urlopen", side_effect=_fake_response(status=201)):
+        audited_urlopen(
+            "https://example.com/api/endpoint",
+            trigger_feature="unit_test",
+            user_initiated=False,
+            data=body,
+            store=tmp_store,
+        )
+
+    events = tmp_store.recent(limit=10)
+    assert len(events) == 1
+    assert events[0].method == "POST"
+    assert events[0].size_bytes_out == len(body)
+
+
+def test_audited_urlopen_records_size_from_request_body(
+    tmp_store: NetworkAuditStore,
+) -> None:
+    """A ``Request(data=...)`` object with no ``data`` kwarg must still
+    record ``size_bytes_out`` from the Request's embedded body. Caught
+    by Codex review on PR #517."""
+    body = b"hello"
+    req = urllib.request.Request(
+        "https://example.com/api",
+        data=body,
+        method="POST",
+    )
+
+    with patch("urllib.request.urlopen", side_effect=_fake_response(status=200)):
+        audited_urlopen(
+            req,
+            trigger_feature="unit_test",
+            user_initiated=True,
+            store=tmp_store,
+        )
+
+    events = tmp_store.recent(limit=10)
+    assert len(events) == 1
+    assert events[0].size_bytes_out == len(body)
+
+
+def test_audited_urlopen_data_kwarg_overrides_request_body_size(
+    tmp_store: NetworkAuditStore,
+) -> None:
+    """When both a ``Request(data=...)`` and a ``data=`` kwarg are
+    passed, stdlib ``urlopen`` uses the kwarg; the recorded size must
+    match the kwarg, not the Request's original body."""
+    req = urllib.request.Request(
+        "https://example.com/api",
+        data=b"aaa",
+        method="POST",
+    )
+    override = b"bbbbb"
+
+    with patch("urllib.request.urlopen", side_effect=_fake_response(status=200)):
+        audited_urlopen(
+            req,
+            trigger_feature="unit_test",
+            user_initiated=True,
+            data=override,
+            store=tmp_store,
+        )
+
+    events = tmp_store.recent(limit=10)
+    assert len(events) == 1
+    assert events[0].size_bytes_out == len(override)
+
+
 # ---------------------------------------------------------------------------
 # Graceful degradation on audit-layer failure
 # ---------------------------------------------------------------------------
