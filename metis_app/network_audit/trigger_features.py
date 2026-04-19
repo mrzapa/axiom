@@ -18,6 +18,8 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 # News ingestion (M13's pipeline — see metis_app/services/news_ingest_service.py)
 # ---------------------------------------------------------------------------
+# RSS uses feedparser.parse() (its own HTTP layer), not stdlib urlopen;
+# this constant is reserved for a Phase 4 feedparser SDK wrap.
 TRIGGER_NEWS_COMET_RSS = "news_comet_rss"
 TRIGGER_NEWS_COMET_HACKERNEWS = "news_comet_hackernews"
 TRIGGER_NEWS_COMET_REDDIT = "news_comet_reddit"
