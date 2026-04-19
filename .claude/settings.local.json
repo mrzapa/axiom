@@ -32,7 +32,13 @@
       "Bash(git -C \"C:/Users/samwe/Documents/metis/.claude/worktrees/admiring-goodall\" ls-files --error-unmatch \"apps/metis-web/components/home/star-dive-overlay.tsx\")",
       "Bash(node_modules/.bin/tsc --noEmit -p apps/metis-web/tsconfig.json)",
       "Bash(\"C:\\\\Users\\\\samwe\\\\Documents\\\\metis\\\\apps\\\\metis-web\\\\node_modules/.bin/tsc\" --noEmit -p \"C:\\\\Users\\\\samwe\\\\Documents\\\\metis\\\\.claude\\\\worktrees\\\\admiring-goodall\\\\apps\\\\metis-web\\\\tsconfig.json\")",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(git fetch *)",
+      "Bash(pnpm exec tsc --noEmit)",
+      "Bash(pnpm -w typecheck)",
+      "Bash(pnpm test)",
+      "mcp__github__pull_request_read",
+      "mcp__github__list_pull_requests"
     ]
   }
 }
