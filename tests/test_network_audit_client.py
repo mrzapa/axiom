@@ -267,10 +267,12 @@ def test_audited_urlopen_latency_is_measured(
 
     events = tmp_store.recent(limit=10)
     assert len(events) == 1
-    # Allow a generous clock-slack envelope — Windows timers are
-    # notoriously jittery and we only care the measurement is live.
+    # 50ms floor (not 90) to absorb Windows timer jitter and CI load
+    # without losing the core "latency > 0" signal. Windows sleep
+    # typically overshoots but rare undershoots on busy runners could
+    # cross a tighter threshold.
     assert events[0].latency_ms is not None
-    assert events[0].latency_ms >= 90
+    assert events[0].latency_ms >= 50
 
 
 def test_audited_urlopen_accepts_request_object(

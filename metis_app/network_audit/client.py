@@ -43,7 +43,7 @@ from metis_app.network_audit.kill_switches import (
 from metis_app.network_audit.providers import classify_host
 from metis_app.network_audit.store import NetworkAuditStore, new_ulid
 
-logger = logging.getLogger("metis_app.network_audit")
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
