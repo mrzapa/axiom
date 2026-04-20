@@ -125,7 +125,12 @@ def is_provider_blocked(
       covers the LLM/embedding/model-hub providers whose
       ``kill_switch_setting_key`` is ``None`` (no legacy per-feature
       flag). Missing keys, ``False`` values, and non-dict map values
-      fall through to the legacy logic without raising.
+      fall through to the legacy logic without raising. **The map is
+      strictly additive** — an entry of ``True`` can add a block, but
+      an entry of ``False`` does NOT remove a block imposed by the
+      legacy ``kill_switch_setting_key`` path. This keeps user intent
+      "I want this provider off" honoured regardless of which settings
+      path expressed it.
     - **Boolean settings keys** (``news_comets_enabled``,
       ``autonomous_research_enabled``) — blocked when the value is
       ``False``.
