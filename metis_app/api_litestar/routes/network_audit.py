@@ -480,6 +480,13 @@ _SYNTHETIC_PROBE_HOSTS: dict[str, tuple[str, str, str]] = {
     "google_fonts": ("fonts.googleapis.com", "/css2", "stdlib_urlopen"),
 }
 
+# Cross-module contract: the frontend audit-panel filters events out of
+# the "real traffic" feed by ``trigger_feature == "synthetic_pass"``.
+# Synthetic events are visible in ``/v1/network-audit/events`` and the
+# SSE stream by design (so the user can inspect them after a probe),
+# but they must not pollute the default live-feed view. If this literal
+# changes, the web client's filter at
+# ``apps/metis-web/app/settings/privacy/page.tsx`` must change in lockstep.
 _SYNTHETIC_TRIGGER_FEATURE = "synthetic_pass"
 
 
