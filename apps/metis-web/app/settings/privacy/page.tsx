@@ -1,24 +1,34 @@
 "use client";
 
 /**
- * Privacy & network audit panel (M17 Phase 5b — read-only UI).
+ * Privacy & network audit panel (M17 Phase 6 — enforcement).
  *
  * Three stacked sections:
  *
  * 1. Airplane mode + outbound-call indicator (last 5 minutes).
- * 2. Per-provider matrix (blocked state, 7-day call counts, last call).
- * 3. Live event feed (SSE-driven, 100-row ring buffer).
+ *    Phase 6: functional toggle writing ``network_audit_airplane_mode``
+ *    via ``updateSettings``. Optimistic UI, rollback on error.
+ * 2. Per-provider matrix with kill-switch toggles. Providers whose
+ *    ``kill_switch_setting_key`` is ``null`` are toggled through the
+ *    new ``provider_block_llm`` settings map; providers with a legacy
+ *    kill switch (e.g. ``news_comets_enabled``) render as disabled
+ *    with an inline note pointing at the controlling setting.
+ * 3. Live event feed (SSE-driven, 100-row ring buffer). Phase 6 hides
+ *    ``trigger_feature="synthetic_pass"`` events by default; a small
+ *    toggle above the feed reveals them when set.
+ *
+ * The page also gains a "Prove offline" button which POSTs to
+ * ``/v1/network-audit/synthetic-pass`` and renders the per-provider
+ * result table in a modal. The synthetic pass emits one probe event
+ * per known provider — with airplane mode on every ``actual_calls``
+ * MUST be ``0``.
  *
  * The page is deliberately plain. This is a trust feature: the privacy
  * audience reads audit panels the way most users read READMEs, so
  * clarity > density > flourish. No gradient backgrounds, no animated
  * glows, no marketing copy. htop, not a dashboard.
  *
- * Toggles, CSV export, and the "prove offline" synthetic-pass button
- * land in Phase 5c. The airplane-mode switch is rendered disabled
- * with a "Phase 5c" note so users can see the intent.
- *
- * See ``plans/network-audit/plan.md`` (Phase 5) and the Litestar
+ * See ``plans/network-audit/plan.md`` (Phase 6) and the Litestar
  * routes in ``metis_app/api_litestar/routes/network_audit.py``.
  */
 
@@ -39,10 +49,15 @@ import {
   fetchNetworkAuditEvents,
   fetchNetworkAuditProviders,
   fetchNetworkAuditRecentCount,
+  fetchSettings,
+  runNetworkAuditSyntheticPass,
   subscribeNetworkAuditStream,
+  updateSettings,
   type NetworkAuditEvent,
   type NetworkAuditProvider,
   type ProviderCategory,
+  type SyntheticPassResponse,
+  type SyntheticProviderResult,
 } from "@/lib/api";
 import { PROVIDER_CATEGORY_LABELS } from "@/lib/network-audit-types";
 
@@ -50,6 +65,7 @@ const RECENT_COUNT_WINDOW_SECONDS = 300;
 const REFRESH_INTERVAL_MS = 10_000;
 const EVENT_BUFFER_CAP = 100;
 const INITIAL_EVENT_FETCH_LIMIT = 50;
+const SYNTHETIC_TRIGGER_FEATURE = "synthetic_pass";
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -93,6 +109,26 @@ function formatBytes(
   return `${fmt(bytesOut)} / ${fmt(bytesIn)}`;
 }
 
+/**
+ * Coerce an arbitrary settings value into a ``Record<string, boolean>``
+ * shape suitable for ``provider_block_llm``. Settings come back as
+ * ``Record<string, unknown>`` from :func:`fetchSettings`; this keeps the
+ * write paths honest about the on-wire shape.
+ */
+function toProviderBlockMap(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const out: Record<string, boolean> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (raw === true) out[key] = true;
+    // Only persist truthy entries — the backend treats a missing key as
+    // "not blocked", which matches the default state and keeps the
+    // settings file small.
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Small leaf components
 // ---------------------------------------------------------------------------
@@ -102,17 +138,6 @@ function CategoryBadge({ category }: { category: ProviderCategory }) {
   return (
     <Badge variant="outline" className="font-normal">
       {label}
-    </Badge>
-  );
-}
-
-function BlockedBadge({ blocked }: { blocked: boolean }) {
-  return (
-    <Badge
-      variant={blocked ? "destructive" : "secondary"}
-      className="font-normal"
-    >
-      {blocked ? "blocked" : "allowed"}
     </Badge>
   );
 }
@@ -136,18 +161,28 @@ interface AirplaneSectionProps {
   recentCount: number;
   recentWindowSeconds: number;
   recentLoading: boolean;
+  airplaneMode: boolean;
+  airplanePending: boolean;
+  airplaneError: string | null;
+  onToggleAirplane: (next: boolean) => void;
 }
 
 function AirplaneSection({
   recentCount,
   recentWindowSeconds,
   recentLoading,
+  airplaneMode,
+  airplanePending,
+  airplaneError,
+  onToggleAirplane,
 }: AirplaneSectionProps) {
   const windowLabel = `${Math.round(recentWindowSeconds / 60)}m`;
   const quiet = recentCount === 0;
-  const dotClass = quiet
+  const dotClass = airplaneMode
     ? "bg-emerald-500/80"
-    : "bg-amber-500/90";
+    : quiet
+      ? "bg-emerald-500/80"
+      : "bg-amber-500/90";
 
   return (
     <section
@@ -173,9 +208,13 @@ function AirplaneSection({
             <input
               id="airplane-mode-toggle"
               type="checkbox"
-              disabled
-              aria-disabled
-              className="size-4 cursor-not-allowed rounded border-border/60 bg-card/40 accent-primary opacity-50"
+              checked={airplaneMode}
+              disabled={airplanePending}
+              onChange={(e) => onToggleAirplane(e.target.checked)}
+              className={cn(
+                "size-4 rounded border-border/60 bg-card/40 accent-primary",
+                airplanePending ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+              )}
             />
             <label
               htmlFor="airplane-mode-toggle"
@@ -183,15 +222,20 @@ function AirplaneSection({
             >
               Enable airplane mode
             </label>
-            <Badge variant="outline" className="font-normal">
-              read-only in Phase 5b
-            </Badge>
+            {airplaneMode ? (
+              <Badge variant="secondary" className="font-normal">
+                on
+              </Badge>
+            ) : null}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Toggle available in the next update (Phase 5c). This view is
-            read-only for now so you can see exactly what METIS is doing
-            before you start blocking things.
-          </p>
+          {airplaneError ? (
+            <p
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {airplaneError}
+            </p>
+          ) : null}
         </div>
 
         <div className="shrink-0 self-start sm:min-w-[14rem]">
@@ -235,6 +279,10 @@ interface ProviderSectionProps {
   loading: boolean;
   error: string | null;
   now: number;
+  blockOverrides: Record<string, boolean>;
+  pendingKeys: Set<string>;
+  rowError: Record<string, string | null>;
+  onToggleProvider: (provider: NetworkAuditProvider, next: boolean) => void;
 }
 
 function ProviderSection({
@@ -242,6 +290,10 @@ function ProviderSection({
   loading,
   error,
   now,
+  blockOverrides,
+  pendingKeys,
+  rowError,
+  onToggleProvider,
 }: ProviderSectionProps) {
   const rows = useMemo(() => {
     const filtered = providers.filter((p) => p.key !== "unclassified");
@@ -261,8 +313,9 @@ function ProviderSection({
           Providers
         </h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Every outbound destination METIS knows about. Kill-switch
-          toggles land in Phase 5c — for now this view is read-only.
+          Every outbound destination METIS knows about. Flip the checkbox
+          to block a provider at the SDK level; legacy providers are
+          controlled by the setting linked in their row.
         </p>
       </div>
 
@@ -319,6 +372,16 @@ function ProviderSection({
             ) : null}
             {rows.map((provider) => {
               const hasCalls = provider.events_7d > 0;
+              const isLegacy = provider.kill_switch_setting_key !== null;
+              // Blocked state prefers any in-flight local override so the
+              // checkbox visibly reflects the user's click before the
+              // /settings POST round-trips.
+              const override = blockOverrides[provider.key];
+              const blocked =
+                override !== undefined ? override : provider.blocked;
+              const pending = pendingKeys.has(provider.key);
+              const errForRow = rowError[provider.key] ?? null;
+              const toggleId = `provider-block-${provider.key}`;
               return (
                 <tr
                   key={provider.key}
@@ -331,7 +394,52 @@ function ProviderSection({
                     <CategoryBadge category={provider.category} />
                   </td>
                   <td className="py-2 pr-4">
-                    <BlockedBadge blocked={provider.blocked} />
+                    <div className="flex flex-col gap-1">
+                      <label
+                        htmlFor={toggleId}
+                        className="inline-flex items-center gap-2"
+                      >
+                        <input
+                          id={toggleId}
+                          type="checkbox"
+                          checked={blocked}
+                          disabled={isLegacy || pending}
+                          aria-label={`Block ${provider.display_name}`}
+                          onChange={(e) =>
+                            onToggleProvider(provider, e.target.checked)
+                          }
+                          className={cn(
+                            "size-3.5 rounded border-border/60 bg-card/40 accent-destructive",
+                            isLegacy || pending
+                              ? "cursor-not-allowed opacity-60"
+                              : "cursor-pointer",
+                          )}
+                        />
+                        <Badge
+                          variant={blocked ? "destructive" : "secondary"}
+                          className="font-normal"
+                        >
+                          {blocked ? "blocked" : "allowed"}
+                        </Badge>
+                      </label>
+                      {isLegacy ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          Controlled by{" "}
+                          <code className="font-mono">
+                            {provider.kill_switch_setting_key}
+                          </code>{" "}
+                          in other settings
+                        </p>
+                      ) : null}
+                      {errForRow ? (
+                        <p
+                          role="alert"
+                          className="text-[10px] text-destructive"
+                        >
+                          {errForRow}
+                        </p>
+                      ) : null}
+                    </div>
                   </td>
                   <td
                     className={cn(
@@ -364,26 +472,88 @@ interface EventFeedSectionProps {
   events: NetworkAuditEvent[];
   status: StreamStatus;
   error: string | null;
+  showSynthetic: boolean;
+  onToggleShowSynthetic: (next: boolean) => void;
+  onRunSyntheticPass: () => void;
+  syntheticPending: boolean;
+  syntheticError: string | null;
 }
 
-function EventFeedSection({ events, status, error }: EventFeedSectionProps) {
+function EventFeedSection({
+  events,
+  status,
+  error,
+  showSynthetic,
+  onToggleShowSynthetic,
+  onRunSyntheticPass,
+  syntheticPending,
+  syntheticError,
+}: EventFeedSectionProps) {
+  const visibleEvents = useMemo(
+    () =>
+      showSynthetic
+        ? events
+        : events.filter(
+            (ev) => ev.trigger_feature !== SYNTHETIC_TRIGGER_FEATURE,
+          ),
+    [events, showSynthetic],
+  );
+
   return (
     <section
       aria-labelledby="events-heading"
       className="rounded-2xl border border-border/40 bg-card/30 p-5 sm:p-6"
     >
-      <div className="mb-4 flex items-end justify-between gap-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 id="events-heading" className="text-base font-semibold">
             Live event feed
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Every recorded outbound call, newest at the bottom. Capped at
-            100 rows; CSV export arrives in Phase 5c.
+            100 rows; probe events from &quot;prove offline&quot; are hidden by
+            default.
           </p>
         </div>
-        <StreamStatusBadge status={status} />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onRunSyntheticPass}
+            disabled={syntheticPending}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-lg border border-border/50 bg-background/60 px-3 py-1.5 text-xs font-medium",
+              syntheticPending
+                ? "cursor-not-allowed opacity-70"
+                : "hover:bg-background/80",
+            )}
+          >
+            <span aria-hidden>{syntheticPending ? "⏳" : "✈︎"}</span>
+            <span>
+              {syntheticPending ? "Probing…" : "Prove offline"}
+            </span>
+          </button>
+          <StreamStatusBadge status={status} />
+        </div>
       </div>
+
+      <label className="mb-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={showSynthetic}
+          onChange={(e) => onToggleShowSynthetic(e.target.checked)}
+          className="size-3.5 rounded border-border/60 bg-card/40 accent-primary"
+        />
+        Show synthetic probes
+      </label>
+
+      {syntheticError ? (
+        <div
+          role="alert"
+          className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          {syntheticError}
+        </div>
+      ) : null}
 
       {error ? (
         <div
@@ -437,7 +607,7 @@ function EventFeedSection({ events, status, error }: EventFeedSectionProps) {
             </tr>
           </thead>
           <tbody aria-live="polite">
-            {events.length === 0 ? (
+            {visibleEvents.length === 0 ? (
               <tr>
                 <td
                   colSpan={7}
@@ -447,30 +617,37 @@ function EventFeedSection({ events, status, error }: EventFeedSectionProps) {
                 </td>
               </tr>
             ) : (
-              events.map((event) => (
-                <tr
-                  key={event.id}
-                  className="border-t border-border/20"
-                >
-                  <td className="px-3 py-1.5 font-mono tabular-nums text-muted-foreground">
-                    {formatClockTime(event.timestamp)}
-                  </td>
-                  <td className="px-3 py-1.5">{event.provider_key}</td>
-                  <td className="px-3 py-1.5 font-mono text-muted-foreground">
-                    {event.url_host}
-                  </td>
-                  <td className="px-3 py-1.5">{event.trigger_feature}</td>
-                  <td className="px-3 py-1.5 font-mono tabular-nums text-muted-foreground">
-                    {formatBytes(event.size_bytes_in, event.size_bytes_out)}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <StatusCell code={event.status_code} />
-                  </td>
-                  <td className="px-3 py-1.5 text-muted-foreground">
-                    {event.user_initiated ? "yes" : "no"}
-                  </td>
-                </tr>
-              ))
+              visibleEvents.map((event) => {
+                const isSynthetic =
+                  event.trigger_feature === SYNTHETIC_TRIGGER_FEATURE;
+                return (
+                  <tr
+                    key={event.id}
+                    className={cn(
+                      "border-t border-border/20",
+                      isSynthetic && "bg-muted/40 italic text-muted-foreground",
+                    )}
+                  >
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-muted-foreground">
+                      {formatClockTime(event.timestamp)}
+                    </td>
+                    <td className="px-3 py-1.5">{event.provider_key}</td>
+                    <td className="px-3 py-1.5 font-mono text-muted-foreground">
+                      {event.url_host}
+                    </td>
+                    <td className="px-3 py-1.5">{event.trigger_feature}</td>
+                    <td className="px-3 py-1.5 font-mono tabular-nums text-muted-foreground">
+                      {formatBytes(event.size_bytes_in, event.size_bytes_out)}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <StatusCell code={event.status_code} />
+                    </td>
+                    <td className="px-3 py-1.5 text-muted-foreground">
+                      {event.user_initiated ? "yes" : "no"}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -510,6 +687,182 @@ function StreamStatusBadge({ status }: { status: StreamStatus }): ReactNode {
 }
 
 // ---------------------------------------------------------------------------
+// Synthetic-pass modal
+// ---------------------------------------------------------------------------
+
+interface SyntheticPassModalProps {
+  result: SyntheticPassResponse | null;
+  onClose: () => void;
+}
+
+function SyntheticPassModal({ result, onClose }: SyntheticPassModalProps) {
+  // Focus the close button so keyboard users can dismiss immediately
+  // and screen readers get a sensible landing spot for the modal.
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!result) return;
+    closeRef.current?.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [result, onClose]);
+
+  if (!result) return null;
+
+  const rows: SyntheticProviderResult[] = [...result.providers].sort((a, b) =>
+    a.display_name.localeCompare(b.display_name),
+  );
+
+  const airplaneOn = result.airplane_mode;
+  const airplaneLabel = airplaneOn ? "On" : "Off";
+  const headline = `Synthetic pass completed in ${result.duration_ms}ms. Airplane mode: ${airplaneLabel}`;
+
+  const anomalous = rows.some(
+    (row) => row.error !== null || row.actual_calls !== 1,
+  );
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="synthetic-pass-heading"
+      className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+    >
+      {/* Backdrop — click closes the modal. */}
+      <button
+        type="button"
+        aria-hidden
+        tabIndex={-1}
+        className="fixed inset-0 bg-black/50"
+        onClick={onClose}
+      />
+      <div className="relative z-10 w-full max-w-3xl rounded-2xl border border-border/40 bg-card p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3
+              id="synthetic-pass-heading"
+              className="text-base font-semibold"
+            >
+              {headline}
+            </h3>
+            {airplaneOn ? (
+              <p className="mt-1 text-sm text-emerald-600 dark:text-emerald-400">
+                <span aria-hidden>✓ </span>
+                0 outbound calls across all providers.
+              </p>
+            ) : anomalous ? (
+              <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
+                Rows with unexpected counts or errors are highlighted
+                below. Airplane mode is OFF.
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Airplane mode is OFF. Every allowed provider accrued exactly
+                one probe event, as expected.
+              </p>
+            )}
+          </div>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            aria-label="Close dialog"
+            className="rounded-md border border-border/50 bg-background/60 px-3 py-1 text-xs font-medium hover:bg-background/80"
+          >
+            Close
+          </button>
+        </div>
+
+        <Separator className="my-4" />
+
+        <div className="max-h-[24rem] overflow-y-auto">
+          <table className="w-full border-collapse text-sm">
+            <caption className="sr-only">
+              Per-provider synthetic-pass result
+            </caption>
+            <thead>
+              <tr className="border-b border-border/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <th scope="col" className="py-2 pr-4">
+                  Provider
+                </th>
+                <th scope="col" className="py-2 pr-4">
+                  Category
+                </th>
+                <th scope="col" className="py-2 pr-4">
+                  Blocked
+                </th>
+                <th scope="col" className="py-2 pr-4 text-right">
+                  Actual calls
+                </th>
+                <th scope="col" className="py-2 pr-4">
+                  Notes
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="py-4 text-center text-sm text-muted-foreground"
+                  >
+                    No providers reported. Audit store may be unavailable.
+                  </td>
+                </tr>
+              ) : null}
+              {rows.map((row) => {
+                const highlight =
+                  !airplaneOn &&
+                  (row.error !== null || row.actual_calls !== 1);
+                return (
+                  <tr
+                    key={row.provider_key}
+                    className={cn(
+                      "border-b border-border/20 last:border-b-0",
+                      highlight &&
+                        "bg-amber-500/10 text-amber-900 dark:text-amber-200",
+                    )}
+                  >
+                    <td className="py-2 pr-4 font-medium">{row.display_name}</td>
+                    <td className="py-2 pr-4">
+                      <CategoryBadge category={row.category} />
+                    </td>
+                    <td className="py-2 pr-4">
+                      <Badge
+                        variant={row.blocked ? "destructive" : "secondary"}
+                        className="font-normal"
+                      >
+                        {row.blocked ? "blocked" : "allowed"}
+                      </Badge>
+                    </td>
+                    <td className="py-2 pr-4 text-right font-mono tabular-nums">
+                      {row.actual_calls}
+                    </td>
+                    <td className="py-2 pr-4 text-xs text-muted-foreground">
+                      {row.error
+                        ? row.error
+                        : !row.attempted
+                          ? "Kill switch blocked probe."
+                          : airplaneOn
+                            ? "Probe suppressed by airplane mode."
+                            : row.actual_calls === 1
+                              ? "Expected."
+                              : `Unexpected count (${row.actual_calls}).`}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 
@@ -521,6 +874,25 @@ export default function PrivacySettingsPage() {
   );
   const [recentLoading, setRecentLoading] = useState<boolean>(true);
 
+  // Airplane-mode + provider-block settings state.
+  const [airplaneMode, setAirplaneMode] = useState<boolean>(false);
+  const [airplanePending, setAirplanePending] = useState<boolean>(false);
+  const [airplaneError, setAirplaneError] = useState<string | null>(null);
+  const [providerBlock, setProviderBlock] = useState<Record<string, boolean>>(
+    {},
+  );
+  // Local per-row optimistic override. Merged into the wire map on write
+  // so rapid-fire flips don't lose the earlier change.
+  const [blockOverrides, setBlockOverrides] = useState<
+    Record<string, boolean>
+  >({});
+  const [pendingProviderKeys, setPendingProviderKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [providerRowError, setProviderRowError] = useState<
+    Record<string, string | null>
+  >({});
+
   // Section 2 state
   const [providers, setProviders] = useState<NetworkAuditProvider[]>([]);
   const [providersLoading, setProvidersLoading] = useState<boolean>(true);
@@ -530,6 +902,13 @@ export default function PrivacySettingsPage() {
   const [events, setEvents] = useState<NetworkAuditEvent[]>([]);
   const [streamStatus, setStreamStatus] = useState<StreamStatus>("connecting");
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [showSynthetic, setShowSynthetic] = useState<boolean>(false);
+
+  // Synthetic-pass / modal state.
+  const [syntheticPending, setSyntheticPending] = useState<boolean>(false);
+  const [syntheticError, setSyntheticError] = useState<string | null>(null);
+  const [syntheticResult, setSyntheticResult] =
+    useState<SyntheticPassResponse | null>(null);
 
   // "now" ticks every 10 s to keep relative timestamps fresh without
   // causing per-second re-renders.
@@ -545,6 +924,138 @@ export default function PrivacySettingsPage() {
       }
       return next;
     });
+  }, []);
+
+  // Initial settings hydrate — pulls airplane_mode and provider_block_llm
+  // so the toggles render with the correct state on first paint.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const settings = await fetchSettings();
+        if (cancelled) return;
+        const airplane = settings.network_audit_airplane_mode;
+        if (typeof airplane === "boolean") {
+          setAirplaneMode(airplane);
+        }
+        const blockMap = toProviderBlockMap(settings.provider_block_llm);
+        setProviderBlock(blockMap);
+      } catch {
+        // Non-fatal: leave defaults. The panel still renders everything
+        // else and the user can re-flip the toggles once the settings
+        // endpoint recovers.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Airplane-mode toggle with optimistic UI + rollback.
+  const handleToggleAirplane = useCallback(
+    (next: boolean) => {
+      // Optimistic update.
+      const previous = airplaneMode;
+      setAirplaneMode(next);
+      setAirplaneError(null);
+      setAirplanePending(true);
+      void (async () => {
+        try {
+          await updateSettings({ network_audit_airplane_mode: next });
+        } catch (err) {
+          setAirplaneMode(previous);
+          setAirplaneError(
+            err instanceof Error
+              ? err.message
+              : "Failed to update airplane mode.",
+          );
+        } finally {
+          setAirplanePending(false);
+        }
+      })();
+    },
+    [airplaneMode],
+  );
+
+  // Provider kill-switch toggle with optimistic UI + rollback. The wire
+  // map must always reflect *all* currently-blocked providers so rapid-
+  // fire flips don't lose earlier changes.
+  const handleToggleProvider = useCallback(
+    (provider: NetworkAuditProvider, next: boolean) => {
+      setBlockOverrides((prev) => ({ ...prev, [provider.key]: next }));
+      setProviderRowError((prev) => ({ ...prev, [provider.key]: null }));
+      setPendingProviderKeys((prev) => {
+        const copy = new Set(prev);
+        copy.add(provider.key);
+        return copy;
+      });
+
+      // Build the full map: persisted provider_block_llm + any local
+      // overrides + this new flip. Omit keys with a ``false`` value so
+      // the settings file stays small.
+      const merged: Record<string, boolean> = { ...providerBlock };
+      for (const [k, v] of Object.entries(blockOverrides)) {
+        if (v) merged[k] = true;
+        else delete merged[k];
+      }
+      if (next) merged[provider.key] = true;
+      else delete merged[provider.key];
+
+      void (async () => {
+        try {
+          await updateSettings({ provider_block_llm: merged });
+          setProviderBlock(merged);
+          // Clear the override for this key now that the wire map is
+          // authoritative.
+          setBlockOverrides((prev) => {
+            const copy = { ...prev };
+            delete copy[provider.key];
+            return copy;
+          });
+        } catch (err) {
+          // Roll back this row.
+          setBlockOverrides((prev) => {
+            const copy = { ...prev };
+            delete copy[provider.key];
+            return copy;
+          });
+          setProviderRowError((prev) => ({
+            ...prev,
+            [provider.key]:
+              err instanceof Error ? err.message : "Failed to update block.",
+          }));
+        } finally {
+          setPendingProviderKeys((prev) => {
+            const copy = new Set(prev);
+            copy.delete(provider.key);
+            return copy;
+          });
+        }
+      })();
+    },
+    [providerBlock, blockOverrides],
+  );
+
+  // Synthetic-pass handler.
+  const handleRunSyntheticPass = useCallback(() => {
+    setSyntheticPending(true);
+    setSyntheticError(null);
+    void (async () => {
+      try {
+        const result = await runNetworkAuditSyntheticPass();
+        setSyntheticResult(result);
+      } catch (err) {
+        setSyntheticError(
+          err instanceof Error
+            ? `Synthetic pass failed: ${err.message}`
+            : "Synthetic pass failed.",
+        );
+      } finally {
+        setSyntheticPending(false);
+      }
+    })();
   }, []);
 
   // Section 1 — recent count refresh loop.
@@ -740,7 +1251,7 @@ export default function PrivacySettingsPage() {
   return (
     <PageChrome
       title="Privacy & network audit"
-      description="Every outbound call METIS makes is recorded here. Read-only in Phase 5b; kill-switches, CSV export, and the 'prove offline' button land in Phase 5c."
+      description="Every outbound call METIS makes is recorded here. Flip the airplane toggle to block every outbound call; use per-provider toggles to silence specific LLM, embedding, or model-hub destinations."
       eyebrow="PRIVACY"
     >
       <div className="space-y-4 sm:space-y-5">
@@ -748,17 +1259,30 @@ export default function PrivacySettingsPage() {
           recentCount={recentCount}
           recentWindowSeconds={recentWindow}
           recentLoading={recentLoading}
+          airplaneMode={airplaneMode}
+          airplanePending={airplanePending}
+          airplaneError={airplaneError}
+          onToggleAirplane={handleToggleAirplane}
         />
         <ProviderSection
           providers={providers}
           loading={providersLoading}
           error={providersError}
           now={now}
+          blockOverrides={blockOverrides}
+          pendingKeys={pendingProviderKeys}
+          rowError={providerRowError}
+          onToggleProvider={handleToggleProvider}
         />
         <EventFeedSection
           events={events}
           status={streamStatus}
           error={feedError}
+          showSynthetic={showSynthetic}
+          onToggleShowSynthetic={setShowSynthetic}
+          onRunSyntheticPass={handleRunSyntheticPass}
+          syntheticPending={syntheticPending}
+          syntheticError={syntheticError}
         />
         <p className="px-1 text-xs text-muted-foreground">
           <Link
@@ -769,6 +1293,10 @@ export default function PrivacySettingsPage() {
           </Link>
         </p>
       </div>
+      <SyntheticPassModal
+        result={syntheticResult}
+        onClose={() => setSyntheticResult(null)}
+      />
     </PageChrome>
   );
 }
