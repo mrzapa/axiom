@@ -364,7 +364,14 @@ describe("PrivacySettingsPage — Phase 6 provider kill-switch toggles", () => {
     expect(code.tagName.toLowerCase()).toBe("code");
   });
 
-  it("preserves earlier overrides when two providers are flipped in quick succession", async () => {
+  it("serializes rapid provider flips — second POST waits for the first", async () => {
+    // Regression combining Task C I1 (atomic merge inside the
+    // functional updater) and PR #525 Codex P1 #2 (writes must be
+    // serialised so out-of-order server arrival can't clobber a newer
+    // map with an older one). Two clicks fire, first is slow-resolved:
+    // the second POST must not land on the server until the first
+    // completes. When it does land, its payload must contain both
+    // flips (the merge still reads the override set atomically).
     fetchNetworkAuditProviders.mockResolvedValue([
       makeProvider({
         key: "openai",
@@ -379,76 +386,7 @@ describe("PrivacySettingsPage — Phase 6 provider kill-switch toggles", () => {
         blocked: false,
       }),
     ]);
-    // Slow-resolve so the second flip is issued before the first completes.
-    let resolveFirst: (value: Record<string, unknown>) => void = () =>
-      undefined;
-    updateSettings.mockImplementationOnce(
-      () =>
-        new Promise<Record<string, unknown>>((resolve) => {
-          resolveFirst = resolve;
-        }),
-    );
-    updateSettings.mockResolvedValue({});
-
-    render(<PrivacySettingsPage />);
-
-    const openai = (await screen.findByLabelText(
-      /block openai/i,
-    )) as HTMLInputElement;
-    const anthropic = (await screen.findByLabelText(
-      /block anthropic/i,
-    )) as HTMLInputElement;
-    await waitFor(() => expect(openai.checked).toBe(false));
-
-    await act(async () => {
-      fireEvent.click(openai);
-    });
-    await act(async () => {
-      fireEvent.click(anthropic);
-    });
-
-    // Second call must include openai:true (the pending local override)
-    // alongside anthropic:true.
-    await waitFor(() => {
-      expect(updateSettings).toHaveBeenCalledTimes(2);
-    });
-    expect(updateSettings.mock.calls[1]?.[0]).toEqual({
-      provider_block_llm: { openai: true, anthropic: true },
-    });
-
-    // Clean up the first pending promise.
-    await act(async () => {
-      resolveFirst({});
-    });
-  });
-
-  it("merges two rapid provider flips atomically (no clobber)", async () => {
-    // Regression for Task C I1: the merge used to read
-    // ``blockOverrides`` synchronously outside the functional updater,
-    // so two clicks in the same render frame would both see the same
-    // stale snapshot and the second PATCH would overwrite the first
-    // flip's override. The fix hoists the merge inside
-    // ``setBlockOverrides((prev) => ...)`` so ``prev`` is the
-    // up-to-date override set both times.
-    fetchNetworkAuditProviders.mockResolvedValue([
-      makeProvider({
-        key: "openai",
-        display_name: "OpenAI",
-        kill_switch_setting_key: null,
-        blocked: false,
-      }),
-      makeProvider({
-        key: "anthropic",
-        display_name: "Anthropic",
-        kill_switch_setting_key: null,
-        blocked: false,
-      }),
-    ]);
-    // Slow-resolve both updateSettings calls so the second flip fires
-    // while the first is still in flight — the scenario where a stale
-    // closure would clobber.
     let resolveFirst: () => void = () => undefined;
-    let resolveSecond: () => void = () => undefined;
     updateSettings
       .mockImplementationOnce(
         () =>
@@ -456,30 +394,40 @@ describe("PrivacySettingsPage — Phase 6 provider kill-switch toggles", () => {
             resolveFirst = () => r({});
           }),
       )
-      .mockImplementationOnce(
-        () =>
-          new Promise<Record<string, unknown>>((r) => {
-            resolveSecond = () => r({});
-          }),
-      );
+      .mockImplementationOnce(() => Promise.resolve({}));
 
     render(<PrivacySettingsPage />);
 
     const openaiToggle = await screen.findByLabelText(/Block OpenAI/i);
     const anthropicToggle = await screen.findByLabelText(/Block Anthropic/i);
 
-    // Two clicks inside one act — both handlers see the same render's
-    // closure, which is exactly the frame where the bug bit.
+    // Two clicks inside one act — the serialisation queue must hold
+    // the second write back until the first resolves.
     await act(async () => {
       fireEvent.click(openaiToggle);
       fireEvent.click(anthropicToggle);
+    });
+
+    // Before the first resolves, only the first POST should have fired.
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledTimes(1);
+    });
+    const firstCall = updateSettings.mock.calls[0]?.[0] as {
+      provider_block_llm?: Record<string, boolean>;
+    };
+    expect(firstCall?.provider_block_llm).toEqual({ openai: true });
+
+    // Resolve the first POST. The second is now free to fire.
+    await act(async () => {
+      resolveFirst();
     });
 
     await waitFor(() => {
       expect(updateSettings).toHaveBeenCalledTimes(2);
     });
 
-    // Second call's patch must include the first flip's override.
+    // Second call's patch must include BOTH flips — the atomic-merge
+    // property from the I1 polish still holds.
     const secondCall = updateSettings.mock.calls[1]?.[0] as {
       provider_block_llm?: Record<string, boolean>;
     };
@@ -487,10 +435,49 @@ describe("PrivacySettingsPage — Phase 6 provider kill-switch toggles", () => {
       openai: true,
       anthropic: true,
     });
+  });
+
+  it("keeps the checkbox visually blocked after a successful toggle (no revert until next poll)", async () => {
+    // Regression for PR #525 Codex P1 #1: after a successful toggle,
+    // the local override was cleared and the checkbox fell back to
+    // provider.blocked — which is stale until the 10 s providers poll
+    // catches up. The fix makes providerBlock the render-time source
+    // of truth for any provider the user has touched, so the checkbox
+    // stays checked immediately after the POST resolves (no visible
+    // revert).
+    fetchNetworkAuditProviders.mockResolvedValue([
+      makeProvider({
+        key: "openai",
+        display_name: "OpenAI",
+        kill_switch_setting_key: null,
+        blocked: false, // server hasn't heard about the block yet
+      }),
+    ]);
+    updateSettings.mockResolvedValue({});
+
+    render(<PrivacySettingsPage />);
+
+    const toggle = (await screen.findByLabelText(
+      /Block OpenAI/i,
+    )) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
 
     await act(async () => {
-      resolveFirst();
-      resolveSecond();
+      fireEvent.click(toggle);
+    });
+
+    // Let the POST resolve + the post-success state updates flush.
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledTimes(1);
+    });
+
+    // The override is now cleared, but providerBlock[openai] = true
+    // should keep the render showing checked, even though
+    // provider.blocked on the server-fetched row is still false.
+    // No additional fetchNetworkAuditProviders call (poll interval is
+    // 10 s and we've only advanced real time by a few ms).
+    await waitFor(() => {
+      expect(toggle.checked).toBe(true);
     });
   });
 });

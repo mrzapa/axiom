@@ -280,6 +280,14 @@ interface ProviderSectionProps {
   error: string | null;
   now: number;
   blockOverrides: Record<string, boolean>;
+  /**
+   * Local authoritative mirror of ``provider_block_llm`` — stores the
+   * user's latest intent for every row they've flipped (both ``true``
+   * and ``false``). Consulted at render time BEFORE falling through to
+   * the 10 s-polled ``provider.blocked``, so a successful toggle
+   * doesn't visibly revert during the poll window.
+   */
+  providerBlock: Record<string, boolean>;
   pendingKeys: Set<string>;
   rowError: Record<string, string | null>;
   onToggleProvider: (provider: NetworkAuditProvider, next: boolean) => void;
@@ -291,6 +299,7 @@ function ProviderSection({
   error,
   now,
   blockOverrides,
+  providerBlock,
   pendingKeys,
   rowError,
   onToggleProvider,
@@ -373,12 +382,24 @@ function ProviderSection({
             {rows.map((provider) => {
               const hasCalls = provider.events_7d > 0;
               const isLegacy = provider.kill_switch_setting_key !== null;
-              // Blocked state prefers any in-flight local override so the
-              // checkbox visibly reflects the user's click before the
-              // /settings POST round-trips.
+              // Blocked state resolution (priority, highest first):
+              //   1. In-flight local override (user clicked, write pending).
+              //   2. ``providerBlock`` local mirror (the last successfully
+              //      persisted value the frontend wrote — fresh until the
+              //      next server poll catches up, which can lag up to 10 s).
+              //   3. ``provider.blocked`` from the 10 s providers-poll
+              //      response (authoritative but stale between polls).
+              // Without step 2 a successful toggle visibly reverts to the
+              // stale provider.blocked until the next poll — caught by
+              // Codex review on PR #525.
               const override = blockOverrides[provider.key];
+              const localSetting = providerBlock[provider.key];
               const blocked =
-                override !== undefined ? override : provider.blocked;
+                override !== undefined
+                  ? override
+                  : localSetting !== undefined
+                    ? localSetting
+                    : provider.blocked;
               const pending = pendingKeys.has(provider.key);
               const errForRow = rowError[provider.key] ?? null;
               const toggleId = `provider-block-${provider.key}`;
@@ -908,6 +929,13 @@ export default function PrivacySettingsPage() {
   const [providerRowError, setProviderRowError] = useState<
     Record<string, string | null>
   >({});
+  // Serialize per-provider writes. Without this, two rapid flips fire
+  // their updateSettings POSTs in parallel; out-of-order server arrival
+  // can overwrite a newer map snapshot with an older one, silently
+  // dropping the user's latest intent. Each write chains onto the
+  // previous promise so the server sees them in strict click order.
+  // Caught by Codex review on PR #525.
+  const providerWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   // Section 2 state
   const [providers, setProviders] = useState<NetworkAuditProvider[]>([]);
@@ -1014,46 +1042,72 @@ export default function PrivacySettingsPage() {
       setBlockOverrides((prevOverrides) => {
         const nextOverrides = { ...prevOverrides, [provider.key]: next };
 
-        // Build the full map: persisted provider_block_llm + the
-        // up-to-date override set (which now includes this flip). Omit
-        // keys with a ``false`` value so the settings file stays small.
-        const merged: Record<string, boolean> = { ...providerBlock };
+        // Local authoritative mirror — stores the user's latest intent
+        // for every provider they've flipped, including ``false``
+        // unblocks. This becomes the render-time source of truth (see
+        // blocked-state resolution in the provider matrix) so a
+        // successful toggle doesn't visibly revert during the 10 s
+        // window before the next providers-poll catches up.
+        const nextLocalBlock: Record<string, boolean> = {
+          ...providerBlock,
+          [provider.key]: next,
+        };
+
+        // Wire payload — the backend treats a missing key as "not
+        // blocked" (the map is additive-only per ADR 0010 follow-up).
+        // Omit ``false`` values so settings.json stays small and so a
+        // future backend read of the key returns the same semantic.
+        // Also fold in OTHER in-flight overrides so a rapid flip on
+        // provider A followed by provider B carries A's pending value
+        // through in B's write.
+        const wirePayload: Record<string, boolean> = {};
+        for (const [k, v] of Object.entries(nextLocalBlock)) {
+          if (v) wirePayload[k] = true;
+        }
         for (const [k, v] of Object.entries(nextOverrides)) {
-          if (v) merged[k] = true;
-          else delete merged[k];
+          if (k === provider.key) continue; // already reflected
+          if (v) wirePayload[k] = true;
+          else delete wirePayload[k];
         }
 
-        void (async () => {
-          try {
-            await updateSettings({ provider_block_llm: merged });
-            setProviderBlock(merged);
-            // Clear the override for this key now that the wire map is
-            // authoritative.
-            setBlockOverrides((prev) => {
-              const copy = { ...prev };
-              delete copy[provider.key];
-              return copy;
-            });
-          } catch (err) {
-            // Roll back this row.
-            setBlockOverrides((prev) => {
-              const copy = { ...prev };
-              delete copy[provider.key];
-              return copy;
-            });
-            setProviderRowError((prev) => ({
-              ...prev,
-              [provider.key]:
-                err instanceof Error ? err.message : "Failed to update block.",
-            }));
-          } finally {
-            setPendingProviderKeys((prev) => {
-              const copy = new Set(prev);
-              copy.delete(provider.key);
-              return copy;
-            });
-          }
-        })();
+        // Serialize: chain this write onto the previous one so the
+        // server sees the POSTs in click order.
+        providerWriteQueueRef.current = providerWriteQueueRef.current
+          .then(async () => {
+            try {
+              await updateSettings({ provider_block_llm: wirePayload });
+              setProviderBlock(nextLocalBlock);
+              // Clear the override — providerBlock is now the render
+              // source of truth for this key.
+              setBlockOverrides((prev) => {
+                const copy = { ...prev };
+                delete copy[provider.key];
+                return copy;
+              });
+            } catch (err) {
+              // Roll back this row.
+              setBlockOverrides((prev) => {
+                const copy = { ...prev };
+                delete copy[provider.key];
+                return copy;
+              });
+              setProviderRowError((prev) => ({
+                ...prev,
+                [provider.key]:
+                  err instanceof Error
+                    ? err.message
+                    : "Failed to update block.",
+              }));
+            } finally {
+              setPendingProviderKeys((prev) => {
+                const copy = new Set(prev);
+                copy.delete(provider.key);
+                return copy;
+              });
+            }
+          })
+          // Never let one failure break the queue for subsequent writes.
+          .catch(() => undefined);
 
         return nextOverrides;
       });
@@ -1293,6 +1347,7 @@ export default function PrivacySettingsPage() {
           error={providersError}
           now={now}
           blockOverrides={blockOverrides}
+          providerBlock={providerBlock}
           pendingKeys={pendingProviderKeys}
           rowError={providerRowError}
           onToggleProvider={handleToggleProvider}
