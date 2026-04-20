@@ -54,6 +54,7 @@ vi.mock("@/lib/api", async () => {
     fetchSettings: vi.fn(),
     updateSettings: vi.fn(),
     runNetworkAuditSyntheticPass: vi.fn(),
+    downloadNetworkAuditExport: vi.fn(),
     subscribeNetworkAuditStream: vi.fn(
       (
         listener: (frame: NetworkAuditStreamFrame) => void,
@@ -92,6 +93,8 @@ const fetchSettings = api.fetchSettings as ReturnType<typeof vi.fn>;
 const updateSettings = api.updateSettings as ReturnType<typeof vi.fn>;
 const runNetworkAuditSyntheticPass =
   api.runNetworkAuditSyntheticPass as ReturnType<typeof vi.fn>;
+const downloadNetworkAuditExport =
+  api.downloadNetworkAuditExport as ReturnType<typeof vi.fn>;
 
 const { default: PrivacySettingsPage } = await import("../page");
 
@@ -156,6 +159,9 @@ function stubDefaults(): void {
     airplane_mode: false,
     providers: [],
   } satisfies SyntheticPassResponse);
+  downloadNetworkAuditExport.mockResolvedValue({
+    filename: "metis-network-audit-30d-20260420T120000Z.csv",
+  });
 }
 
 beforeEach(() => {
@@ -577,6 +583,80 @@ describe("PrivacySettingsPage — Phase 6 prove offline button + modal", () => {
       expect(
         screen.getByText(/synthetic pass failed: probe exploded/i),
       ).toBeInTheDocument();
+    });
+  });
+});
+
+describe("PrivacySettingsPage — Phase 7 Export CSV button", () => {
+  it("renders an Export last 30 days button in the live-feed header", async () => {
+    render(<PrivacySettingsPage />);
+    expect(
+      await screen.findByRole("button", {
+        name: /export last 30 days \(csv\)/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("calls downloadNetworkAuditExport with days=30 when clicked", async () => {
+    render(<PrivacySettingsPage />);
+
+    const button = await screen.findByRole("button", {
+      name: /export last 30 days/i,
+    });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => {
+      expect(downloadNetworkAuditExport).toHaveBeenCalledWith({ days: 30 });
+    });
+  });
+
+  it("disables the button while the export is in flight and re-enables after", async () => {
+    let resolveExport: (value: { filename: string }) => void = () => undefined;
+    downloadNetworkAuditExport.mockImplementation(
+      () =>
+        new Promise<{ filename: string }>((resolve) => {
+          resolveExport = resolve;
+        }),
+    );
+
+    render(<PrivacySettingsPage />);
+    const button = (await screen.findByRole("button", {
+      name: /export last 30 days/i,
+    })) as HTMLButtonElement;
+
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    // Mid-flight: button is disabled and reads "Exporting…".
+    expect(button.disabled).toBe(true);
+    expect(
+      screen.getByRole("button", { name: /exporting…/i }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      resolveExport({ filename: "metis-network-audit-30d-test.csv" });
+    });
+
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
+  it("surfaces an inline error when the export rejects", async () => {
+    downloadNetworkAuditExport.mockRejectedValue(new Error("network down"));
+
+    render(<PrivacySettingsPage />);
+    const button = await screen.findByRole("button", {
+      name: /export last 30 days/i,
+    });
+
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/export failed: network down/i)).toBeInTheDocument();
     });
   });
 });

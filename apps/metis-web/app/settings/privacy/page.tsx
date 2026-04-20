@@ -46,6 +46,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
+  downloadNetworkAuditExport,
   fetchNetworkAuditEvents,
   fetchNetworkAuditProviders,
   fetchNetworkAuditRecentCount,
@@ -498,6 +499,9 @@ interface EventFeedSectionProps {
   onRunSyntheticPass: () => void;
   syntheticPending: boolean;
   syntheticError: string | null;
+  onExportCsv: () => void;
+  exportPending: boolean;
+  exportError: string | null;
 }
 
 function EventFeedSection({
@@ -509,6 +513,9 @@ function EventFeedSection({
   onRunSyntheticPass,
   syntheticPending,
   syntheticError,
+  onExportCsv,
+  exportPending,
+  exportError,
 }: EventFeedSectionProps) {
   const visibleEvents = useMemo(
     () =>
@@ -539,6 +546,22 @@ function EventFeedSection({
         <div className="flex items-center gap-3">
           <button
             type="button"
+            onClick={onExportCsv}
+            disabled={exportPending}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-lg border border-border/50 bg-background/60 px-3 py-1.5 text-xs font-medium",
+              exportPending
+                ? "cursor-not-allowed opacity-70"
+                : "hover:bg-background/80",
+            )}
+          >
+            <span aria-hidden>{exportPending ? "⏳" : "⇩"}</span>
+            <span>
+              {exportPending ? "Exporting…" : "Export last 30 days (CSV)"}
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={onRunSyntheticPass}
             disabled={syntheticPending}
             className={cn(
@@ -556,6 +579,15 @@ function EventFeedSection({
           <StreamStatusBadge status={status} />
         </div>
       </div>
+
+      {exportError ? (
+        <div
+          role="alert"
+          className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          {exportError}
+        </div>
+      ) : null}
 
       <label className="mb-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
         <input
@@ -954,6 +986,11 @@ export default function PrivacySettingsPage() {
   const [syntheticResult, setSyntheticResult] =
     useState<SyntheticPassResponse | null>(null);
 
+  // CSV export state (Phase 7). Disables the button while the download
+  // blob is materialising; a rejection surfaces inline above the feed.
+  const [exportPending, setExportPending] = useState<boolean>(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
   // "now" ticks every 10 s to keep relative timestamps fresh without
   // causing per-second re-renders.
   const [now, setNow] = useState<number>(() => Date.now());
@@ -1114,6 +1151,26 @@ export default function PrivacySettingsPage() {
     },
     [providerBlock],
   );
+
+  // CSV export handler. Calls the shared api.ts helper, which handles
+  // the download anchor + URL revocation. No navigation, no modal.
+  const handleExportCsv = useCallback(() => {
+    setExportPending(true);
+    setExportError(null);
+    void (async () => {
+      try {
+        await downloadNetworkAuditExport({ days: 30 });
+      } catch (err) {
+        setExportError(
+          err instanceof Error
+            ? `Export failed: ${err.message}`
+            : "Export failed.",
+        );
+      } finally {
+        setExportPending(false);
+      }
+    })();
+  }, []);
 
   // Synthetic-pass handler.
   const handleRunSyntheticPass = useCallback(() => {
@@ -1361,6 +1418,9 @@ export default function PrivacySettingsPage() {
           onRunSyntheticPass={handleRunSyntheticPass}
           syntheticPending={syntheticPending}
           syntheticError={syntheticError}
+          onExportCsv={handleExportCsv}
+          exportPending={exportPending}
+          exportError={exportError}
         />
         <p className="px-1 text-xs text-muted-foreground">
           <Link
