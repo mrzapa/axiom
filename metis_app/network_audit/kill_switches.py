@@ -64,6 +64,15 @@ _STRING_DISABLED_VALUES: frozenset[str] = frozenset({"", "mock"})
 # single toggle in the privacy panel.
 AIRPLANE_MODE_KEY = "network_audit_airplane_mode"
 
+# Phase 6 per-provider block map. Lives in ``settings.json`` as a
+# ``dict[str, bool]`` keyed by provider key (e.g. ``"openai"``,
+# ``"anthropic"``, ``"voyage"``). Exists specifically to cover the
+# LLM/embedding/model-hub/fonts providers that have no legacy
+# ``kill_switch_setting_key`` (see ``providers.py`` —
+# ``kill_switch_setting_key=None``). An entry set to ``True`` blocks
+# that provider's outbound calls even when airplane mode is off.
+PROVIDER_BLOCK_LLM_KEY = "provider_block_llm"
+
 
 # ---------------------------------------------------------------------------
 # Exception
@@ -110,6 +119,13 @@ def is_provider_blocked(
       setting.
     - **Unknown provider key**: treated as not-blocked (fallthrough to
       ``unclassified`` should not silently block).
+    - **``provider_block_llm`` map** (Phase 6): a ``dict[str, bool]``
+      under the ``"provider_block_llm"`` settings key. If the map has
+      ``provider_key`` set to ``True``, the provider is blocked. This
+      covers the LLM/embedding/model-hub providers whose
+      ``kill_switch_setting_key`` is ``None`` (no legacy per-feature
+      flag). Missing keys, ``False`` values, and non-dict map values
+      fall through to the legacy logic without raising.
     - **Boolean settings keys** (``news_comets_enabled``,
       ``autonomous_research_enabled``) — blocked when the value is
       ``False``.
@@ -128,10 +144,24 @@ def is_provider_blocked(
         # wrapper still records the event so the panel shows them.
         return False
 
+    # Phase 6 per-provider block map. Consulted *before* the legacy
+    # ``kill_switch_setting_key`` path so providers with
+    # ``kill_switch_setting_key=None`` (OpenAI, Anthropic, voyage,
+    # huggingface_hub, …) can still be gated. A defensive isinstance
+    # check keeps a malformed settings.json (e.g. the user hand-edited
+    # ``"provider_block_llm": "mock"``) from crashing the predicate —
+    # the invariant is "audit must not break the wrapped call", and
+    # that extends to "never crash on a wrong-shape settings value".
+    provider_block_llm = settings.get(PROVIDER_BLOCK_LLM_KEY)
+    if isinstance(provider_block_llm, dict):
+        if provider_block_llm.get(provider_key) is True:
+            return True
+
     setting_key = spec.kill_switch_setting_key
     if setting_key is None:
-        # No host-level kill switch; invocation-layer checks (Phase 4)
-        # own this provider's gating. Audit-layer predicate is quiet.
+        # No host-level kill switch and no per-provider override above;
+        # invocation-layer checks (Phase 4) own this provider's gating.
+        # Audit-layer predicate is quiet.
         return False
 
     if setting_key not in settings:
@@ -159,6 +189,7 @@ def is_provider_blocked(
 
 __all__ = [
     "AIRPLANE_MODE_KEY",
+    "PROVIDER_BLOCK_LLM_KEY",
     "NetworkBlockedError",
     "is_provider_blocked",
 ]

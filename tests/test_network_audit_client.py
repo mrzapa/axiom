@@ -490,12 +490,26 @@ def test_is_provider_blocked_unknown_provider_key() -> None:
 
 
 def test_is_provider_blocked_provider_without_kill_switch() -> None:
-    """Providers whose ``kill_switch_setting_key`` is ``None`` are never blocked here."""
-    # openai has no host-level kill switch; Phase 4 invocation-layer
-    # owns gating. Audit-layer predicate stays quiet.
+    """Providers whose ``kill_switch_setting_key`` is ``None`` are not blocked
+    when the Phase 6 ``provider_block_llm`` map is empty or absent.
+
+    openai has no host-level kill switch; absent a per-provider map
+    entry (Phase 6) the audit-layer predicate stays quiet and Phase 4
+    invocation-layer owns gating.
+    """
+    # Empty settings — no map at all.
     assert is_provider_blocked("openai", {}) is False
     assert is_provider_blocked("anthropic", {}) is False
     assert is_provider_blocked("huggingface_hub", {}) is False
+    # Empty map — explicit, still not blocked.
+    assert is_provider_blocked("openai", {"provider_block_llm": {}}) is False
+    # Key explicitly False — not blocked.
+    assert (
+        is_provider_blocked(
+            "openai", {"provider_block_llm": {"openai": False}}
+        )
+        is False
+    )
 
 
 def test_is_provider_blocked_setting_absent_from_mapping() -> None:
@@ -511,6 +525,141 @@ def test_is_provider_blocked_boolean_true_does_not_block() -> None:
     settings = {"news_comets_enabled": True}
     assert is_provider_blocked("reddit_api", settings) is False
     assert is_provider_blocked("hackernews_api", settings) is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — provider_block_llm map
+# ---------------------------------------------------------------------------
+
+
+def test_is_provider_blocked_consults_provider_block_llm_map() -> None:
+    """Phase 6: the per-provider map gates providers with no legacy kill switch.
+
+    Covers the four map shapes the predicate must handle:
+
+    (a) empty map           -> not blocked
+    (b) key set to True     -> blocked
+    (c) key set to False    -> not blocked
+    (d) wrong-shape value   -> not blocked (defensive, no crash)
+    """
+    # (a) Empty map — openai has kill_switch_setting_key=None and
+    # the map contributes nothing, so the predicate falls through to
+    # "not blocked".
+    assert (
+        is_provider_blocked("openai", {"provider_block_llm": {}})
+        is False
+    )
+
+    # (b) Explicit True — per-provider block fires.
+    assert (
+        is_provider_blocked(
+            "openai", {"provider_block_llm": {"openai": True}}
+        )
+        is True
+    )
+    # Works for every kill_switch_setting_key=None provider named in
+    # the Phase 6 spec.
+    for provider in (
+        "anthropic",
+        "google",
+        "xai",
+        "openai_embeddings",
+        "google_embeddings",
+        "voyage",
+        "huggingface_local",
+        "local_lm_studio",
+        "huggingface_hub",
+        "jina_reader",
+        "nyx_registry",
+        "google_fonts",
+    ):
+        assert (
+            is_provider_blocked(
+                provider, {"provider_block_llm": {provider: True}}
+            )
+            is True
+        ), f"provider_block_llm[{provider}]=True did not block"
+
+    # (c) Explicit False — not blocked.
+    assert (
+        is_provider_blocked(
+            "openai", {"provider_block_llm": {"openai": False}}
+        )
+        is False
+    )
+
+    # (d) Wrong-shape entry value (list instead of bool) — treated as
+    # "not True" and falls through. The dict map itself is well-formed
+    # in this sub-case; only the per-key value is odd.
+    assert (
+        is_provider_blocked(
+            "openai", {"provider_block_llm": {"openai": ["yes"]}}
+        )
+        is False
+    )
+
+
+def test_airplane_mode_overrides_provider_block_llm() -> None:
+    """Airplane mode wins regardless of per-provider map entries.
+
+    When ``network_audit_airplane_mode`` is True, per-provider
+    entries don't matter — even a ``provider_block_llm[key] = False``
+    is overridden to blocked. This mirrors the existing airplane-mode
+    semantics for legacy kill switches.
+    """
+    settings = {
+        "network_audit_airplane_mode": True,
+        "provider_block_llm": {"openai": False, "anthropic": False},
+    }
+    # Airplane wins over False entries.
+    assert is_provider_blocked("openai", settings) is True
+    assert is_provider_blocked("anthropic", settings) is True
+    # Airplane wins over True entries (trivially the same outcome).
+    settings["provider_block_llm"] = {"openai": True}
+    assert is_provider_blocked("openai", settings) is True
+    # Unknown provider keys still blocked under airplane mode, even
+    # with a per-provider map present.
+    assert is_provider_blocked("nonexistent_xyz", settings) is True
+
+
+def test_provider_block_llm_non_dict_value_ignored() -> None:
+    """A wrong-typed ``provider_block_llm`` value degrades gracefully.
+
+    If the settings file is hand-edited to ``"provider_block_llm":
+    "mock"`` (a string), the predicate must not crash. The invariant
+    is "audit must never break the wrapped call"; that extends to
+    "never raise on a wrong-shape settings value". The predicate
+    falls through to the legacy path and returns ``False`` for
+    providers whose ``kill_switch_setting_key`` is ``None``.
+    """
+    # String instead of dict.
+    assert (
+        is_provider_blocked("openai", {"provider_block_llm": "mock"})
+        is False
+    )
+    # None instead of dict.
+    assert (
+        is_provider_blocked("openai", {"provider_block_llm": None})
+        is False
+    )
+    # List instead of dict.
+    assert (
+        is_provider_blocked("openai", {"provider_block_llm": ["openai"]})
+        is False
+    )
+    # Integer instead of dict.
+    assert (
+        is_provider_blocked("openai", {"provider_block_llm": 1})
+        is False
+    )
+    # Confirm legacy behaviour still works alongside a malformed map
+    # (the per-provider map is ignored, but news_comets_enabled still
+    # gates ingestion providers).
+    settings: dict[str, object] = {
+        "provider_block_llm": "mock",
+        "news_comets_enabled": False,
+    }
+    assert is_provider_blocked("reddit_api", settings) is True
 
 
 # ---------------------------------------------------------------------------
