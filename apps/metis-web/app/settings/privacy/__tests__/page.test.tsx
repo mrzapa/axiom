@@ -421,6 +421,78 @@ describe("PrivacySettingsPage — Phase 6 provider kill-switch toggles", () => {
       resolveFirst({});
     });
   });
+
+  it("merges two rapid provider flips atomically (no clobber)", async () => {
+    // Regression for Task C I1: the merge used to read
+    // ``blockOverrides`` synchronously outside the functional updater,
+    // so two clicks in the same render frame would both see the same
+    // stale snapshot and the second PATCH would overwrite the first
+    // flip's override. The fix hoists the merge inside
+    // ``setBlockOverrides((prev) => ...)`` so ``prev`` is the
+    // up-to-date override set both times.
+    fetchNetworkAuditProviders.mockResolvedValue([
+      makeProvider({
+        key: "openai",
+        display_name: "OpenAI",
+        kill_switch_setting_key: null,
+        blocked: false,
+      }),
+      makeProvider({
+        key: "anthropic",
+        display_name: "Anthropic",
+        kill_switch_setting_key: null,
+        blocked: false,
+      }),
+    ]);
+    // Slow-resolve both updateSettings calls so the second flip fires
+    // while the first is still in flight — the scenario where a stale
+    // closure would clobber.
+    let resolveFirst: () => void = () => undefined;
+    let resolveSecond: () => void = () => undefined;
+    updateSettings
+      .mockImplementationOnce(
+        () =>
+          new Promise<Record<string, unknown>>((r) => {
+            resolveFirst = () => r({});
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Record<string, unknown>>((r) => {
+            resolveSecond = () => r({});
+          }),
+      );
+
+    render(<PrivacySettingsPage />);
+
+    const openaiToggle = await screen.findByLabelText(/Block OpenAI/i);
+    const anthropicToggle = await screen.findByLabelText(/Block Anthropic/i);
+
+    // Two clicks inside one act — both handlers see the same render's
+    // closure, which is exactly the frame where the bug bit.
+    await act(async () => {
+      fireEvent.click(openaiToggle);
+      fireEvent.click(anthropicToggle);
+    });
+
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledTimes(2);
+    });
+
+    // Second call's patch must include the first flip's override.
+    const secondCall = updateSettings.mock.calls[1]?.[0] as {
+      provider_block_llm?: Record<string, boolean>;
+    };
+    expect(secondCall?.provider_block_llm).toEqual({
+      openai: true,
+      anthropic: true,
+    });
+
+    await act(async () => {
+      resolveFirst();
+      resolveSecond();
+    });
+  });
 });
 
 describe("PrivacySettingsPage — Phase 6 prove offline button + modal", () => {
@@ -458,6 +530,49 @@ describe("PrivacySettingsPage — Phase 6 prove offline button + modal", () => {
     expect(within(dialog).getByText(/airplane mode: on/i)).toBeInTheDocument();
     expect(within(dialog).getByText(/0 outbound calls/i)).toBeInTheDocument();
     expect(within(dialog).getByText("OpenAI")).toBeInTheDocument();
+  });
+
+  it("does not highlight blocked providers as anomalous in non-airplane mode", async () => {
+    // Regression for Task C N6: a blocked provider reports
+    // ``attempted=false, actual_calls=0`` which is exactly the kill
+    // switch working, not an anomaly. The old highlight condition
+    // triggered on ``actual_calls !== 1`` unconditionally so blocked
+    // rows lit amber even when airplane mode was OFF.
+    runNetworkAuditSyntheticPass.mockResolvedValue({
+      duration_ms: 5,
+      airplane_mode: false,
+      providers: [
+        {
+          provider_key: "openai",
+          display_name: "OpenAI",
+          category: "llm",
+          attempted: false,
+          blocked: true,
+          actual_calls: 0,
+          error: null,
+        },
+        {
+          provider_key: "anthropic",
+          display_name: "Anthropic",
+          category: "llm",
+          attempted: true,
+          blocked: false,
+          actual_calls: 1,
+          error: null,
+        },
+      ],
+    } satisfies SyntheticPassResponse);
+    render(<PrivacySettingsPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /prove offline/i }),
+    );
+    await screen.findByRole("dialog");
+
+    const rows = screen.getAllByRole("row");
+    const openaiRow = rows.find((r) => within(r).queryByText("OpenAI"));
+    expect(openaiRow).toBeDefined();
+    // Blocked provider's row must not carry the amber anomaly class.
+    expect(openaiRow?.className ?? "").not.toMatch(/amber/);
   });
 
   it("shows an inline error when the synthetic pass rejects", async () => {

@@ -699,14 +699,22 @@ function SyntheticPassModal({ result, onClose }: SyntheticPassModalProps) {
   // Focus the close button so keyboard users can dismiss immediately
   // and screen readers get a sensible landing spot for the modal.
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  // Element that had focus before the modal opened — we restore focus
+  // to it on close so keyboard users don't get dumped at <body>.
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!result) return;
+    lastFocusedRef.current =
+      (document.activeElement as HTMLElement | null) ?? null;
     closeRef.current?.focus();
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      lastFocusedRef.current?.focus();
+    };
   }, [result, onClose]);
 
   if (!result) return null;
@@ -719,8 +727,13 @@ function SyntheticPassModal({ result, onClose }: SyntheticPassModalProps) {
   const airplaneLabel = airplaneOn ? "On" : "Off";
   const headline = `Synthetic pass completed in ${result.duration_ms}ms. Airplane mode: ${airplaneLabel}`;
 
+  // Blocked providers legitimately report ``actual_calls=0`` with
+  // ``attempted=false`` — that's the kill switch working, not an
+  // anomaly. Only flag rows that either errored or actually attempted
+  // a probe and got the wrong count.
   const anomalous = rows.some(
-    (row) => row.error !== null || row.actual_calls !== 1,
+    (row) =>
+      row.error !== null || (row.attempted && row.actual_calls !== 1),
   );
 
   return (
@@ -730,11 +743,13 @@ function SyntheticPassModal({ result, onClose }: SyntheticPassModalProps) {
       aria-labelledby="synthetic-pass-heading"
       className="fixed inset-0 z-[300] flex items-center justify-center p-4"
     >
-      {/* Backdrop — click closes the modal. */}
-      <button
-        type="button"
-        aria-hidden
-        tabIndex={-1}
+      {/* Backdrop — click closes the modal. Mouse-only convenience;
+          keyboard users dismiss via Escape or the Close button. Rendered
+          as a non-interactive <div> so ``aria-hidden`` doesn't hide a
+          focusable element from assistive tech (axe rule
+          aria-hidden-focus). */}
+      <div
+        aria-hidden="true"
         className="fixed inset-0 bg-black/50"
         onClick={onClose}
       />
@@ -815,7 +830,8 @@ function SyntheticPassModal({ result, onClose }: SyntheticPassModalProps) {
               {rows.map((row) => {
                 const highlight =
                   !airplaneOn &&
-                  (row.error !== null || row.actual_calls !== 1);
+                  (row.error !== null ||
+                    (row.attempted && row.actual_calls !== 1));
                 return (
                   <tr
                     key={row.provider_key}
@@ -981,10 +997,13 @@ export default function PrivacySettingsPage() {
 
   // Provider kill-switch toggle with optimistic UI + rollback. The wire
   // map must always reflect *all* currently-blocked providers so rapid-
-  // fire flips don't lose earlier changes.
+  // fire flips don't lose earlier changes. The merge runs INSIDE the
+  // functional updater so two rapid clicks in the same render frame
+  // both see each other's overrides atomically — a plain read of
+  // ``blockOverrides`` would hand both handlers the same stale snapshot
+  // and the second write would clobber the first flip.
   const handleToggleProvider = useCallback(
     (provider: NetworkAuditProvider, next: boolean) => {
-      setBlockOverrides((prev) => ({ ...prev, [provider.key]: next }));
       setProviderRowError((prev) => ({ ...prev, [provider.key]: null }));
       setPendingProviderKeys((prev) => {
         const copy = new Set(prev);
@@ -992,50 +1011,54 @@ export default function PrivacySettingsPage() {
         return copy;
       });
 
-      // Build the full map: persisted provider_block_llm + any local
-      // overrides + this new flip. Omit keys with a ``false`` value so
-      // the settings file stays small.
-      const merged: Record<string, boolean> = { ...providerBlock };
-      for (const [k, v] of Object.entries(blockOverrides)) {
-        if (v) merged[k] = true;
-        else delete merged[k];
-      }
-      if (next) merged[provider.key] = true;
-      else delete merged[provider.key];
+      setBlockOverrides((prevOverrides) => {
+        const nextOverrides = { ...prevOverrides, [provider.key]: next };
 
-      void (async () => {
-        try {
-          await updateSettings({ provider_block_llm: merged });
-          setProviderBlock(merged);
-          // Clear the override for this key now that the wire map is
-          // authoritative.
-          setBlockOverrides((prev) => {
-            const copy = { ...prev };
-            delete copy[provider.key];
-            return copy;
-          });
-        } catch (err) {
-          // Roll back this row.
-          setBlockOverrides((prev) => {
-            const copy = { ...prev };
-            delete copy[provider.key];
-            return copy;
-          });
-          setProviderRowError((prev) => ({
-            ...prev,
-            [provider.key]:
-              err instanceof Error ? err.message : "Failed to update block.",
-          }));
-        } finally {
-          setPendingProviderKeys((prev) => {
-            const copy = new Set(prev);
-            copy.delete(provider.key);
-            return copy;
-          });
+        // Build the full map: persisted provider_block_llm + the
+        // up-to-date override set (which now includes this flip). Omit
+        // keys with a ``false`` value so the settings file stays small.
+        const merged: Record<string, boolean> = { ...providerBlock };
+        for (const [k, v] of Object.entries(nextOverrides)) {
+          if (v) merged[k] = true;
+          else delete merged[k];
         }
-      })();
+
+        void (async () => {
+          try {
+            await updateSettings({ provider_block_llm: merged });
+            setProviderBlock(merged);
+            // Clear the override for this key now that the wire map is
+            // authoritative.
+            setBlockOverrides((prev) => {
+              const copy = { ...prev };
+              delete copy[provider.key];
+              return copy;
+            });
+          } catch (err) {
+            // Roll back this row.
+            setBlockOverrides((prev) => {
+              const copy = { ...prev };
+              delete copy[provider.key];
+              return copy;
+            });
+            setProviderRowError((prev) => ({
+              ...prev,
+              [provider.key]:
+                err instanceof Error ? err.message : "Failed to update block.",
+            }));
+          } finally {
+            setPendingProviderKeys((prev) => {
+              const copy = new Set(prev);
+              copy.delete(provider.key);
+              return copy;
+            });
+          }
+        })();
+
+        return nextOverrides;
+      });
     },
-    [providerBlock, blockOverrides],
+    [providerBlock],
   );
 
   // Synthetic-pass handler.
