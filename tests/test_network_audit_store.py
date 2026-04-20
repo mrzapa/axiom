@@ -157,6 +157,53 @@ def test_count_recent_window(tmp_db: Path) -> None:
         assert store.count_recent(window_seconds=60) == 6
 
 
+def test_count_recent_by_provider_filters_correctly(tmp_db: Path) -> None:
+    """``count_recent_by_provider`` sums only the named provider's events.
+
+    Phase 5a helper. The audit panel's per-provider matrix calls this
+    with ``window_seconds=7*86400`` once per row.
+    """
+    now = datetime.now(timezone.utc)
+    with NetworkAuditStore(tmp_db) as store:
+        for _ in range(3):
+            store.append(
+                make_synthetic_event(
+                    provider_key="openai", timestamp=now, event_id=new_ulid()
+                )
+            )
+        for _ in range(2):
+            store.append(
+                make_synthetic_event(
+                    provider_key="anthropic",
+                    timestamp=now,
+                    event_id=new_ulid(),
+                )
+            )
+        # Stale event outside the window — must not be counted.
+        store.append(
+            make_synthetic_event(
+                provider_key="openai",
+                timestamp=now - timedelta(seconds=3600),
+                event_id=new_ulid(),
+            )
+        )
+        assert store.count_recent_by_provider("openai", window_seconds=60) == 3
+        assert (
+            store.count_recent_by_provider("anthropic", window_seconds=60) == 2
+        )
+        # Wider window picks up the stale openai event.
+        assert (
+            store.count_recent_by_provider("openai", window_seconds=7200) == 4
+        )
+        # Unknown provider key returns 0, not an error.
+        assert (
+            store.count_recent_by_provider(
+                "definitely_not_a_provider", window_seconds=60
+            )
+            == 0
+        )
+
+
 # ---------------------------------------------------------------------------
 # Retention
 # ---------------------------------------------------------------------------

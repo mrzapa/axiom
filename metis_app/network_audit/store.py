@@ -357,6 +357,30 @@ class NetworkAuditStore:
         )
         return int(cursor.fetchone()[0])
 
+    def count_recent_by_provider(
+        self, provider_key: str, window_seconds: int
+    ) -> int:
+        """Return the number of events for ``provider_key`` in the last window.
+
+        Used by the Phase 5 audit panel to populate the ``events_7d``
+        column in the provider matrix. Served by the
+        ``idx_audit_provider`` composite index (``provider_key,
+        timestamp_ms``) so the query cost is O(log n + match_count)
+        rather than a full table scan.
+
+        Passing an unknown provider key returns ``0`` — not an error;
+        the panel iterates :data:`KNOWN_PROVIDERS` and some entries
+        (notably ``rss_feed``, ``weaviate``) may never have been hit.
+        """
+        conn = self._require_conn()
+        cutoff_ms = int((time.time() - float(window_seconds)) * 1000)
+        cursor = conn.execute(
+            "SELECT COUNT(*) FROM network_audit_events "
+            "WHERE provider_key = ? AND timestamp_ms >= ?",
+            (str(provider_key), cutoff_ms),
+        )
+        return int(cursor.fetchone()[0])
+
     # ------------------------------------------------------------------
     # Retention
     # ------------------------------------------------------------------
