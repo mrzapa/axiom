@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { NetworkAuditFirstRunCard } from "@/components/network-audit/first-run-card";
 import type { LandingStarfieldFrame, LandingWebglStar } from "@/components/home/landing-starfield-webgl.types";
 
 const LandingStarfieldWebgl = dynamic(
@@ -4988,6 +4989,8 @@ export default function Home() {
         <div className="metis-nav-right" />
       </nav>
 
+      <NetworkAuditFirstRunCard />
+
       <LandingStarfieldWebgl
         className="metis-starfield-webgl"
         frameRef={landingStarfieldFrameRef}
@@ -5360,6 +5363,70 @@ body {
 }
 .metis-nav-link:hover { color: var(--text-bright); }
 .metis-nav-right { display: flex; align-items: center; gap: 32px; }
+
+/* M17 Phase 7 — first-run network-audit discoverability card.
+   Fixed top-right, below the nav. Unobtrusive, dismissible, one-shot. */
+.metis-network-audit-first-run-card {
+  position: fixed;
+  top: 72px;
+  right: 24px;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 320px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(8, 10, 18, 0.85);
+  border: 1px solid rgba(120, 140, 190, 0.18);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  font-size: 12px;
+  color: var(--text-dim);
+  letter-spacing: 0.2px;
+}
+.metis-network-audit-first-run-card-body { display: flex; flex-direction: column; gap: 4px; }
+.metis-network-audit-first-run-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-bright);
+  margin: 0;
+}
+.metis-network-audit-first-run-card-subtitle { margin: 0; line-height: 1.45; }
+.metis-network-audit-first-run-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 2px;
+}
+.metis-network-audit-first-run-card-primary {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-bright);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(160, 200, 255, 0.28);
+  background: rgba(160, 200, 255, 0.08);
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+.metis-network-audit-first-run-card-primary:hover {
+  background: rgba(160, 200, 255, 0.16);
+  border-color: rgba(160, 200, 255, 0.5);
+}
+.metis-network-audit-first-run-card-dismiss {
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: color 0.2s ease;
+}
+.metis-network-audit-first-run-card-dismiss:hover { color: var(--text-bright); }
 
 /* HERO CANVAS */
 .metis-starfield-webgl {

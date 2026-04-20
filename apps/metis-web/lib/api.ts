@@ -3260,6 +3260,64 @@ export async function fetchNetworkAuditRecentCount(
  * degrades safely and never 500s, returning an empty ``providers`` list
  * when the audit store is unavailable.
  */
+/**
+ * Trigger a CSV download of the last ``days`` days of audit events.
+ *
+ * The backend streams ``text/csv`` with a ``Content-Disposition``
+ * attachment header; this helper fetches it, pulls the filename
+ * from the response header (falling back to a sensible default), and
+ * kicks off a browser download via an anchor + ``URL.createObjectURL``.
+ *
+ * No data leaves the local process — the download is served by the
+ * local Litestar API. The same ``days`` clamp applies as on the
+ * server (1..90, default 30).
+ *
+ * Throws on non-2xx so the UI can surface the error inline.
+ */
+export async function downloadNetworkAuditExport(
+  params: { days?: number } = {},
+  options?: { signal?: AbortSignal },
+): Promise<{ filename: string }> {
+  const days = params.days ?? 30;
+  const search = new URLSearchParams({ days: String(Math.trunc(days)) });
+  const res = await apiFetch(
+    `${await getApiBase()}/v1/network-audit/export?${search.toString()}`,
+    {
+      headers: { Accept: "text/csv" },
+      signal: options?.signal,
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to export network audit: ${res.status}`);
+  }
+
+  // Parse the filename out of ``attachment; filename="..."``. Fall
+  // back to a stable default so a missing header doesn't break the
+  // download — the caller gets *some* file on disk every time.
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? `metis-network-audit-${days}d.csv`;
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = "noopener";
+    // Firefox requires the anchor to be in the DOM; append+remove is
+    // cheap and works in every target browser.
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  } finally {
+    // Safari is picky about revoking synchronously; a microtask delay
+    // gives the browser a frame to dispatch the save dialog.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+  return { filename };
+}
+
 export async function runNetworkAuditSyntheticPass(
   options?: { signal?: AbortSignal },
 ): Promise<SyntheticPassResponse> {
