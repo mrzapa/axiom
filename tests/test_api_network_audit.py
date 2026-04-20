@@ -389,6 +389,189 @@ def test_stream_endpoint_registered() -> None:
 
 
 # ---------------------------------------------------------------------------
+# POST /v1/network-audit/synthetic-pass (Phase 6 — prove offline)
+# ---------------------------------------------------------------------------
+
+
+def _synthetic_response_keys() -> set[str]:
+    """KNOWN_PROVIDERS minus the ``unclassified`` fallback.
+
+    The synthetic-pass probe excludes ``unclassified`` because it is a
+    classification catch-all, not a real destination a user can gate.
+    """
+    return {k for k in KNOWN_PROVIDERS if k != "unclassified"}
+
+
+def test_synthetic_pass_returns_zero_calls_in_airplane_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_store: NetworkAuditStore,
+) -> None:
+    """Airplane mode on ⇒ every provider reports blocked + actual_calls=0.
+
+    This is the load-bearing litmus test the Phase 6 spec advertises:
+    with airplane mode on, the probe must NOT emit any audit events
+    (because ``is_provider_blocked`` returns True for every provider),
+    so the ``actual_calls`` count computed from the rowid delta is
+    zero across the board.
+    """
+    import metis_app.api_litestar.routes.network_audit as na_routes
+
+    monkeypatch.setattr(
+        na_routes,
+        "get_default_settings",
+        lambda: {AIRPLANE_MODE_KEY: True},
+    )
+
+    from metis_app.api_litestar import create_app
+
+    app = create_app()
+    with TestClient(app=app) as test_client:
+        resp = test_client.post("/v1/network-audit/synthetic-pass")
+        assert resp.status_code == 200
+        payload = resp.json()
+        # Belt-and-braces: no events actually landed in the store.
+        # Assert inside the ``with`` block — the app's ``on_shutdown``
+        # hook closes the singleton on client teardown, so accessing
+        # ``fresh_store`` afterwards raises RuntimeError.
+        assert fresh_store.recent(limit=100) == []
+
+    assert payload["airplane_mode"] is True
+    assert payload["duration_ms"] >= 0
+    providers = payload["providers"]
+    assert {row["provider_key"] for row in providers} == _synthetic_response_keys()
+    for row in providers:
+        assert row["blocked"] is True, f"{row['provider_key']} not blocked"
+        assert row["actual_calls"] == 0, (
+            f"{row['provider_key']} leaked {row['actual_calls']} event(s) "
+            "under airplane mode — the prove-offline invariant is violated"
+        )
+        assert row["attempted"] is False
+
+
+def test_synthetic_pass_records_one_event_per_provider_when_open(
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_store: NetworkAuditStore,
+) -> None:
+    """Airplane off ⇒ every reachable provider has actual_calls=1.
+
+    Every provider in ``KNOWN_PROVIDERS`` (minus ``unclassified``)
+    has a declared synthetic host and no active kill switch in the
+    stock test settings, so the probe should emit exactly one event
+    per provider.
+    """
+    import metis_app.api_litestar.routes.network_audit as na_routes
+
+    # No kill switches active — airplane off, no provider_block_llm,
+    # no legacy kill-switch settings set. The ingestion providers'
+    # ``news_comets_enabled`` is absent from the mapping which the
+    # predicate reads as "do not block" (defer to the app default).
+    monkeypatch.setattr(na_routes, "get_default_settings", lambda: {})
+
+    from metis_app.api_litestar import create_app
+
+    app = create_app()
+    with TestClient(app=app) as test_client:
+        resp = test_client.post("/v1/network-audit/synthetic-pass")
+        assert resp.status_code == 200
+        payload = resp.json()
+
+        providers = payload["providers"]
+        # One event per unblocked provider landed in the store.
+        # Asserted INSIDE the ``with`` block — the app's
+        # ``on_shutdown`` hook closes the singleton on client teardown.
+        recorded = fresh_store.recent(limit=100)
+        assert len(recorded) == len(providers)
+        assert all(ev.trigger_feature == "synthetic_pass" for ev in recorded)
+
+    assert payload["airplane_mode"] is False
+    assert {row["provider_key"] for row in providers} == _synthetic_response_keys()
+    for row in providers:
+        assert row["blocked"] is False, f"{row['provider_key']} unexpectedly blocked"
+        assert row["attempted"] is True
+        assert row["actual_calls"] == 1, (
+            f"{row['provider_key']} recorded {row['actual_calls']} events "
+            "(expected exactly 1)"
+        )
+        assert row["error"] is None
+
+
+def test_synthetic_pass_respects_provider_block_llm_map(
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_store: NetworkAuditStore,
+) -> None:
+    """Map blocks ``openai`` specifically — others still get exactly one event."""
+    import metis_app.api_litestar.routes.network_audit as na_routes
+
+    monkeypatch.setattr(
+        na_routes,
+        "get_default_settings",
+        lambda: {"provider_block_llm": {"openai": True}},
+    )
+
+    from metis_app.api_litestar import create_app
+
+    app = create_app()
+    with TestClient(app=app) as test_client:
+        resp = test_client.post("/v1/network-audit/synthetic-pass")
+        assert resp.status_code == 200
+        payload = resp.json()
+
+    by_key = {row["provider_key"]: row for row in payload["providers"]}
+    assert by_key["openai"]["blocked"] is True
+    assert by_key["openai"]["actual_calls"] == 0
+    assert by_key["openai"]["attempted"] is False
+    # Neighbouring providers still emitted exactly one event.
+    assert by_key["anthropic"]["blocked"] is False
+    assert by_key["anthropic"]["actual_calls"] == 1
+    assert by_key["voyage"]["actual_calls"] == 1
+
+
+def test_synthetic_pass_skips_unclassified(
+    client: TestClient,
+) -> None:
+    """The response never includes the ``unclassified`` fallback entry."""
+    resp = client.post("/v1/network-audit/synthetic-pass")
+    assert resp.status_code == 200
+    keys = {row["provider_key"] for row in resp.json()["providers"]}
+    assert "unclassified" not in keys
+
+
+def test_synthetic_pass_returns_safely_when_store_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Store singleton None ⇒ 200 OK with ``providers=[]`` and duration_ms=0."""
+    runtime.reset_default_store_for_tests()
+    import metis_app.api_litestar.routes.network_audit as na_routes
+
+    monkeypatch.setattr(na_routes, "get_default_store", lambda: None)
+    monkeypatch.setattr(na_routes, "get_default_settings", lambda: {})
+
+    from metis_app.api_litestar import create_app
+
+    app = create_app()
+    with TestClient(app=app) as test_client:
+        resp = test_client.post("/v1/network-audit/synthetic-pass")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload == {
+            "duration_ms": 0,
+            "airplane_mode": False,
+            "providers": [],
+        }
+
+
+def test_synthetic_pass_duration_is_measured(
+    client: TestClient,
+) -> None:
+    """``duration_ms`` is a non-negative integer (probe is near-instant)."""
+    resp = client.post("/v1/network-audit/synthetic-pass")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert isinstance(payload["duration_ms"], int)
+    assert payload["duration_ms"] >= 0
+
+
+# ---------------------------------------------------------------------------
 # App lifecycle hooks
 # ---------------------------------------------------------------------------
 

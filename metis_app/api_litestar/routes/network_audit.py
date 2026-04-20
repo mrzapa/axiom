@@ -1,6 +1,7 @@
-"""Litestar routes for the M17 Network Audit panel (Phase 5a).
+"""Litestar routes for the M17 Network Audit panel (Phases 5a + 6).
 
-Exposes four read-only GET endpoints under ``/v1/network-audit/``:
+Exposes four read-only GET endpoints and one write endpoint under
+``/v1/network-audit/``:
 
 - ``/events`` — paginated tail of recorded audit events (newest-first).
 - ``/providers`` — per-provider status rows for the privacy panel's
@@ -10,9 +11,12 @@ Exposes four read-only GET endpoints under ``/v1/network-audit/``:
   "N outbound calls in last 5 minutes" indicator at the top of the
   panel).
 - ``/stream`` — SSE stream of new events for the live feed.
+- ``POST /synthetic-pass`` — Phase 6 "prove offline" litmus test.
+  Exercises each registered provider once (synthetically — no real
+  network) and returns per-provider call counts. With airplane mode
+  on every count is zero.
 
-The synthetic-pass POST endpoint and CSV export are Phase 5c — not
-in this module yet.
+CSV export is Phase 7 — not in this module yet.
 
 Design notes:
 
@@ -38,19 +42,24 @@ import json
 import logging
 import time
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
-from litestar import Router, get
+from litestar import Router, get, post
 from litestar.response import Stream
 from pydantic import BaseModel
 
-from metis_app.network_audit.kill_switches import is_provider_blocked
+from metis_app.network_audit.events import NetworkAuditEvent
+from metis_app.network_audit.kill_switches import (
+    AIRPLANE_MODE_KEY,
+    is_provider_blocked,
+)
 from metis_app.network_audit.providers import KNOWN_PROVIDERS
 from metis_app.network_audit.runtime import (
     get_default_settings,
     get_default_store,
 )
+from metis_app.network_audit.store import new_ulid
 
 log = logging.getLogger(__name__)
 
@@ -114,6 +123,38 @@ class RecentCountResponse(BaseModel):
 
     count: int
     window_seconds: int
+
+
+class SyntheticProviderResult(BaseModel):
+    """One provider's result row in the synthetic-pass response."""
+
+    provider_key: str
+    display_name: str
+    category: str
+    attempted: bool
+    """``True`` iff the probe tried to emit a synthetic event for this
+    provider. ``False`` when the kill switch blocked it — the point of
+    the litmus test is that airplane mode prevents emission entirely.
+    """
+    blocked: bool
+    """``True`` iff the kill switch is currently blocking this provider."""
+    actual_calls: int
+    """Count of audit events recorded under ``provider_key`` during
+    the probe window (``rowid > start_rowid``). With airplane mode
+    on this MUST be ``0`` for every provider — the "prove offline"
+    invariant the panel is built to advertise.
+    """
+    error: str | None
+    """Short human-readable error message if anything went wrong for
+    this provider, otherwise ``None``."""
+
+
+class SyntheticPassResponse(BaseModel):
+    """Wire shape for the ``POST /synthetic-pass`` endpoint."""
+
+    duration_ms: int
+    airplane_mode: bool
+    providers: list[SyntheticProviderResult]
 
 
 # ---------------------------------------------------------------------------
@@ -390,6 +431,240 @@ async def stream_events() -> Stream:
 
 
 # ---------------------------------------------------------------------------
+# Synthetic-pass probe (Phase 6 — prove offline)
+# ---------------------------------------------------------------------------
+
+# Declared ``url_host`` / ``url_path_prefix`` pairs for each provider
+# key the synthetic-pass probe exercises. These match the vendor-SDK
+# "intent-level" labels the Phase 4 wrappers use (see
+# ``metis_app.network_audit.sdk_events``) so a synthetic event sits
+# alongside real events in the feed without looking out of place. The
+# path prefix is a coarse label, not a real endpoint — the probe never
+# touches the wire.
+_SYNTHETIC_PROBE_HOSTS: dict[str, tuple[str, str, str]] = {
+    # key: (url_host, url_path_prefix, source)
+    # LLM providers — mirror the Phase 4 sdk_events defaults.
+    "openai": ("api.openai.com", "/chat", "sdk_invocation"),
+    "anthropic": ("api.anthropic.com", "/messages", "sdk_invocation"),
+    "google": ("generativelanguage.googleapis.com", "/v1beta", "sdk_invocation"),
+    "xai": ("api.x.ai", "/v1", "sdk_invocation"),
+    "local_lm_studio": ("localhost", "/v1", "sdk_invocation"),
+    # Embedding providers.
+    "openai_embeddings": ("api.openai.com", "/embeddings", "sdk_invocation"),
+    "google_embeddings": (
+        "generativelanguage.googleapis.com",
+        "/v1beta",
+        "sdk_invocation",
+    ),
+    "voyage": ("api.voyageai.com", "/v1", "sdk_invocation"),
+    "huggingface_local": ("localhost", "/", "sdk_invocation"),
+    # Search providers.
+    "duckduckgo": ("api.duckduckgo.com", "/", "stdlib_urlopen"),
+    "jina_reader": ("r.jina.ai", "/", "stdlib_urlopen"),
+    "tavily": ("api.tavily.com", "/search", "sdk_invocation"),
+    # Ingestion providers (stdlib path).
+    "rss_feed": ("example.com", "/feed", "stdlib_urlopen"),
+    "hackernews_api": (
+        "hacker-news.firebaseio.com",
+        "/v0",
+        "stdlib_urlopen",
+    ),
+    "reddit_api": ("www.reddit.com", "/r", "stdlib_urlopen"),
+    # Model hub.
+    "huggingface_hub": ("huggingface.co", "/api", "stdlib_urlopen"),
+    # Vector DB — weaviate_url may be any host; use the declared pattern.
+    "weaviate": ("weaviate.local", "/v1", "stdlib_urlopen"),
+    # Other / stdlib.
+    "nyx_registry": ("nyxui.com", "/", "stdlib_urlopen"),
+    # Fonts CDN.
+    "google_fonts": ("fonts.googleapis.com", "/css2", "stdlib_urlopen"),
+}
+
+_SYNTHETIC_TRIGGER_FEATURE = "synthetic_pass"
+
+
+def _emit_synthetic_event(
+    store: Any, provider_key: str, source: str, url_host: str, url_path_prefix: str
+) -> None:
+    """Synthesise a single ``trigger_feature="synthetic_pass"`` event.
+
+    Goes directly through ``store.append`` rather than
+    :func:`audited_urlopen` or :func:`audit_sdk_call` — both of those
+    would (a) perform a real kill-switch check (we have already made
+    that decision at the caller) and (b) for the stdlib path, actually
+    attempt to open the URL. The probe's job is to exercise the
+    audit-emission path, not the wire.
+    """
+    store.append(
+        NetworkAuditEvent(
+            id=new_ulid(),
+            timestamp=datetime.now(timezone.utc),
+            method="GET",
+            url_host=url_host,
+            url_path_prefix=url_path_prefix,
+            query_params_stored=False,
+            provider_key=provider_key,
+            trigger_feature=_SYNTHETIC_TRIGGER_FEATURE,
+            size_bytes_in=None,
+            size_bytes_out=None,
+            latency_ms=0,
+            status_code=None,
+            user_initiated=False,
+            blocked=False,
+            source=source,  # type: ignore[arg-type]
+        )
+    )
+
+
+@post("/v1/network-audit/synthetic-pass", status_code=200, sync_to_thread=False)
+def synthetic_pass() -> dict:
+    """Run a scripted probe over every known provider and return the counts.
+
+    Phase 6 "prove offline" litmus test. For each provider in
+    :data:`KNOWN_PROVIDERS` (skipping ``unclassified``):
+
+    1. Consult :func:`is_provider_blocked`. If blocked: mark
+       ``attempted=False, blocked=True, actual_calls=0`` and move on —
+       crucially, do NOT synthesise an event. The whole point is that
+       a blocked provider generates zero audit rows.
+    2. Otherwise: synthesise one ``trigger_feature="synthetic_pass"``
+       event directly via ``store.append`` (never via the real wrapper
+       — that would attempt the network) and mark ``attempted=True,
+       blocked=False``.
+
+    After the loop, re-query the store for events with
+    ``rowid > start_rowid`` grouped by ``provider_key`` — that's the
+    authoritative ``actual_calls`` count. Using the rowid delta means
+    the count reflects what SQLite actually wrote, not what we think
+    we wrote, so a disk-full store with the same provider listed as
+    ``attempted=True, actual_calls=0`` honestly signals silent drop.
+
+    The plan's 30-second budget is a MAXIMUM, not a target. Synthetic
+    probes are near-instant; ``duration_ms`` is real wall-clock.
+
+    Graceful degradation: if the audit store is unavailable the route
+    returns ``providers: []``, ``duration_ms: 0``, and the current
+    airplane-mode flag with 200 OK. Privacy panel must not 500.
+    """
+    started_at = time.perf_counter()
+    settings = get_default_settings()
+    airplane_mode = settings.get(AIRPLANE_MODE_KEY) is True
+
+    store = get_default_store()
+    if store is None:
+        return SyntheticPassResponse(
+            duration_ms=0,
+            airplane_mode=airplane_mode,
+            providers=[],
+        ).model_dump(mode="json")
+
+    # Record the watermark BEFORE any probe writes so events_after()
+    # returns exactly the rows produced by this pass.
+    try:
+        start_rowid = store.max_rowid()
+    except Exception as exc:  # noqa: BLE001 — audit infra must not 500
+        log.warning(
+            "network_audit /synthetic-pass max_rowid failed: %s", exc, exc_info=True
+        )
+        return SyntheticPassResponse(
+            duration_ms=int((time.perf_counter() - started_at) * 1000),
+            airplane_mode=airplane_mode,
+            providers=[],
+        ).model_dump(mode="json")
+
+    # Per-provider bookkeeping. Ordered dict preserves KNOWN_PROVIDERS
+    # iteration order so the response is deterministic.
+    results: list[dict[str, Any]] = []
+    for key, spec in KNOWN_PROVIDERS.items():
+        if key == "unclassified":
+            continue
+
+        blocked = is_provider_blocked(key, settings)
+        error: str | None = None
+        attempted = False
+
+        if not blocked:
+            probe = _SYNTHETIC_PROBE_HOSTS.get(key)
+            if probe is None:
+                # Provider is registered but has no declared synthetic
+                # host. Skip emission, flag the result with an error so
+                # the panel can prompt us to add the entry above.
+                error = "no synthetic probe host registered"
+            else:
+                url_host, url_path_prefix, source = probe
+                try:
+                    _emit_synthetic_event(
+                        store,
+                        provider_key=key,
+                        source=source,
+                        url_host=url_host,
+                        url_path_prefix=url_path_prefix,
+                    )
+                    attempted = True
+                except Exception as exc:  # noqa: BLE001 — degrade per-provider
+                    log.warning(
+                        "network_audit /synthetic-pass emit failed for %s: %s",
+                        key,
+                        exc,
+                        exc_info=True,
+                    )
+                    error = f"synthetic emit failed: {exc}"
+
+        results.append(
+            {
+                "provider_key": spec.key,
+                "display_name": spec.display_name,
+                "category": spec.category,
+                "attempted": attempted,
+                "blocked": blocked,
+                "actual_calls": 0,  # filled in below from the rowid delta
+                "error": error,
+            }
+        )
+
+    # Count events emitted during the probe window, grouped by
+    # provider_key. This is the authoritative source for
+    # ``actual_calls`` — if a write silently dropped we want to show
+    # the zero honestly.
+    provider_counts: dict[str, int] = {}
+    try:
+        # Drain in chunks until a partial batch, matching the SSE
+        # drain pattern. We use a generous per-chunk cap; synthetic
+        # passes produce at most one event per registered provider so
+        # a single round-trip is the expected shape.
+        cursor_rowid = start_rowid
+        chunk_limit = max(len(_SYNTHETIC_PROBE_HOSTS) * 2, 64)
+        while True:
+            batch = store.events_after(cursor_rowid, chunk_limit)
+            if not batch:
+                break
+            for rowid, event in batch:
+                if event.trigger_feature == _SYNTHETIC_TRIGGER_FEATURE:
+                    provider_counts[event.provider_key] = (
+                        provider_counts.get(event.provider_key, 0) + 1
+                    )
+                cursor_rowid = rowid
+            if len(batch) < chunk_limit:
+                break
+    except Exception as exc:  # noqa: BLE001 — degrade to zero counts
+        log.warning(
+            "network_audit /synthetic-pass count query failed: %s",
+            exc,
+            exc_info=True,
+        )
+
+    for row in results:
+        row["actual_calls"] = provider_counts.get(row["provider_key"], 0)
+
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+    return SyntheticPassResponse(
+        duration_ms=duration_ms,
+        airplane_mode=airplane_mode,
+        providers=[SyntheticProviderResult(**row) for row in results],
+    ).model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
@@ -400,6 +675,7 @@ router = Router(
         list_providers,
         recent_count,
         stream_events,
+        synthetic_pass,
     ],
     tags=["network-audit"],
 )
