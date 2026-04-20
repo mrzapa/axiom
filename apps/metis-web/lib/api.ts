@@ -3155,6 +3155,7 @@ import type {
   NetworkAuditProvider,
   NetworkAuditStreamFrame,
   RecentCountResponse,
+  SyntheticPassResponse,
 } from "@/lib/network-audit-types";
 
 export type {
@@ -3164,6 +3165,8 @@ export type {
   NetworkAuditStreamFrame,
   ProviderCategory,
   RecentCountResponse,
+  SyntheticPassResponse,
+  SyntheticProviderResult,
 } from "@/lib/network-audit-types";
 
 /**
@@ -3241,6 +3244,53 @@ export async function fetchNetworkAuditRecentCount(
       typeof data.window_seconds === "number"
         ? data.window_seconds
         : Math.trunc(windowSeconds),
+  };
+}
+
+/**
+ * Run the "prove offline" synthetic-pass probe.
+ *
+ * The backend walks every known provider and (when the kill switch
+ * permits) emits one synthetic audit event per provider, then counts
+ * how many new audit rows that provider actually accrued during the
+ * probe window. With airplane mode on every ``actual_calls`` MUST be
+ * zero — a non-zero value is proof of a kill-switch bypass bug.
+ *
+ * The call can take a couple of seconds in the worst case; the backend
+ * degrades safely and never 500s, returning an empty ``providers`` list
+ * when the audit store is unavailable.
+ */
+export async function runNetworkAuditSyntheticPass(
+  options?: { signal?: AbortSignal },
+): Promise<SyntheticPassResponse> {
+  const res = await apiFetch(
+    `${await getApiBase()}/v1/network-audit/synthetic-pass`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      // Empty body — endpoint takes no parameters.
+      body: "{}",
+      signal: options?.signal,
+    },
+  );
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(
+      detail || `Failed to run synthetic-pass: ${res.status}`,
+    );
+  }
+  const data = (await res.json()) as Partial<SyntheticPassResponse>;
+  return {
+    duration_ms:
+      typeof data.duration_ms === "number" ? data.duration_ms : 0,
+    airplane_mode:
+      typeof data.airplane_mode === "boolean" ? data.airplane_mode : false,
+    providers: Array.isArray(data.providers)
+      ? (data.providers as SyntheticPassResponse["providers"])
+      : [],
   };
 }
 
