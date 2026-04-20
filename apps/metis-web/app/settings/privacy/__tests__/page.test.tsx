@@ -1,10 +1,11 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   NetworkAuditEvent,
   NetworkAuditProvider,
   NetworkAuditStreamFrame,
   RecentCountResponse,
+  SyntheticPassResponse,
 } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,9 @@ vi.mock("@/lib/api", async () => {
     fetchNetworkAuditEvents: vi.fn(),
     fetchNetworkAuditProviders: vi.fn(),
     fetchNetworkAuditRecentCount: vi.fn(),
+    fetchSettings: vi.fn(),
+    updateSettings: vi.fn(),
+    runNetworkAuditSyntheticPass: vi.fn(),
     subscribeNetworkAuditStream: vi.fn(
       (
         listener: (frame: NetworkAuditStreamFrame) => void,
@@ -84,6 +88,10 @@ const fetchNetworkAuditProviders = api.fetchNetworkAuditProviders as ReturnType<
 >;
 const fetchNetworkAuditRecentCount =
   api.fetchNetworkAuditRecentCount as ReturnType<typeof vi.fn>;
+const fetchSettings = api.fetchSettings as ReturnType<typeof vi.fn>;
+const updateSettings = api.updateSettings as ReturnType<typeof vi.fn>;
+const runNetworkAuditSyntheticPass =
+  api.runNetworkAuditSyntheticPass as ReturnType<typeof vi.fn>;
 
 const { default: PrivacySettingsPage } = await import("../page");
 
@@ -138,6 +146,16 @@ function stubDefaults(): void {
   } satisfies RecentCountResponse);
   fetchNetworkAuditProviders.mockResolvedValue([]);
   fetchNetworkAuditEvents.mockResolvedValue([]);
+  fetchSettings.mockResolvedValue({
+    network_audit_airplane_mode: false,
+    provider_block_llm: {},
+  });
+  updateSettings.mockResolvedValue({});
+  runNetworkAuditSyntheticPass.mockResolvedValue({
+    duration_ms: 12,
+    airplane_mode: false,
+    providers: [],
+  } satisfies SyntheticPassResponse);
 }
 
 beforeEach(() => {
@@ -192,16 +210,419 @@ describe("PrivacySettingsPage — Section 1 (airplane / recent count)", () => {
     expect(screen.getByText(/in the last 5m/i)).toBeInTheDocument();
   });
 
-  it("renders the airplane toggle disabled with a Phase 5c note", async () => {
+  it("renders the airplane toggle enabled (Phase 6 enforcement)", async () => {
     render(<PrivacySettingsPage />);
 
     const toggle = (await screen.findByLabelText(
       /enable airplane mode/i,
     )) as HTMLInputElement;
-    expect(toggle).toBeDisabled();
-    expect(
-      screen.getByText(/toggle available in the next update \(phase 5c\)/i),
-    ).toBeInTheDocument();
+    // Phase 6: toggle is functional. It may start disabled for a tick
+    // while settings hydrate; wait for it to become enabled.
+    await waitFor(() => {
+      expect(toggle).not.toBeDisabled();
+    });
+  });
+
+  it("reflects the hydrated airplane_mode setting in the checkbox", async () => {
+    fetchSettings.mockResolvedValue({
+      network_audit_airplane_mode: true,
+      provider_block_llm: {},
+    });
+    render(<PrivacySettingsPage />);
+
+    const toggle = (await screen.findByLabelText(
+      /enable airplane mode/i,
+    )) as HTMLInputElement;
+    await waitFor(() => {
+      expect(toggle.checked).toBe(true);
+    });
+  });
+});
+
+describe("PrivacySettingsPage — Phase 6 airplane toggle write path", () => {
+  it("writes network_audit_airplane_mode=true when flipped on", async () => {
+    render(<PrivacySettingsPage />);
+
+    const toggle = (await screen.findByLabelText(
+      /enable airplane mode/i,
+    )) as HTMLInputElement;
+    // Ensure settings hydrate runs and toggle becomes actionable.
+    await waitFor(() => expect(toggle.checked).toBe(false));
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledWith({
+        network_audit_airplane_mode: true,
+      });
+    });
+    expect(toggle.checked).toBe(true);
+  });
+
+  it("disables the toggle while the write is in flight", async () => {
+    let resolveWrite: (value: Record<string, unknown>) => void = () => undefined;
+    updateSettings.mockImplementation(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+
+    render(<PrivacySettingsPage />);
+    const toggle = (await screen.findByLabelText(
+      /enable airplane mode/i,
+    )) as HTMLInputElement;
+    await waitFor(() => expect(toggle.checked).toBe(false));
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // Mid-flight: disabled.
+    expect(toggle.disabled).toBe(true);
+
+    await act(async () => {
+      resolveWrite({});
+    });
+
+    await waitFor(() => expect(toggle.disabled).toBe(false));
+  });
+
+  it("rolls back and surfaces an error when the write rejects", async () => {
+    updateSettings.mockRejectedValue(new Error("write failed: 500"));
+
+    render(<PrivacySettingsPage />);
+    const toggle = (await screen.findByLabelText(
+      /enable airplane mode/i,
+    )) as HTMLInputElement;
+    await waitFor(() => expect(toggle.checked).toBe(false));
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/write failed: 500/i)).toBeInTheDocument();
+    });
+    // Rollback: checkbox returns to unchecked.
+    expect(toggle.checked).toBe(false);
+  });
+});
+
+describe("PrivacySettingsPage — Phase 6 provider kill-switch toggles", () => {
+  it("writes {provider_block_llm: {openai: true}} on first flip", async () => {
+    fetchNetworkAuditProviders.mockResolvedValue([
+      makeProvider({
+        key: "openai",
+        display_name: "OpenAI",
+        kill_switch_setting_key: null,
+        blocked: false,
+      }),
+    ]);
+
+    render(<PrivacySettingsPage />);
+
+    const checkbox = (await screen.findByLabelText(
+      /block openai/i,
+    )) as HTMLInputElement;
+    await waitFor(() => expect(checkbox.checked).toBe(false));
+
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledWith({
+        provider_block_llm: { openai: true },
+      });
+    });
+  });
+
+  it("renders the toggle disabled for providers with a legacy kill_switch_setting_key", async () => {
+    fetchNetworkAuditProviders.mockResolvedValue([
+      makeProvider({
+        key: "reddit_api",
+        display_name: "Reddit API",
+        category: "ingestion",
+        kill_switch_setting_key: "news_comets_enabled",
+        blocked: false,
+      }),
+    ]);
+
+    render(<PrivacySettingsPage />);
+
+    const checkbox = (await screen.findByLabelText(
+      /block reddit api/i,
+    )) as HTMLInputElement;
+    expect(checkbox).toBeDisabled();
+    // The inline note renders "Controlled by <code>news_comets_enabled</code>
+    // in other settings" — assert on the code element to avoid matching
+    // the page-level description copy.
+    const code = screen.getByText("news_comets_enabled");
+    expect(code.tagName.toLowerCase()).toBe("code");
+  });
+
+  it("serializes rapid provider flips — second POST waits for the first", async () => {
+    // Regression combining Task C I1 (atomic merge inside the
+    // functional updater) and PR #525 Codex P1 #2 (writes must be
+    // serialised so out-of-order server arrival can't clobber a newer
+    // map with an older one). Two clicks fire, first is slow-resolved:
+    // the second POST must not land on the server until the first
+    // completes. When it does land, its payload must contain both
+    // flips (the merge still reads the override set atomically).
+    fetchNetworkAuditProviders.mockResolvedValue([
+      makeProvider({
+        key: "openai",
+        display_name: "OpenAI",
+        kill_switch_setting_key: null,
+        blocked: false,
+      }),
+      makeProvider({
+        key: "anthropic",
+        display_name: "Anthropic",
+        kill_switch_setting_key: null,
+        blocked: false,
+      }),
+    ]);
+    let resolveFirst: () => void = () => undefined;
+    updateSettings
+      .mockImplementationOnce(
+        () =>
+          new Promise<Record<string, unknown>>((r) => {
+            resolveFirst = () => r({});
+          }),
+      )
+      .mockImplementationOnce(() => Promise.resolve({}));
+
+    render(<PrivacySettingsPage />);
+
+    const openaiToggle = await screen.findByLabelText(/Block OpenAI/i);
+    const anthropicToggle = await screen.findByLabelText(/Block Anthropic/i);
+
+    // Two clicks inside one act — the serialisation queue must hold
+    // the second write back until the first resolves.
+    await act(async () => {
+      fireEvent.click(openaiToggle);
+      fireEvent.click(anthropicToggle);
+    });
+
+    // Before the first resolves, only the first POST should have fired.
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledTimes(1);
+    });
+    const firstCall = updateSettings.mock.calls[0]?.[0] as {
+      provider_block_llm?: Record<string, boolean>;
+    };
+    expect(firstCall?.provider_block_llm).toEqual({ openai: true });
+
+    // Resolve the first POST. The second is now free to fire.
+    await act(async () => {
+      resolveFirst();
+    });
+
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledTimes(2);
+    });
+
+    // Second call's patch must include BOTH flips — the atomic-merge
+    // property from the I1 polish still holds.
+    const secondCall = updateSettings.mock.calls[1]?.[0] as {
+      provider_block_llm?: Record<string, boolean>;
+    };
+    expect(secondCall?.provider_block_llm).toEqual({
+      openai: true,
+      anthropic: true,
+    });
+  });
+
+  it("keeps the checkbox visually blocked after a successful toggle (no revert until next poll)", async () => {
+    // Regression for PR #525 Codex P1 #1: after a successful toggle,
+    // the local override was cleared and the checkbox fell back to
+    // provider.blocked — which is stale until the 10 s providers poll
+    // catches up. The fix makes providerBlock the render-time source
+    // of truth for any provider the user has touched, so the checkbox
+    // stays checked immediately after the POST resolves (no visible
+    // revert).
+    fetchNetworkAuditProviders.mockResolvedValue([
+      makeProvider({
+        key: "openai",
+        display_name: "OpenAI",
+        kill_switch_setting_key: null,
+        blocked: false, // server hasn't heard about the block yet
+      }),
+    ]);
+    updateSettings.mockResolvedValue({});
+
+    render(<PrivacySettingsPage />);
+
+    const toggle = (await screen.findByLabelText(
+      /Block OpenAI/i,
+    )) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // Let the POST resolve + the post-success state updates flush.
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledTimes(1);
+    });
+
+    // The override is now cleared, but providerBlock[openai] = true
+    // should keep the render showing checked, even though
+    // provider.blocked on the server-fetched row is still false.
+    // No additional fetchNetworkAuditProviders call (poll interval is
+    // 10 s and we've only advanced real time by a few ms).
+    await waitFor(() => {
+      expect(toggle.checked).toBe(true);
+    });
+  });
+});
+
+describe("PrivacySettingsPage — Phase 6 prove offline button + modal", () => {
+  it("opens a modal with the synthetic-pass results", async () => {
+    runNetworkAuditSyntheticPass.mockResolvedValue({
+      duration_ms: 42,
+      airplane_mode: true,
+      providers: [
+        {
+          provider_key: "openai",
+          display_name: "OpenAI",
+          category: "llm",
+          attempted: false,
+          blocked: true,
+          actual_calls: 0,
+          error: null,
+        },
+      ],
+    } satisfies SyntheticPassResponse);
+
+    render(<PrivacySettingsPage />);
+
+    const button = await screen.findByRole("button", {
+      name: /prove offline/i,
+    });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => {
+      expect(runNetworkAuditSyntheticPass).toHaveBeenCalled();
+    });
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/synthetic pass completed in 42ms/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/airplane mode: on/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/0 outbound calls/i)).toBeInTheDocument();
+    expect(within(dialog).getByText("OpenAI")).toBeInTheDocument();
+  });
+
+  it("does not highlight blocked providers as anomalous in non-airplane mode", async () => {
+    // Regression for Task C N6: a blocked provider reports
+    // ``attempted=false, actual_calls=0`` which is exactly the kill
+    // switch working, not an anomaly. The old highlight condition
+    // triggered on ``actual_calls !== 1`` unconditionally so blocked
+    // rows lit amber even when airplane mode was OFF.
+    runNetworkAuditSyntheticPass.mockResolvedValue({
+      duration_ms: 5,
+      airplane_mode: false,
+      providers: [
+        {
+          provider_key: "openai",
+          display_name: "OpenAI",
+          category: "llm",
+          attempted: false,
+          blocked: true,
+          actual_calls: 0,
+          error: null,
+        },
+        {
+          provider_key: "anthropic",
+          display_name: "Anthropic",
+          category: "llm",
+          attempted: true,
+          blocked: false,
+          actual_calls: 1,
+          error: null,
+        },
+      ],
+    } satisfies SyntheticPassResponse);
+    render(<PrivacySettingsPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /prove offline/i }),
+    );
+    await screen.findByRole("dialog");
+
+    const rows = screen.getAllByRole("row");
+    const openaiRow = rows.find((r) => within(r).queryByText("OpenAI"));
+    expect(openaiRow).toBeDefined();
+    // Blocked provider's row must not carry the amber anomaly class.
+    expect(openaiRow?.className ?? "").not.toMatch(/amber/);
+  });
+
+  it("shows an inline error when the synthetic pass rejects", async () => {
+    runNetworkAuditSyntheticPass.mockRejectedValue(new Error("probe exploded"));
+
+    render(<PrivacySettingsPage />);
+    const button = await screen.findByRole("button", {
+      name: /prove offline/i,
+    });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/synthetic pass failed: probe exploded/i),
+      ).toBeInTheDocument();
+    });
+  });
+});
+
+describe("PrivacySettingsPage — Phase 6 synthetic-probe feed filter", () => {
+  it("hides events with trigger_feature=synthetic_pass by default", async () => {
+    fetchNetworkAuditEvents.mockResolvedValue([
+      makeEvent({
+        id: "ev-real",
+        trigger_feature: "chat.direct",
+      }),
+      makeEvent({
+        id: "ev-probe",
+        trigger_feature: "synthetic_pass",
+      }),
+    ]);
+
+    render(<PrivacySettingsPage />);
+
+    await screen.findByText("chat.direct");
+    expect(screen.queryByText("synthetic_pass")).not.toBeInTheDocument();
+  });
+
+  it("reveals synthetic_pass events when the 'show synthetic probes' toggle is on", async () => {
+    fetchNetworkAuditEvents.mockResolvedValue([
+      makeEvent({
+        id: "ev-real",
+        trigger_feature: "chat.direct",
+      }),
+      makeEvent({
+        id: "ev-probe",
+        trigger_feature: "synthetic_pass",
+      }),
+    ]);
+
+    render(<PrivacySettingsPage />);
+    await screen.findByText("chat.direct");
+
+    const showToggle = screen.getByLabelText(
+      /show synthetic probes/i,
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.click(showToggle);
+    });
+
+    expect(screen.getByText("synthetic_pass")).toBeInTheDocument();
   });
 });
 

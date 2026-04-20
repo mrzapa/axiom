@@ -25,6 +25,7 @@ const {
   fetchNetworkAuditEvents,
   fetchNetworkAuditProviders,
   fetchNetworkAuditRecentCount,
+  runNetworkAuditSyntheticPass,
 } = await import(
   "../api"
 );
@@ -1185,5 +1186,85 @@ describe("subscribeNetworkAuditStream — parser + reconnect semantics", () => {
     expect(fetchMock.mock.calls.length).toBe(initialCalls);
 
     unsubscribe();
+  });
+});
+
+describe("runNetworkAuditSyntheticPass", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("POSTs to /v1/network-audit/synthetic-pass", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          duration_ms: 12,
+          airplane_mode: false,
+          providers: [],
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runNetworkAuditSyntheticPass();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
+    expect(calledUrl).toContain("/v1/network-audit/synthetic-pass");
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init?.method).toBe("POST");
+  });
+
+  it("returns the parsed response shape", async () => {
+    const mockResponse = {
+      duration_ms: 73,
+      airplane_mode: true,
+      providers: [
+        {
+          provider_key: "openai",
+          display_name: "OpenAI",
+          category: "llm",
+          attempted: false,
+          blocked: true,
+          actual_calls: 0,
+          error: null,
+        },
+        {
+          provider_key: "anthropic",
+          display_name: "Anthropic",
+          category: "llm",
+          attempted: false,
+          blocked: true,
+          actual_calls: 0,
+          error: null,
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      }),
+    );
+
+    const result = await runNetworkAuditSyntheticPass();
+    expect(result.duration_ms).toBe(73);
+    expect(result.airplane_mode).toBe(true);
+    expect(result.providers).toHaveLength(2);
+    expect(result.providers[0]?.provider_key).toBe("openai");
+    expect(result.providers[0]?.blocked).toBe(true);
+  });
+
+  it("throws on non-ok response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve("boom"),
+      }),
+    );
+    await expect(runNetworkAuditSyntheticPass()).rejects.toThrow(/boom/);
   });
 });

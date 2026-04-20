@@ -104,3 +104,37 @@ export interface RecentCountResponse {
 export type NetworkAuditStreamFrame =
   | { type: "audit_event"; event: NetworkAuditEvent }
   | { type: "no_store" };
+
+/**
+ * One provider row returned by ``POST /v1/network-audit/synthetic-pass``.
+ *
+ * The "prove offline" litmus test synthesises one probe event per known
+ * provider; with airplane mode on every ``actual_calls`` value MUST be
+ * ``0``. A non-zero value is evidence of a kill-switch bypass bug.
+ */
+export interface SyntheticProviderResult {
+  provider_key: string;
+  display_name: string;
+  category: ProviderCategory;
+  /** ``true`` iff the probe tried to emit a synthetic event. */
+  attempted: boolean;
+  /** ``true`` iff the kill switch is currently blocking this provider. */
+  blocked: boolean;
+  /** Audit events recorded for this provider during the probe window. */
+  actual_calls: number;
+  /** Short human-readable error message, or ``null`` on success. */
+  error: string | null;
+}
+
+/**
+ * Wire shape of ``POST /v1/network-audit/synthetic-pass``.
+ *
+ * Backend degrades safely: when the audit store is unavailable
+ * ``providers`` is ``[]`` and ``duration_ms`` still reflects total wall
+ * time. The frontend renders the same shape either way.
+ */
+export interface SyntheticPassResponse {
+  duration_ms: number;
+  airplane_mode: boolean;
+  providers: SyntheticProviderResult[];
+}
