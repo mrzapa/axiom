@@ -172,10 +172,18 @@ def list_events(
     store = get_default_store()
     if store is None:
         return []
-    if provider:
-        events = store.recent_by_provider(str(provider), effective_limit)
-    else:
-        events = store.recent(effective_limit)
+    # "Privacy panel never 500s" — degrade to empty list on mid-request
+    # SQLite failures (corruption, concurrent VACUUM, etc.) rather than
+    # surfacing the error. The warning is logged so ops can still see
+    # something is wrong.
+    try:
+        if provider:
+            events = store.recent_by_provider(str(provider), effective_limit)
+        else:
+            events = store.recent(effective_limit)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("network_audit /events read failed: %s", exc, exc_info=True)
+        return []
     return [_event_to_response(ev).model_dump(mode="json") for ev in events]
 
 
@@ -202,17 +210,32 @@ def list_providers() -> list[dict]:
 
         blocked = is_provider_blocked(key, settings)
 
+        # "Privacy panel never 500s" — degrade each provider's
+        # live-computed fields to zero/None on SQLite read failure.
+        # The provider row still renders with blocked state + spec
+        # metadata so the user isn't blocked from flipping a kill
+        # switch just because a count query errored.
         if store is None:
             events_7d = 0
             last_call_at: datetime | None = None
         else:
-            events_7d = store.count_recent_by_provider(
-                key, _PROVIDER_WINDOW_7D_SECONDS
-            )
-            # Fetch just the newest event for this provider to populate
-            # last_call_at. Cheap (indexed by provider_key+timestamp).
-            latest = store.recent_by_provider(key, limit=1)
-            last_call_at = latest[0].timestamp if latest else None
+            try:
+                events_7d = store.count_recent_by_provider(
+                    key, _PROVIDER_WINDOW_7D_SECONDS
+                )
+                # Fetch just the newest event for this provider to populate
+                # last_call_at. Cheap (indexed by provider_key+timestamp).
+                latest = store.recent_by_provider(key, limit=1)
+                last_call_at = latest[0].timestamp if latest else None
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "network_audit /providers read failed for %s: %s",
+                    key,
+                    exc,
+                    exc_info=True,
+                )
+                events_7d = 0
+                last_call_at = None
 
         responses.append(
             ProviderStatusResponse(
@@ -250,7 +273,14 @@ def recent_count(window: int = _RECENT_COUNT_DEFAULT_WINDOW) -> dict:
     if store is None:
         count = 0
     else:
-        count = store.count_recent(window_seconds=effective_window)
+        # "Privacy panel never 500s" — degrade to zero on read failure.
+        try:
+            count = store.count_recent(window_seconds=effective_window)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "network_audit /recent-count read failed: %s", exc, exc_info=True
+            )
+            count = 0
     return RecentCountResponse(
         count=count, window_seconds=effective_window
     ).model_dump(mode="json")
@@ -283,14 +313,22 @@ async def stream_events() -> Stream:
             ).encode()
             return
 
-        last_seen_id: str | None = None
-        # Prime last_seen_id to the current tail so we only emit
+        # Track (timestamp_ms, id) rather than id alone. Pure-id equality
+        # is insufficient under millisecond-collision bursts: ULIDs are
+        # lex-ordered by time PLUS 80 bits of randomness, so two events
+        # with the same timestamp_ms can have non-monotonic id order.
+        # A watermark tuple with strict-greater comparison guarantees
+        # no same-ms event is silently skipped.
+        last_seen_ms: int = 0
+        last_seen_id: str = ""
+        # Prime the watermark to the current tail so we only emit
         # events observed AFTER the client connects. Clients that
         # want historical events should use ``/events`` first and
         # then subscribe to the stream.
         try:
             tail = store.recent(limit=1)
             if tail:
+                last_seen_ms = int(tail[0].timestamp.timestamp() * 1000)
                 last_seen_id = tail[0].id
         except Exception as exc:  # noqa: BLE001 — audit infra must not crash
             log.debug("network_audit stream prime failed: %s", exc)
@@ -304,36 +342,47 @@ async def stream_events() -> Stream:
                     break
                 try:
                     batch = store.recent(limit=_SSE_BATCH_LIMIT)
-                    # ``recent`` returns newest-first. Collect events
-                    # strictly newer than last_seen_id, then reverse
-                    # so the client sees them oldest-first.
-                    new_events: list[Any] = []
-                    for event in batch:
-                        if (
-                            last_seen_id is not None
-                            and event.id == last_seen_id
-                        ):
-                            break
-                        new_events.append(event)
-                    if new_events:
-                        # Update last_seen_id to the newest one we
-                        # saw this tick BEFORE emitting, so a
-                        # cancellation mid-emit does not cause a
-                        # replay on reconnect within the same
-                        # generator lifetime.
-                        last_seen_id = new_events[0].id
-                        for event in reversed(new_events):
-                            payload = _event_to_response(event).model_dump(
-                                mode="json"
-                            )
-                            payload["type"] = "audit_event"
-                            yield (
-                                "data: "
-                                + json.dumps(payload, default=str)
-                                + "\n\n"
-                            ).encode()
+                except RuntimeError:
+                    # Store was closed mid-stream (e.g. shutdown during
+                    # long-lived connection). Exit rather than burn CPU
+                    # hitting the same RuntimeError at 2 Hz for up to
+                    # 25 minutes.
+                    log.debug("network_audit stream: store closed, exiting")
+                    break
                 except Exception as exc:  # noqa: BLE001
                     log.debug("network_audit stream tick error: %s", exc)
+                    await asyncio.sleep(_SSE_POLL_INTERVAL_SECONDS)
+                    continue
+
+                # ``recent`` returns newest-first. Collect events
+                # strictly newer than the (ms, id) watermark, then
+                # reverse so the client sees them oldest-first.
+                new_events: list[Any] = []
+                for event in batch:
+                    ev_ms = int(event.timestamp.timestamp() * 1000)
+                    # Strict-greater on (ms, id) tuple. Events that tie
+                    # on ms but have id > last_seen_id are still newer.
+                    if (ev_ms, event.id) <= (last_seen_ms, last_seen_id):
+                        break
+                    new_events.append(event)
+                if new_events:
+                    # Update watermark to the newest one we saw this
+                    # tick BEFORE emitting, so a cancellation mid-emit
+                    # does not cause a replay on reconnect within the
+                    # same generator lifetime.
+                    newest = new_events[0]
+                    last_seen_ms = int(newest.timestamp.timestamp() * 1000)
+                    last_seen_id = newest.id
+                    for event in reversed(new_events):
+                        payload = _event_to_response(event).model_dump(
+                            mode="json"
+                        )
+                        payload["type"] = "audit_event"
+                        yield (
+                            "data: "
+                            + json.dumps(payload, default=str)
+                            + "\n\n"
+                        ).encode()
                 await asyncio.sleep(_SSE_POLL_INTERVAL_SECONDS)
         except asyncio.CancelledError:
             # Litestar cancels the generator on client disconnect.
