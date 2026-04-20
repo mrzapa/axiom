@@ -22,6 +22,9 @@ const {
   normalizeRagStreamEvent,
   runHereticAbliterateStream,
   submitRunAction,
+  fetchNetworkAuditEvents,
+  fetchNetworkAuditProviders,
+  fetchNetworkAuditRecentCount,
 } = await import(
   "../api"
 );
@@ -898,5 +901,144 @@ describe("runHereticAbliterateStream", () => {
     );
 
     expect(messages).toEqual(["progress:line output"]);
+  });
+});
+
+describe("fetchNetworkAuditEvents", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns parsed events array on success", async () => {
+    const mockEvents = [
+      {
+        id: "ev-1",
+        timestamp: "2026-04-19T12:00:00Z",
+        method: "POST",
+        url_host: "api.openai.com",
+        url_path_prefix: "/v1/chat/completions",
+        query_params_stored: false,
+        provider_key: "openai",
+        trigger_feature: "chat.direct",
+        size_bytes_in: 1024,
+        size_bytes_out: 256,
+        latency_ms: 300,
+        status_code: 200,
+        user_initiated: true,
+        blocked: false,
+        source: "sdk_invocation",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockEvents),
+      }),
+    );
+
+    const result = await fetchNetworkAuditEvents({ limit: 10 });
+    expect(result).toEqual(mockEvents);
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("/v1/network-audit/events");
+    expect(calledUrl).toContain("limit=10");
+  });
+
+  it("threads provider param into the query string", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }),
+    );
+    await fetchNetworkAuditEvents({ provider: "openai" });
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("provider=openai");
+  });
+
+  it("returns [] when the backend returns a non-array body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ error: "nope" }),
+      }),
+    );
+    const result = await fetchNetworkAuditEvents();
+    expect(result).toEqual([]);
+  });
+
+  it("throws on non-ok response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve(""),
+      }),
+    );
+    await expect(fetchNetworkAuditEvents()).rejects.toThrow();
+  });
+});
+
+describe("fetchNetworkAuditProviders", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns parsed provider array on success", async () => {
+    const mockProviders = [
+      {
+        key: "openai",
+        display_name: "OpenAI",
+        category: "llm",
+        kill_switch_setting_key: "provider_block_llm",
+        blocked: false,
+        events_7d: 3,
+        last_call_at: "2026-04-19T11:00:00Z",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockProviders),
+      }),
+    );
+    const result = await fetchNetworkAuditProviders();
+    expect(result).toEqual(mockProviders);
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("/v1/network-audit/providers");
+  });
+});
+
+describe("fetchNetworkAuditRecentCount", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("passes the window seconds as a query param and returns the parsed shape", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ count: 2, window_seconds: 300 }),
+      }),
+    );
+    const result = await fetchNetworkAuditRecentCount(300);
+    expect(result).toEqual({ count: 2, window_seconds: 300 });
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("window=300");
+  });
+
+  it("coerces missing fields to safe defaults", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({}),
+      }),
+    );
+    const result = await fetchNetworkAuditRecentCount(300);
+    expect(result.count).toBe(0);
+    expect(result.window_seconds).toBe(300);
   });
 });

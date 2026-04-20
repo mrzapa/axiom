@@ -3140,3 +3140,263 @@ export async function streamCometEvents(options: {
 
   return () => controller.abort();
 }
+
+// ---------------------------------------------------------------------------
+// M17 Network Audit — /v1/network-audit/* (Phase 5b)
+//
+// Read-only fetchers + SSE subscriber for the privacy panel. Backend
+// lives in ``metis_app/api_litestar/routes/network_audit.py``. All four
+// GET endpoints degrade to empty/zero responses when the audit store
+// is unavailable — "privacy panel never 500s" is a hard backend rule.
+// ---------------------------------------------------------------------------
+
+import type {
+  NetworkAuditEvent,
+  NetworkAuditProvider,
+  NetworkAuditStreamFrame,
+  RecentCountResponse,
+} from "@/lib/network-audit-types";
+
+export type {
+  NetworkAuditEvent,
+  NetworkAuditProvider,
+  NetworkAuditSource,
+  NetworkAuditStreamFrame,
+  ProviderCategory,
+  RecentCountResponse,
+} from "@/lib/network-audit-types";
+
+/**
+ * Fetch the newest-first tail of audit events.
+ *
+ * Backend clamps ``limit`` to ``[1, 500]`` (default 100). A
+ * ``provider`` key filters to events from that provider only.
+ * Returns ``[]`` if the backend audit store is unavailable.
+ */
+export async function fetchNetworkAuditEvents(
+  params: { limit?: number; provider?: string } = {},
+  options?: { signal?: AbortSignal },
+): Promise<NetworkAuditEvent[]> {
+  const search = new URLSearchParams();
+  if (typeof params.limit === "number" && Number.isFinite(params.limit)) {
+    search.set("limit", String(Math.trunc(params.limit)));
+  }
+  if (params.provider) {
+    search.set("provider", params.provider);
+  }
+  const qs = search.toString();
+  const url = `${await getApiBase()}/v1/network-audit/events${qs ? `?${qs}` : ""}`;
+  const res = await apiFetch(url, {
+    headers: { Accept: "application/json" },
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch network-audit events: ${res.status}`);
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? (data as NetworkAuditEvent[]) : [];
+}
+
+/**
+ * Fetch one row per known provider (excluding ``unclassified``), with
+ * current kill-switch state, 7-day call count, and last-call timestamp.
+ */
+export async function fetchNetworkAuditProviders(
+  options?: { signal?: AbortSignal },
+): Promise<NetworkAuditProvider[]> {
+  const res = await apiFetch(`${await getApiBase()}/v1/network-audit/providers`, {
+    headers: { Accept: "application/json" },
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch network-audit providers: ${res.status}`);
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? (data as NetworkAuditProvider[]) : [];
+}
+
+/**
+ * Fetch the count of audit events in the last ``windowSeconds``. Powers
+ * the "N outbound calls in last 5m" indicator at the top of the panel.
+ */
+export async function fetchNetworkAuditRecentCount(
+  windowSeconds: number,
+  options?: { signal?: AbortSignal },
+): Promise<RecentCountResponse> {
+  const search = new URLSearchParams({ window: String(Math.trunc(windowSeconds)) });
+  const res = await apiFetch(
+    `${await getApiBase()}/v1/network-audit/recent-count?${search.toString()}`,
+    {
+      headers: { Accept: "application/json" },
+      signal: options?.signal,
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to fetch network-audit recent-count: ${res.status}`);
+  }
+  const data = (await res.json()) as Partial<RecentCountResponse>;
+  return {
+    count: typeof data.count === "number" ? data.count : 0,
+    window_seconds:
+      typeof data.window_seconds === "number"
+        ? data.window_seconds
+        : Math.trunc(windowSeconds),
+  };
+}
+
+/** Connection state reported by :func:`subscribeNetworkAuditStream`. */
+export type NetworkAuditStreamStatus =
+  | "connecting"
+  | "open"
+  | "reconnecting"
+  | "closed";
+
+export interface NetworkAuditStreamOptions {
+  /** Invoked whenever the connection state changes. */
+  onStatusChange?: (status: NetworkAuditStreamStatus) => void;
+}
+
+/**
+ * Subscribe to the SSE stream of new audit events. Returns an
+ * unsubscribe function that closes the underlying connection.
+ *
+ * ``onEvent`` is invoked once per frame with either a parsed audit
+ * event or a ``{ type: "no_store" }`` marker (emitted when the backend
+ * audit store is unavailable). On network-level disconnect the
+ * subscriber reconnects with exponential backoff (1 s → 30 s cap) as
+ * long as the unsubscribe hasn't been called. The optional
+ * ``onStatusChange`` callback surfaces these transitions so the panel
+ * can render a "Reconnecting…" banner rather than silently spinning.
+ *
+ * Implemented via ``fetch`` + ``ReadableStream`` (same shape as
+ * ``streamCometEvents``) rather than ``EventSource`` so we can thread
+ * the bearer-token auth header that the Litestar app expects in
+ * non-dev environments.
+ */
+export function subscribeNetworkAuditStream(
+  onEvent: (frame: NetworkAuditStreamFrame) => void,
+  options?: NetworkAuditStreamOptions,
+): () => void {
+  let closed = false;
+  let controller: AbortController | null = null;
+  let backoffMs = 1000;
+  const MAX_BACKOFF_MS = 30_000;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let currentStatus: NetworkAuditStreamStatus = "connecting";
+
+  const emitStatus = (next: NetworkAuditStreamStatus): void => {
+    if (currentStatus === next) return;
+    currentStatus = next;
+    try {
+      options?.onStatusChange?.(next);
+    } catch {
+      // Listener failures must not break the stream.
+    }
+  };
+
+  const scheduleReconnect = (): void => {
+    if (closed) return;
+    if (reconnectTimer !== null) return;
+    emitStatus("reconnecting");
+    const delay = backoffMs;
+    backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      void connect();
+    }, delay);
+  };
+
+  const parseFrame = (raw: unknown): NetworkAuditStreamFrame | null => {
+    if (!raw || typeof raw !== "object") return null;
+    const record = raw as { type?: unknown };
+    if (record.type === "no_store") {
+      return { type: "no_store" };
+    }
+    if (record.type === "audit_event") {
+      // Strip the "type" discriminator before casting — the rest of the
+      // payload matches NetworkAuditEvent 1:1.
+      const { type: _type, ...rest } = record as { type: string } & Record<string, unknown>;
+      return {
+        type: "audit_event",
+        event: rest as unknown as NetworkAuditEvent,
+      };
+    }
+    return null;
+  };
+
+  const connect = async (): Promise<void> => {
+    if (closed) return;
+    emitStatus("connecting");
+    controller = new AbortController();
+    try {
+      const base = await getApiBase();
+      const res = await apiFetch(`${base}/v1/network-audit/stream`, {
+        headers: { Accept: "text/event-stream" },
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        scheduleReconnect();
+        return;
+      }
+      // Connection successful — reset backoff so the next error starts
+      // from 1 s rather than the previous exponential value.
+      backoffMs = 1000;
+      emitStatus("open");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const dataLine = part.split("\n").find((l) => l.startsWith("data:"));
+          if (!dataLine) continue;
+          try {
+            const payload = JSON.parse(dataLine.slice(5).trimStart()) as unknown;
+            const frame = parseFrame(payload);
+            if (frame) {
+              onEvent(frame);
+            }
+          } catch {
+            // Malformed frame — skip, keep the stream alive.
+          }
+        }
+      }
+      // Server closed the stream (e.g. 25-minute hard cap). Reconnect.
+      if (!closed) scheduleReconnect();
+    } catch (err) {
+      if (closed) return;
+      // AbortError during teardown — swallow. Any other error triggers
+      // a reconnect attempt.
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "name" in err &&
+        (err as { name: string }).name === "AbortError"
+      ) {
+        return;
+      }
+      scheduleReconnect();
+    }
+  };
+
+  void connect();
+
+  return () => {
+    closed = true;
+    emitStatus("closed");
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (controller) {
+      controller.abort();
+      controller = null;
+    }
+  };
+}
