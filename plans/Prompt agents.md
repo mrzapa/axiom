@@ -50,6 +50,10 @@ the task is open-ended, say so: "scan the table for the highest-priority
   to your branch name and `Last updated` to today's date. Commit that row
   update as a standalone `docs(m##): claim …` commit on a fresh branch off
   `main`. This is how other agents know the row is taken.
+- **Grep before you claim a `Ready` row.** Before claiming a `Ready` row,
+  grep the codebase for the key artefacts the plan promises. If they already
+  exist and work, the row is stale — flip it to `Landed` in a docs-only
+  reconciliation PR before starting fresh work.
 - **Respect the plan's phase boundaries.** The plan doc's phases are usually
   shippable slices. Don't try to land the entire milestone in one PR — land
   one phase, open the PR, let it merge, then start the next phase on a new
@@ -142,11 +146,12 @@ workflow for implementation requests from external sources*.
 
 - **Active agents:** none. The last in-flight branch was
   `claude/m17-phase5b-privacy-ui` → merged via PR #521.
-- **Ready / unclaimed rows** on `IMPLEMENTATION.md`:
-  - **M03** IterRAG convergence (plan: `docs/plans/2026-04-01-hermes-sotaku-implementation.md` Phase 1)
-  - **M04** Reverse curriculum (plan: `docs/plans/2026-04-04-reverse-curriculum-implementation.md`)
-  - **M05** Parallel research (plan: `docs/plans/2026-04-04-parallel-research-implementation.md`)
-  - **M06** Skill self-evolution (plan: `docs/plans/2026-04-01-hermes-sotaku-implementation.md` Phase 3) — depends on M03
+- **Code-vs-plan reconciliation note:** M03, M04, M05, and M06 all looked
+  `Ready` after the 2026-04-20 plan-doc sweep, but a follow-up grep + test
+  audit showed they were already shipped. Treat "plan doc fresh" and
+  "code matches plan status" as two separate checks.
+- **Ready / unclaimed rows** on `IMPLEMENTATION.md`: none. The next practical
+  pick is the unclaimed Phase 6 slice inside **M17** (`Status: In progress`).
 - **Draft rows (plan written, pick up when prioritised):**
   - **M10** Tribev2 homological scaffold (`plans/trive-v2-homological-scaffold/plan.md`)
   - **M13** Seedling + Feed (`plans/seedling-and-feed/plan.md`) — roadmap position #2; depends on M01
@@ -169,7 +174,7 @@ If no task is assigned, the most defensible picks right now are, in order:
 1. **M17 Phase 6** — finish what's ~80% done. Functional toggles + prove-offline = the feature that backs the VISION.md "never held hostage" pitch. Small (~1 PR).
 2. **M13 Seedling + Feed** — roadmap-next strategic item. Big (multi-PR). Depends on M01 being "far enough along", which it is (Rolling).
 3. **M12 Interactive star catalogue** — needs a fresh plan doc first (draft pass), then Phase-by-Phase execution.
-4. **M06 Skill self-evolution** — unblocks M14 Forge and arguably the morning-digest feature VISION.md leans on.
+4. **M14 The Forge** — now that M06 is landed, the remaining blocker is M12's fresh explorer plan.
 
 ---
 
@@ -182,6 +187,11 @@ the right row and read the plan." Without a paste-ready prompt, every
 session rediscovers the conventions (branch naming, CI guards, intake
 workflow) from scratch. This file collapses that discovery into a single
 copy-paste.
+
+One lesson from the April 2026 plan sweeps: **plan-doc freshness and
+code-vs-plan alignment are different audits**. A table row can look current
+while still pointing agents at work that already shipped. The pre-claim grep
+rule above exists to catch that class of drift before it burns a full session.
 
 Update it when the process changes, not when individual tasks change.
 Task-level state lives in the milestone plan docs.
