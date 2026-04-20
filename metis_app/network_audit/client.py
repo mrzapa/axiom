@@ -37,6 +37,7 @@ from typing import Any, Mapping
 from metis_app.network_audit.events import NetworkAuditEvent, sanitize_url
 from metis_app.network_audit.kill_switches import (
     AIRPLANE_MODE_KEY,
+    PROVIDER_BLOCK_LLM_KEY,
     NetworkBlockedError,
     is_provider_blocked,
 )
@@ -187,11 +188,26 @@ def audited_urlopen(
 
     # --- Block path -----------------------------------------------------
     if is_provider_blocked(provider_key, effective_settings):
-        reason = (
-            "airplane mode"
-            if effective_settings.get(AIRPLANE_MODE_KEY) is True
-            else f"kill switch '{spec.kill_switch_setting_key}' is disabled"
-        )
+        # Reason ordering mirrors ``is_provider_blocked``: airplane mode
+        # is the master switch; the Phase 6 ``provider_block_llm`` map
+        # is consulted next (it gates providers whose
+        # ``kill_switch_setting_key`` is ``None`` — the old code would
+        # render this path as ``"kill switch 'None' is disabled"``,
+        # which is both ugly and wrong); legacy per-feature kill-switch
+        # setting keys are the fallthrough.
+        if effective_settings.get(AIRPLANE_MODE_KEY) is True:
+            reason = "airplane mode"
+        else:
+            provider_block_llm = effective_settings.get(PROVIDER_BLOCK_LLM_KEY)
+            if (
+                isinstance(provider_block_llm, dict)
+                and provider_block_llm.get(provider_key) is True
+            ):
+                reason = "blocked by provider_block_llm map"
+            else:
+                reason = (
+                    f"kill switch '{spec.kill_switch_setting_key}' is disabled"
+                )
         if store is not None:
             _safe_append(
                 store,

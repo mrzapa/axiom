@@ -674,3 +674,67 @@ def test_network_blocked_error_carries_fields() -> None:
     assert err.reason == "airplane mode"
     assert "openai" in str(err)
     assert "airplane mode" in str(err)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 reason-string polish — block reason must name the right source
+# ---------------------------------------------------------------------------
+
+
+def test_blocked_error_reason_names_provider_block_llm_when_map_blocks(
+    tmp_store: NetworkAuditStore,
+) -> None:
+    """A ``provider_block_llm``-map block yields a descriptive reason.
+
+    Before Phase 6 Task B, the client built the reason as
+    ``f"kill switch '{spec.kill_switch_setting_key}' is disabled"``,
+    which for openai (``kill_switch_setting_key=None``) rendered as
+    ``"kill switch 'None' is disabled"`` — ugly and wrong. The fix
+    distinguishes the map-block case explicitly.
+    """
+    settings = {"provider_block_llm": {"openai": True}}
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        with pytest.raises(NetworkBlockedError) as exc_info:
+            audited_urlopen(
+                "https://api.openai.com/v1/chat",
+                trigger_feature="unit_test",
+                user_initiated=True,
+                store=tmp_store,
+                settings=settings,
+            )
+        mock_urlopen.assert_not_called()
+
+    assert exc_info.value.provider_key == "openai"
+    assert "provider_block_llm" in exc_info.value.reason
+    # The old bug rendered the ``None`` setting key literally; the fix
+    # must not regress that.
+    assert "'None'" not in exc_info.value.reason
+    assert "None" not in exc_info.value.reason.split("provider_block_llm")[1]
+
+
+def test_blocked_error_reason_names_legacy_key_when_legacy_blocks(
+    tmp_store: NetworkAuditStore,
+) -> None:
+    """A legacy-kill-switch block names the offending settings key.
+
+    Regression guard: the Phase 6 reason-string refactor must not
+    break the existing behaviour for providers whose
+    ``kill_switch_setting_key`` is real (e.g. ``reddit_api`` →
+    ``news_comets_enabled``).
+    """
+    settings = {"news_comets_enabled": False}
+
+    with patch("urllib.request.urlopen"):
+        with pytest.raises(NetworkBlockedError) as exc_info:
+            audited_urlopen(
+                "https://www.reddit.com/r/test.json",
+                trigger_feature="news_comet_worker",
+                user_initiated=False,
+                store=tmp_store,
+                settings=settings,
+            )
+
+    assert exc_info.value.provider_key == "reddit_api"
+    assert "news_comets_enabled" in exc_info.value.reason
+    assert "provider_block_llm" not in exc_info.value.reason
