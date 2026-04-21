@@ -13,6 +13,22 @@ Vision pillar: Companion
 
 # Companion Real-Time Visibility
 
+> **Status: Landed — 2026-04-03 in [PR #459](https://github.com/mrzapa/metis/pull/459) (`5fd0a3f`).**
+> All five implementation steps below shipped together. The sections that follow are kept
+> as the historical design spec; see the pointer table for the canonical live code.
+>
+> | Step | Landed at |
+> |---|---|
+> | 1 — `progress_cb` threading | `metis_app/services/autonomous_research_service.py` (`run()` + `run_batch()`) and `metis_app/services/workspace_orchestrator.py::run_autonomous_research()` |
+> | 2 — SSE endpoint | `metis_app/api_litestar/routes/autonomous.py::trigger_autonomous_research_stream` and `metis_app/api/autonomous.py::trigger_autonomous_research_stream` (`POST /v1/autonomous/research/stream`) |
+> | 3 — Frontend API client | `apps/metis-web/lib/api.ts` — `CompanionActivityEvent`, `AutoResearchStreamEvent`, `subscribeCompanionActivity`, `triggerAutonomousResearchStream` |
+> | 4 — Dock thought log | `apps/metis-web/components/shell/metis-companion-dock.tsx` (ring-buffer `thoughts` state, now also persisted to `sessionStorage`) |
+> | 5 — Canvas auto-refresh | `apps/metis-web/app/page.tsx` (subscribe → `fetchIndexes` + `mergeFetchedIndexes` on `autonomous_research` / `completed`) |
+>
+> Backend tests: `tests/test_autonomous_research_service.py` (`test_run_emits_scanning_phase_via_progress_cb`, `test_run_emits_skipped_phase_when_no_gaps`, `test_run_progress_cb_receives_all_required_keys`, `test_run_batch_threads_progress_cb_to_run`, plus related coverage).
+>
+> **Follow-on work still open**: see [Out of Scope](#out-of-scope-follow-on-work) below (constellation pulse during research, reflection streaming, notification toasts).
+
 **Branch:** `feat/companion-realtime-visibility`
 **Description:** Surface METIS companion thoughts, autonomous research phases, and new constellation stars to the user in real-time via an activity log in the dock and auto-refresh on the constellation canvas.
 
