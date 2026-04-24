@@ -20,3 +20,5 @@ export {
 export { sampleGalaxyPosition, galaxyDensityFactor } from "./galaxy-distribution";
 export type { GalaxyDistributionConfig } from "./galaxy-distribution";
 export { StarCatalogue } from "./star-catalogue";
+export type { CatalogueSearchEntry, CatalogueSearchKind } from "./catalogue-search";
+export { searchCatalogueIndex } from "./catalogue-search";
