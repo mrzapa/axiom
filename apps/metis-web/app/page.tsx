@@ -19,6 +19,8 @@ import {
   CatalogueStarInspector,
   type CatalogueStarInspectorStar,
 } from "@/components/constellation/catalogue-star-inspector";
+import { CatalogueSearchOverlay } from "@/components/constellation/catalogue-search-overlay";
+import type { CatalogueSearchEntry } from "@/lib/star-catalogue";
 import { BorderBeam } from "@/components/ui/border-beam";
 import { useConstellationCamera } from "@/hooks/use-constellation-camera";
 import { useConstellationStars } from "@/hooks/use-constellation-stars";
@@ -143,6 +145,44 @@ const FACULTY_CONCEPTS = CONSTELLATION_FACULTIES.map((faculty, index) => ({
   title: faculty.label,
   desc: faculty.description,
 }));
+
+/**
+ * M12 Phase 2 — Landmark search index.
+ *
+ * One entry per anchor+secondary star across the 11 faculty constellations.
+ * Classical names are generated deterministically from `(facultyId, starIndex)`
+ * via the same `generateStarName({ tier: "landmark" })` path that the hover
+ * tooltip uses, so hover name and search result always agree.
+ *
+ * Positions are in normalised constellation-point space (same coord system
+ * as `UserStar.x/y`), so `buildStarFocusCamera` handles fly-to directly.
+ */
+const CATALOGUE_LANDMARK_INDEX: CatalogueSearchEntry[] = (() => {
+  const entries: CatalogueSearchEntry[] = [];
+  CONSTELLATION_FACULTIES.forEach((faculty) => {
+    const stars = faculty.shape.stars;
+    for (let starIndex = 0; starIndex < stars.length; starIndex += 1) {
+      const shapeStar = stars[starIndex];
+      const seedKey = `landmark|${faculty.id}|${starIndex}`;
+      const rng = new SeededRNG(fnv1a32(seedKey));
+      const magnitude = starIndex === 0 ? 2 : 3.5;
+      const generated = generateStarName({ tier: "landmark", rng, magnitude });
+      const name = generated.name;
+      if (!name) continue;
+      entries.push({
+        id: `landmark:${faculty.id}:${starIndex}`,
+        name,
+        kind: "landmark",
+        x: faculty.x + shapeStar.dx,
+        y: faculty.y + shapeStar.dy,
+        facultyId: faculty.id,
+        starIndex,
+        magnitude,
+      });
+    }
+  });
+  return entries;
+})();
 const BACKGROUND_BUTTON_ZOOM_STEP = 1.8;
 const BACKGROUND_TILE_PADDING_PX = 220;
 const HOVER_EXPAND_DELAY_MS = 600;
@@ -818,6 +858,8 @@ export default function Home() {
   const [learningRouteError, setLearningRouteError] = useState<string | null>(null);
   const [semanticQuery, setSemanticQuery] = useState("");
   const [semanticSearchExpanded, setSemanticSearchExpanded] = useState(false);
+  const [catalogueSearchExpanded, setCatalogueSearchExpanded] = useState(false);
+  const [catalogueSearchQuery, setCatalogueSearchQuery] = useState("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const semanticSearchInputRef = useRef<HTMLInputElement>(null);
   const starTooltipCardRef = useRef<HTMLDivElement>(null);
@@ -1481,6 +1523,33 @@ export default function Home() {
     setBackgroundZoomTarget,
     setStarFocusPhaseValue,
   ]);
+
+  /**
+   * M12 Phase 2 — camera pan to a normalised constellation-space point
+   * (same coordinate system as `UserStar.x/y` and `faculty.x/y`).
+   * Used by the Catalogue Search overlay to fly to landmark stars.
+   */
+  const focusConstellationPoint = useCallback((point: { x: number; y: number }) => {
+    const viewportWidth = canvasBoundsRef.current.width || window.innerWidth;
+    const viewportHeight = canvasBoundsRef.current.height || window.innerHeight;
+    const focusTarget = buildStarFocusCamera(
+      { x: point.x, y: point.y, size: 1 },
+      viewportWidth,
+      viewportHeight,
+    );
+    if (prefersReducedMotion()) {
+      jumpToBackgroundCamera(focusTarget);
+      return;
+    }
+    backgroundCameraTargetOriginRef.current = { x: focusTarget.x, y: focusTarget.y };
+    setBackgroundZoomTarget(focusTarget.zoomFactor, { registerInteraction: false });
+  }, [jumpToBackgroundCamera, setBackgroundZoomTarget]);
+
+  const handleCatalogueSearchSelect = useCallback((entry: CatalogueSearchEntry) => {
+    focusConstellationPoint({ x: entry.x, y: entry.y });
+    setCatalogueSearchQuery("");
+    setCatalogueSearchExpanded(false);
+  }, [focusConstellationPoint]);
 
   const handleStarDetailsOpenChange = useCallback((nextOpen: boolean) => {
     if (nextOpen) {
@@ -5133,6 +5202,22 @@ export default function Home() {
         />
       </div>
 
+      {/* M12 Phase 2 — Catalogue Search Overlay.
+          Sits beside the semantic-search HUD. Searches the landmark index
+          (classical Bayer/Flamsteed names across the 11 faculty
+          constellations) by substring; click a result to fly the camera to
+          that star. Scope: landmark-tier names only for v1 (catalogue field
+          stars are nameless per ADR 0006; semantic-search already covers
+          user stars by meaning). */}
+      <CatalogueSearchOverlay
+        expanded={catalogueSearchExpanded}
+        query={catalogueSearchQuery}
+        index={CATALOGUE_LANDMARK_INDEX}
+        onExpandedChange={setCatalogueSearchExpanded}
+        onQueryChange={setCatalogueSearchQuery}
+        onSelect={handleCatalogueSearchSelect}
+      />
+
       {(detailsStar || addMessage) && (
         <section id="build-map" className="metis-build-section">
           <div className="metis-build-studio-shell">
@@ -5739,6 +5824,140 @@ body {
 .metis-semantic-search-input::placeholder {
   color: rgba(186, 194, 220, 0.66);
 }
+
+/* M12 Phase 2 — CATALOGUE SEARCH OVERLAY.
+   Mirrors the semantic-search pill shape but anchored top-right with a
+   warm (gold) accent rather than the semantic-search purple. Result list
+   hangs below the input on expand. */
+.metis-catalogue-search {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 146;
+  display: inline-flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 54px;
+  padding: 8px;
+  border-radius: 22px;
+  border: 1px solid rgba(196, 149, 58, 0.22);
+  background: linear-gradient(180deg, rgba(14,19,32,0.92), rgba(8,12,22,0.95));
+  box-shadow: 0 14px 30px rgba(0,0,0,0.34);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  overflow: hidden;
+  transition: width 320ms cubic-bezier(0.16, 1, 0.3, 1), border-color 240ms ease;
+}
+.metis-catalogue-search.is-expanded {
+  width: min(360px, calc(100vw - 48px));
+  border-color: rgba(196, 149, 58, 0.48);
+}
+.metis-catalogue-search-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 149, 58, 0.34);
+  background: radial-gradient(circle at 30% 30%, rgba(232, 184, 74, 0.46), rgba(156, 108, 40, 0.74));
+  color: rgba(245, 240, 220, 0.98);
+  cursor: pointer;
+  font-size: 16px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.metis-catalogue-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: rgba(235, 239, 250, 0.95);
+  opacity: 0;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+  outline: none;
+}
+.metis-catalogue-search.is-expanded .metis-catalogue-search-input {
+  opacity: 1;
+  pointer-events: auto;
+}
+.metis-catalogue-search-input::placeholder {
+  color: rgba(186, 194, 220, 0.58);
+}
+.metis-catalogue-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 0;
+  width: 100%;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+.metis-catalogue-search-result-row {
+  list-style: none;
+}
+.metis-catalogue-search-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.metis-catalogue-search-result:hover,
+.metis-catalogue-search-result:focus-visible {
+  background: rgba(196, 149, 58, 0.12);
+  border-color: rgba(196, 149, 58, 0.4);
+  outline: none;
+}
+.metis-catalogue-search-result-name {
+  color: rgba(245, 240, 220, 0.98);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: "Space Grotesk", sans-serif;
+}
+.metis-catalogue-search-result-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(200, 210, 240, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+.metis-catalogue-search-result-kind {
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 149, 58, 0.3);
+  background: rgba(196, 149, 58, 0.08);
+  color: rgba(232, 184, 74, 0.9);
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.metis-catalogue-search-result-class,
+.metis-catalogue-search-result-mag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  opacity: 0.78;
+}
+.metis-catalogue-search-empty {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: rgba(200, 210, 240, 0.6);
+  text-align: left;
+}
+
 .metis-hero-kicker {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 12px;
