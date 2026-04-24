@@ -25,6 +25,8 @@ import type { CatalogueSearchEntry, CatalogueFilterState } from "@/lib/star-cata
 import {
   CATALOGUE_FILTER_DEFAULT,
   CATALOGUE_FILTER_DIM_BRIGHTNESS,
+  buildPromotedUserStarPayload,
+  catalogueStarToConstellationPoint,
   decodeFilterFromHash,
   isCatalogueFilterActive,
   matchesCatalogueFilter,
@@ -1598,6 +1600,99 @@ export default function Home() {
     setCatalogueSearchQuery("");
     setCatalogueSearchExpanded(false);
   }, [focusConstellationPoint]);
+
+  /**
+   * M12 Phase 4a — promote a catalogue star into the user's constellation.
+   *
+   * Bridges the catalogue's world-space (`wx/wy`) coordinate system into the
+   * user-star normalised constellation-point (`x/y`) space. Prefers the
+   * star's currently-projected screen position when available (so the
+   * promoted star lands exactly where the user clicked, regardless of
+   * parallax or zoom mid-frame). Falls back to a direct world→constellation
+   * conversion when the star has been panned out of view since the
+   * inspector opened.
+   *
+   * Phase 4a relaxes the adjacency gate: ANY catalogue star, including
+   * distant field stars and any catalogue star while the user has zero
+   * existing user stars (the "first star anywhere" onboarding case), can
+   * be promoted from the inspector. The legacy adjacency-gated armed-tap /
+   * immediate-promote path on the canvas is unchanged.
+   */
+  const handlePromoteCatalogueStar = useCallback(
+    (inspected: CatalogueStarInspectorStar) => {
+      const viewportWidth = canvasBoundsRef.current.width || window.innerWidth;
+      const viewportHeight = canvasBoundsRef.current.height || window.innerHeight;
+      const camera: BackgroundCameraState = {
+        x: backgroundCameraOriginRef.current.x,
+        y: backgroundCameraOriginRef.current.y,
+        zoomFactor: backgroundZoomRef.current,
+      };
+
+      // Look up the live screen position from the render-loop ref, if the
+      // star is still in the visible projection.
+      const projected = visibleStarsRef.current.find(
+        (star) => star.id === inspected.id,
+      );
+      const point = catalogueStarToConstellationPoint(
+        {
+          worldX: inspected.worldX,
+          worldY: inspected.worldY,
+          screenX: projected?.screenX ?? null,
+          screenY: projected?.screenY ?? null,
+        },
+        { width: viewportWidth, height: viewportHeight, camera },
+      );
+
+      const inference = inferConstellationFaculty(point);
+      const anchorStarId = (() => {
+        if (userStarsRef.current.length === 0) return null;
+        let nearest: { id: string; d: number } | null = null;
+        for (const us of userStarsRef.current) {
+          const d = Math.hypot(us.x - point.x, us.y - point.y);
+          if (!nearest || d < nearest.d) nearest = { id: us.id, d };
+        }
+        return nearest && nearest.d <= USER_STAR_LINK_MAX_DISTANCE ? nearest.id : null;
+      })();
+
+      const payload = buildPromotedUserStarPayload({
+        point,
+        primaryDomainId: inference.primary.faculty.id,
+        relatedDomainId: inference.bridgeSuggestion?.faculty.id ?? null,
+        anchorStarId,
+      });
+
+      void addUserStar(payload).then((createdStar) => {
+        if (!createdStar) {
+          setAddMessage(
+            starLimit !== null && userStarsRef.current.length >= starLimit
+              ? `Star limit reached (${starLimit}/${starLimit}).`
+              : "Unable to place another star right now.",
+          );
+          return;
+        }
+        showToast({
+          dismissMs: 2400,
+          message: anchorStarId
+            ? "Star promoted from the catalogue and linked into your constellation."
+            : "Star promoted from the catalogue. Its details are open.",
+          tone: "default",
+        });
+        setAddMessage(null);
+        openStarDetails(createdStar, "new");
+      });
+
+      setInspectedCatalogueStar(null);
+    },
+    [
+      addUserStar,
+      backgroundCameraOriginRef,
+      backgroundZoomRef,
+      canvasBoundsRef,
+      openStarDetails,
+      showToast,
+      starLimit,
+    ],
+  );
 
   const handleStarDetailsOpenChange = useCallback((nextOpen: boolean) => {
     if (nextOpen) {
@@ -5439,19 +5534,28 @@ export default function Home() {
         onSetLearningRouteStepStatus={handleSetLearningRouteStepStatus}
       />
 
-      {/* M12 Phase 1 — Catalogue Star Inspector.
-          Opens on click of any catalogue star that is not an add candidate
-          (i.e. field stars out of adjacency, or any catalogue star when the
-          user has no indexed content yet). Addable stars keep the existing
-          instant-promote UX untouched. Promote CTA is disabled in Phase 1
-          (reason: adjacency / no content); Phase 4 unifies the paths and
-          lights it up. */}
+      {/* M12 Phase 1 — Catalogue Star Inspector. Opens on click of a
+          non-addable catalogue star (field stars out of adjacency, or any
+          catalogue star when the user has no indexed content yet).
+          Addable stars keep the existing canvas armed-tap / immediate-
+          promote UX untouched.
+
+          Phase 4a — `addable={true}` is now passed unconditionally. The
+          inspector path explicitly bypasses the canvas-level adjacency
+          gate: a user can attach a document to any catalogue star,
+          including a brand-new user's first star anywhere in the galaxy.
+          `handlePromoteCatalogueStar` does the world→constellation
+          coordinate conversion + faculty inference + addUserStar call. */}
       <CatalogueStarInspector
         open={inspectedCatalogueStar !== null}
         star={inspectedCatalogueStar}
-        addable={false}
+        addable
         onClose={() => setInspectedCatalogueStar(null)}
-        onPromote={() => setInspectedCatalogueStar(null)}
+        onPromote={() => {
+          if (inspectedCatalogueStar) {
+            handlePromoteCatalogueStar(inspectedCatalogueStar);
+          }
+        }}
       />
 
 

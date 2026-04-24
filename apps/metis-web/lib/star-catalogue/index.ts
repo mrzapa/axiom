@@ -38,3 +38,13 @@ export {
   matchesCatalogueFilter,
   mergeFilterIntoHash,
 } from "./catalogue-filter";
+export type {
+  CatalogueToConstellationInput,
+  CatalogueViewportState,
+  PromotedUserStarPayload,
+  PromotedUserStarPayloadInput,
+} from "./catalogue-promote";
+export {
+  buildPromotedUserStarPayload,
+  catalogueStarToConstellationPoint,
+} from "./catalogue-promote";
