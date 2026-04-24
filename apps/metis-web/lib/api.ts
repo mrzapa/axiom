@@ -1011,6 +1011,7 @@ type CompanionActivityListener = (event: CompanionActivityEvent) => void;
 
 const companionActivityListeners = new Set<CompanionActivityListener>();
 const seenSeedlingActivityEventIds = new Set<string>();
+let seenSeedlingBootId: string | null = null;
 
 export function subscribeCompanionActivity(listener: CompanionActivityListener): () => void {
   companionActivityListeners.add(listener);
@@ -2687,6 +2688,15 @@ export async function fetchAssistantStatus(): Promise<AssistantStatus> {
 
 function emitSeedlingActivityEvents(status: SeedlingStatus): void {
   for (const event of status.activity_events ?? []) {
+    const rawBootId = event.payload?.boot_id;
+    const bootId = typeof rawBootId === "string" && rawBootId ? rawBootId : null;
+    // Reset dedup whenever the API process restarts. Without this, in-memory
+    // sequence-based event IDs (`seedling-{sequence}`) replay after a restart
+    // and the long-lived tab silently drops valid post-restart events.
+    if (bootId !== null && bootId !== seenSeedlingBootId) {
+      seenSeedlingActivityEventIds.clear();
+      seenSeedlingBootId = bootId;
+    }
     const rawId = event.payload?.event_id;
     const eventId =
       typeof rawId === "string" && rawId

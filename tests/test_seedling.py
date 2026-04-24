@@ -9,6 +9,7 @@ import pytest
 
 from metis_app.seedling.activity import (
     clear_seedling_activity_events,
+    get_seedling_activity_boot_id,
     list_seedling_activity_events,
     record_seedling_activity,
 )
@@ -61,6 +62,7 @@ def test_status_cache_falls_back_when_file_is_not_utf8(tmp_path) -> None:
 
 def test_activity_bridge_records_companion_activity_payload() -> None:
     clear_seedling_activity_events()
+    boot_id = get_seedling_activity_boot_id()
 
     record_seedling_activity(
         {
@@ -75,8 +77,24 @@ def test_activity_bridge_records_companion_activity_payload() -> None:
     assert events[0]["source"] == "seedling"
     assert events[0]["state"] == "completed"
     assert events[0]["summary"] == "Seedling lifecycle stopped"
-    assert events[0]["payload"]["event_id"] == "seedling-1"
+    assert events[0]["payload"]["event_id"] == f"seedling-{boot_id}-1"
+    assert events[0]["payload"]["boot_id"] == boot_id
     assert events[0]["payload"]["status"] == {"running": False}
+
+
+def test_activity_bridge_rotates_boot_id_after_clear() -> None:
+    clear_seedling_activity_events()
+    boot_a = get_seedling_activity_boot_id()
+    record_seedling_activity({"summary": "tick a"})
+
+    clear_seedling_activity_events()
+    boot_b = get_seedling_activity_boot_id()
+    record_seedling_activity({"summary": "tick b"})
+
+    assert boot_a != boot_b
+    events = list_seedling_activity_events()
+    assert events[0]["payload"]["event_id"] == f"seedling-{boot_b}-1"
+    assert events[0]["payload"]["boot_id"] == boot_b
 
 
 def test_schedule_rejects_non_positive_interval() -> None:

@@ -109,7 +109,7 @@ describe("fetchSeedlingStatus", () => {
           trigger: "lifecycle",
           summary: "Seedling heartbeat",
           timestamp: 1770000000000,
-          payload: { event_id: "seedling-1" },
+          payload: { event_id: "seedling-test-emit-once-1", boot_id: "test-emit-once" },
         },
       ],
     };
@@ -131,6 +131,46 @@ describe("fetchSeedlingStatus", () => {
         state: "running",
         summary: "Seedling heartbeat",
       }),
+    ]);
+  });
+
+  it("re-emits replayed sequence numbers when the worker boot_id changes", async () => {
+    const events: unknown[] = [];
+    const unsubscribe = subscribeCompanionActivity((event) => events.push(event));
+
+    function buildPayload(bootId: string, summary: string) {
+      return {
+        running: true,
+        last_tick_at: "2026-04-24T20:00:00+00:00",
+        current_stage: "seedling",
+        next_action_at: "2026-04-24T20:01:00+00:00",
+        queue_depth: 0,
+        activity_events: [
+          {
+            source: "seedling",
+            state: "running",
+            trigger: "lifecycle",
+            summary,
+            timestamp: 1770000000000,
+            payload: { event_id: `seedling-${bootId}-1`, boot_id: bootId },
+          },
+        ],
+      };
+    }
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(buildPayload("test-restart-A", "before restart")) })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(buildPayload("test-restart-B", "after restart")) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchSeedlingStatus();
+    await fetchSeedlingStatus();
+    unsubscribe();
+
+    expect(events).toEqual([
+      expect.objectContaining({ summary: "before restart" }),
+      expect.objectContaining({ summary: "after restart" }),
     ]);
   });
 });
