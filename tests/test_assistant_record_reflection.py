@@ -120,6 +120,36 @@ def test_record_external_reflection_returns_disabled_when_reflection_off(tmp_pat
     assert result["reason"] == "assistant_disabled"
 
 
+def test_record_external_reflection_honors_allow_automatic_writes(tmp_path) -> None:
+    """Codex P2 from PR #548: the dock fires this writer automatically on
+    every CompanionActivityEvent, so it must respect the same
+    ``allow_automatic_writes`` policy that already gates ``reflect()``
+    for non-manual triggers. Otherwise users who explicitly opted out
+    of automatic writes still see persisted memory rows.
+    """
+    svc = _service(tmp_path)
+    settings = _bonsai_settings()
+    settings["assistant_policy"]["allow_automatic_writes"] = False
+
+    # The default trigger is "while_you_work" — i.e. an automatic write.
+    blocked = svc.record_external_reflection(
+        summary="Bonsai note from automatic event.",
+        settings=settings,
+    )
+    assert blocked["ok"] is False
+    assert blocked["reason"] == "writes_disabled"
+
+    # An explicitly user-driven "manual" trigger bypasses the gate so
+    # a future "save this thought" button still works even when the
+    # user has automatic writes disabled.
+    manual = svc.record_external_reflection(
+        summary="User pinned this thought.",
+        trigger="manual",
+        settings=settings,
+    )
+    assert manual["ok"] is True
+
+
 def test_record_external_reflection_truncates_overlong_text(tmp_path) -> None:
     svc = _service(tmp_path)
     settings = _bonsai_settings(cooldown=0.0)

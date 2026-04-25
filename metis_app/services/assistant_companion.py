@@ -450,6 +450,18 @@ class AssistantCompanionService:
                 "status": self.repository.get_status().to_payload(),
                 "reason": "assistant_disabled",
             }
+        # Mirror the ``reflect()`` write gate. Bonsai's always-on dock
+        # callback (and Phase 4b's overnight cycle) fires automatically
+        # without explicit user confirmation, so the same
+        # ``allow_automatic_writes`` policy that governs auto-reflect
+        # must also gate this writer. Manual triggers — e.g. a future
+        # "save this thought" button — bypass the gate.
+        if trigger != "manual" and not policy.allow_automatic_writes:
+            return {
+                "ok": False,
+                "status": self.repository.get_status().to_payload(),
+                "reason": "writes_disabled",
+            }
 
         text = (summary or "").strip()
         if not text:
