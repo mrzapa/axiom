@@ -1,7 +1,7 @@
 ---
 Milestone: Seedling + Feed (M13)
 Status: In progress
-Claim: claude/m13-phase3-adr-0008
+Claim: claude/m13-adr-0013-runtime-pivot
 Last updated: 2026-04-25 by Claude
 Vision pillar: Companion
 ---
@@ -87,17 +87,25 @@ What's in place today that M13 will lean on:
   `news_comet_rss_feeds` setting. The ADR rejects extending
   `rag_sessions.db` or the Atlas store, and notes the shared lock /
   WAL posture so Phase 3 implementation does not re-litigate it.
+- **2026-04-25 — Runtime pivot (ADR 0013, supersedes ADR 0007).** A
+  re-audit found the in-browser **Bonsai-1.7B WebGPU** runtime
+  (`apps/metis-web/lib/webgpu-companion/`) was already shipping as
+  the de facto always-on companion model and missed by the original
+  Phase 1 audit. ADR 0013
+  (`docs/adr/0013-seedling-runtime-frontend-default.md`) inverts
+  ADR 0007: Bonsai becomes the default Seedling reflection runtime,
+  the in-process backend GGUF path becomes opt-in via the existing
+  GGUF import flow, and METIS ships no default backend-model
+  catalog entry as part of M13. Overnight reflection becomes an
+  opt-in stretch tied to the backend toggle; the default Phase 4
+  experience is *while-you-work* reflection driven by Bonsai. The
+  Phase 2 lifecycle shell stays untouched.
 
 ## Next up
 
 The next concrete actions:
 
-1. **Add the selected Seedling default to model recommendation/import
-   scaffolding.** ADR 0007 found the local GGUF catalog already has Phi
-   and Qwen entries, but not Llama-3.2-1B-Instruct. Add the selected
-   Llama GGUF source before later phases try to activate it. This can
-   land alongside Phase 3 since neither blocks the other.
-2. **Phase 3 continuous ingestion (now unblocked).** Build
+1. **Phase 3 continuous ingestion (now unblocked).** Build
    `metis_app/services/news_feed_repository.py` against the schema in
    ADR 0008, then refactor `routes/comets.py` so `_active_comets` /
    `_last_poll` / `_gc_terminal_comets` become thin wrappers over the
@@ -106,7 +114,14 @@ The next concrete actions:
    the loop from the Phase 2 Seedling worker tick (no second
    scheduler). Add the OPML-import endpoint as part of the same PR
    so feed onboarding lands with the storage. Continue avoiding
-   double-indexing with `AutonomousResearchService`.
+   double-indexing with `AutonomousResearchService`. **No model
+   loading in this phase** — ADR 0013 keeps reflection out of
+   Phase 3 entirely.
+2. **Extend `/v1/seedling/status` with `model_status`.** Add the
+   four-value enum from ADR 0013 §2 (`frontend_only` /
+   `backend_configured` / `backend_disabled` / `backend_unavailable`)
+   to `SeedlingStatus` and the matching frontend type. Either
+   alongside Phase 3 or as a tiny standalone PR before Phase 4.
 
 ## Blockers
 
@@ -174,31 +189,38 @@ together behind one background process:
 A first cut. The claimant is free to restructure, but every phase
 should have an explicit *what NOT to do* boundary.
 
-#### Phase 1 — Model selection + runtime (ADR 0007)
+#### Phase 1 — Model selection + runtime (ADR 0007 → ADR 0013)
 
-**Goal:** pick one quantized local model and one serving mechanism and
-defend the choice in writing.
+**Goal:** pick the Seedling reflection runtime and defend the choice
+in writing.
 
-- Candidates: Phi-3.5-mini-instruct (~2.3 GB Q4), Llama-3.2-1B-Instruct
-  (~0.7 GB Q4), Qwen2.5-0.5B-Instruct (~0.4 GB Q4), with a stretch
-  mention of Gemma-2-2B-it.
-- Dimensions: instruct-follow quality on the reflection + classification
-  workload, token/sec CPU-only, token/sec on 8 GB consumer GPU, RAM
-  resident, license, quantization tooling available from
-  bartowski/unsloth (see `_SOURCE_PREFERENCE` in `local_llm_recommender.py`).
-- Runtime options: (a) in-process via existing `LocalGGUFBackend`;
-  (b) external Ollama daemon over HTTP; (c) separate
-  `metis-seedling-worker` subprocess that embeds llama-cpp itself.
-  Recommend (a) as the default path because the GGUF stack is already
-  shipping; leave (b) as a documented alternative for users who
-  already run Ollama.
-- Memory budget: target ≤2 GB resident for the Seedling process so
-  the full METIS session on a 16 GB laptop stays healthy. Enforce with
-  `gpu_layers` / `context_length` defaults in
-  `LocalGGUFBackend.__init__`.
+ADR 0007 (2026-04-24) initially picked Llama-3.2-1B-Instruct Q4_K_M
+GGUF served in-process via the existing llama-cpp stack. ADR 0013
+(2026-04-25) **supersedes that decision** after a re-audit found the
+in-browser Bonsai-1.7B WebGPU runtime
+(`apps/metis-web/lib/webgpu-companion/`) was already shipping and
+running as the de facto always-on companion. The accepted Phase 1
+decision is now:
+
+- Default Seedling reflection runtime: **in-browser Bonsai-1.7B
+  (WebGPU)** via the existing `useWebGPUCompanion()` hook. No
+  required backend model download. Phase 4 wires this pipeline into
+  reflection events.
+- Optional backend runtime: **user-uploaded GGUF** through the existing
+  `apps/metis-web/app/gguf/` flow, gated on a new
+  `seedling_backend_reflection_enabled` setting (default `false`).
+  When enabled, the existing `LocalGGUFBackend`/llama-cpp path runs
+  reflection from the Seedling worker tick.
+- METIS ships **no default backend-model catalog entry** as part of
+  M13. The catalog already has Phi-3.5 / Qwen2.5-0.5B for users who
+  want backend reflection.
+- Browsers without WebGPU surface the existing
+  `caniuse.com/webgpu` link plus a one-line *"Configure a local GGUF
+  in Settings → Models for backend reflection"* fallback.
 
 **Not this phase:** streaming-token UI polish, model-swap UI, LoRA
-integration.
+integration, model-loading inside the worker (Phase 4 owns that on
+the opt-in backend path).
 
 #### Phase 2 — Background worker lifecycle
 
@@ -238,15 +260,18 @@ any LLM work. This phase is purely lifecycle and plumbing.
 
 **Goal:** the Seedling eats continuously, not on-demand.
 
+ADR 0013 explicitly keeps any reflection / model-loading work out of
+this phase. Phase 3 is feed-storage + ingestion + OPML; reflection
+wiring lives in Phase 4.
+
 - Driver loop: every `news_comet_poll_interval_seconds`, the worker
   calls `NewsIngestService.fetch_all()` (wrap the existing
   `/v1/comets/poll` body into a plain-Python function so the worker
   doesn't go over HTTP to itself).
 - Persistence: move `_active_comets` out of in-memory module state in
-  `routes/comets.py` into a proper store (see ADR 0008 in *Next up*).
-  Options: a new `news_items.db` SQLite table, or extend
-  `metis_app/services/atlas_repository.py` with a `comets` table.
-  Include per-source cursors so fetches are incremental.
+  `routes/comets.py` into the new `news_feed_repository.py` per
+  ADR 0008. Per-source cursors are stored in `feed_cursors`; the
+  cleaner contract from ADR 0008 §4 is the only deleter.
 - Dedup: already has a hash-based dedupe in `NewsIngestService`; extend
   with a persistent seen-URLs set on restart.
 - OPML import: new endpoint `POST /v1/comets/opml/import` that parses
@@ -269,34 +294,66 @@ any LLM work. This phase is purely lifecycle and plumbing.
 **Not this phase:** email, Twitter/X, podcast feeds (separate follow-up
 — record in `plans/IDEAS.md` if proposed).
 
-#### Phase 4 — Overnight reflection cycle
+#### Phase 4 — Reflection (split per ADR 0013)
 
-**Goal:** a structured nightly pass that differs from the ad-hoc
-`reflect()` and feeds M06's candidate store.
+**Goal:** the Seedling reflects in a structured way and feeds M06's
+candidate store.
 
-- Cadence: default 1× per 24 h, configurable via a new
-  `seedling_reflection_cadence_hours` setting. Worker picks a quiet
-  window (last user activity > 30 min old) to start.
-- Input: session traces since the last reflection, newly absorbed
-  comets, newly-indexed stars from the autonomous research pipeline.
-- Output: extend `AssistantCompanionService.reflect()` with an
-  `overnight=True` mode that (a) writes a longer-form `latest_summary`
-  and `latest_why` on `AssistantStatus`, (b) inspects high-convergence
-  traces and writes candidates via
+ADR 0013 splits this phase into a default *while-you-work* path
+(Bonsai, in-browser) and an opt-in *overnight* path (backend GGUF).
+The Phase 4 PR ships **both seams**, but the overnight surface ships
+behind a feature toggle so first-run users do not see broken UX
+when no backend GGUF is configured.
+
+**4a — While-you-work reflection (default, Bonsai).**
+
+- Wire the existing `useWebGPUCompanion()` pipeline into the new
+  reflection writer. The `metis:bonsai-always-on` toggle continues
+  to gate event-driven reflection, but its callsite now also writes
+  into a structured reflection record (via a new Litestar route the
+  worker can call internally) instead of only updating the in-dock
+  thought log.
+- Cadence: event-driven (one reflection per completed
+  `CompanionActivityEvent`) with a measurement-driven rate-limit
+  (target ≥30 s between reflections; tune in retro). No time-of-day
+  dependency.
+- Output: extend `AssistantCompanionService.reflect()` with a thin
+  Bonsai-token-stream consumer that (a) writes a short-form
+  `latest_summary` / `latest_why` on `AssistantStatus`, (b) inspects
+  high-convergence traces and writes candidates via
   `SkillRepository.save_candidate()` — this is the **feed into M06's
   skill self-evolution**; do not let M06 duplicate this writer,
   (c) emits a `"reflection"` `CompanionActivityEvent` with
+  `kind: "while_you_work"`.
+- WebGPU-unavailable browsers: no reflection happens. The dock shows
+  the existing `caniuse.com/webgpu` link plus the ADR 0013 fallback
+  copy. Phase 4 does not silently degrade to a placeholder.
+
+**4b — Overnight reflection (opt-in, backend GGUF).**
+
+- Cadence: default 1× per 24 h via `seedling_reflection_cadence_hours`,
+  with a quiet window of `seedling_reflection_quiet_window_minutes`
+  (default 30) so user activity does not trip the cycle. Worker only
+  schedules this when `seedling_backend_reflection_enabled = true`
+  AND `model_status == "backend_configured"`.
+- Input: session traces since the last reflection, newly absorbed
+  comets, newly-indexed stars from the autonomous research pipeline.
+- Output: extend `AssistantCompanionService.reflect()` with an
+  `overnight=True` mode driven by the backend GGUF that writes a
+  longer-form `latest_summary` / `latest_why`, captures candidates
+  the same way as 4a, and emits the same event kind with
   `kind: "overnight"` so the dock can show a "here's what I learned
   overnight" card in the morning.
 - **Distinguish from M09's research loop.** Autonomous research =
   targeted faculty-gap filler, triggered by schedule or by the user.
-  Overnight reflection = broad self-inspection over all session +
+  Reflection (either path) = broad self-inspection over all session +
   comet activity. One can cause the other (reflection finds a gap,
   schedules research) but they are not the same call.
 
 **Not this phase:** a full agentic loop, skill auto-promotion, or
 marketplace surfacing. Candidates land in `skill_candidates.db`; M06
-owns the promote-to-skill step.
+owns the promote-to-skill step. Marketing copy still avoids
+"reflects while you sleep" without the qualifier from ADR 0013 §3.
 
 #### Phase 5 — Growth stages UI
 
@@ -374,12 +431,20 @@ consume, without shipping fine-tuning in M13.
 
 ### Open decisions requiring ADRs
 
-1. **ADR 0007 — Seedling model + runtime** (Phase 1 above). Completed
-   2026-04-24; see `docs/adr/0007-seedling-model-and-runtime.md`.
+1. **ADR 0007 — Seedling model + runtime** (Phase 1 above).
+   Completed 2026-04-24, **superseded** 2026-04-25 by ADR 0013 after
+   a re-audit found the in-browser Bonsai-1.7B WebGPU runtime was
+   already shipping. See `docs/adr/0007-seedling-model-and-runtime.md`
+   for the historical decision.
 2. **ADR 0008 — Feed-storage format** (new table vs Atlas extension,
    per-source cursors, OPML serialisation). Completed 2026-04-25; see
    `docs/adr/0008-feed-storage-format.md`.
-3. **ADR 0009 — Growth-stage signal** (exact thresholds, whether
+3. **ADR 0013 — Seedling runtime: frontend default, backend optional**
+   (which runtime carries the Phase 4 reflection content). Completed
+   2026-04-25; see
+   `docs/adr/0013-seedling-runtime-frontend-default.md`. Supersedes
+   ADR 0007.
+4. **ADR 0009 — Growth-stage signal** (exact thresholds, whether
    stages can regress, manual override for testing). Blocker for
    Phase 5. Arguably record as a plan-doc decision section rather
    than a full ADR if the thresholds will tune rapidly during
