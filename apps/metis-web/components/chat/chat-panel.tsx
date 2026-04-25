@@ -345,9 +345,14 @@ export function ChatPanel({
           {/* Model status badge */}
           {(modelProvider || modelName) && (
             <>
-              <span className="chat-control-pill rounded-full px-2 py-1 text-[10px] text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => setModelDialogOpen(true)}
+                aria-label="Change model"
+                className="chat-control-pill cursor-pointer rounded-full px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+              >
                 {[modelProvider, modelName].filter(Boolean).join(" / ")}
-              </span>
+              </button>
               <button
                 type="button"
                 onClick={() => setModelDialogOpen(true)}
@@ -712,6 +717,31 @@ export function ChatPanel({
                     onApprove={() => onActionApprove?.(msg.id)}
                     onDeny={() => onActionDeny?.(msg.id)}
                   />
+                </div>
+              ) : msg.configError ? (
+                <div className="max-w-[84%]">
+                  <div className="rounded-[1.35rem] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-[1.65] text-amber-100 shadow-lg shadow-black/10">
+                    <div className="flex items-start gap-2.5">
+                      <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-200" />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <p className="font-semibold text-amber-50">
+                          No model provider configured
+                        </p>
+                        <p className="text-amber-100/90">
+                          {msg.configError.message ||
+                            `Set an API key for ${msg.configError.provider || "the selected provider"} in Settings, or switch to a local model.`}
+                        </p>
+                        <div className="pt-1.5">
+                          <Link
+                            href="/settings"
+                            className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-300/15 px-2.5 py-1 text-[11px] font-medium text-amber-50 transition-colors hover:bg-amber-300/25"
+                          >
+                            Set up provider
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div

@@ -4,7 +4,7 @@ import { useEffect, useMemo, type CSSProperties, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -127,11 +127,26 @@ const DOCUMENT_LOADERS = [
 ] as const;
 type SettingsTabValue = "core" | "retrieval" | "graph" | "memory" | "provider" | "companion" | "models" | "privacy";
 
+const SETTINGS_TAB_VALUES: readonly SettingsTabValue[] = [
+  "core",
+  "retrieval",
+  "graph",
+  "memory",
+  "provider",
+  "companion",
+  "models",
+  "privacy",
+] as const;
+
+function isSettingsTabValue(value: string | null | undefined): value is SettingsTabValue {
+  return value !== null && value !== undefined && (SETTINGS_TAB_VALUES as readonly string[]).includes(value);
+}
+
 const ASSISTANT_DEFAULT_VALUES: AssistantFormValues = {
   assistant_identity: {
     assistant_id: "metis-companion",
     name: "METIS",
-    archetype: "Clippy-style research companion",
+    archetype: "Local-first research companion",
     companion_enabled: true,
     greeting: "I can help you get started, reflect on completed work, and map what I learn in the Brain view.",
     prompt_seed:
@@ -396,8 +411,10 @@ function ToggleRow({
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "models" ? "models" : "core";
+  const tabParam = searchParams.get("tab");
+  const initialTab: SettingsTabValue = isSettingsTabValue(tabParam) ? tabParam : "core";
   const initialModelsTab = searchParams.get("modelsTab");
   const initialHereticModelId = searchParams.get("model_id");
   const [loading, setLoading] = useArrowState(true);
@@ -655,8 +672,32 @@ export default function SettingsPage() {
     reset(FORM_DEFAULT_VALUES);
   }
 
+  // Sync the active tab to the URL via ``?tab=<value>`` so the page is
+  // bookmarkable and deep-linkable. Preserves any other query params
+  // (notably ``modelsTab`` / ``model_id`` used by the Heretic toolbar pill
+  // when it deep-links into the Models tab). Uses ``router.replace`` to
+  // avoid polluting browser history when the user clicks through tabs.
+  function syncTabToUrl(tab: SettingsTabValue) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
+    // ``modelsTab`` and ``model_id`` only make sense while on the Models
+    // tab. Strip them when leaving so e.g. clicking back to Core doesn't
+    // leave a stale ``?tab=core&modelsTab=heretic`` in the address bar.
+    if (tab !== "models") {
+      params.delete("modelsTab");
+      params.delete("model_id");
+    }
+    router.replace(`/settings/?${params.toString()}`, { scroll: false });
+  }
+
+  function handleTabChange(tab: SettingsTabValue) {
+    setActiveTab(tab);
+    syncTabToUrl(tab);
+  }
+
   function jumpToSearchResult(tab: SettingsTabValue) {
     setActiveTab(tab);
+    syncTabToUrl(tab);
     setSearchQuery("");
   }
 
@@ -775,7 +816,7 @@ export default function SettingsPage() {
             Loading settings…
           </div>
         ) : (
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as SettingsTabValue)}>
+          <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as SettingsTabValue)}>
             <TabsList className="glass-tab-rail h-auto w-full flex-wrap gap-1 p-1.5">
               <TabsTrigger value="core" className="glass-tab-pill">Core</TabsTrigger>
               <TabsTrigger value="retrieval" className="glass-tab-pill">Retrieval</TabsTrigger>

@@ -25,51 +25,28 @@ import {
   BetweenHorizontalEnd,
   CheckCircle2,
   Database,
-  KeyRound,
   Sparkles,
 } from "lucide-react";
 import { BrainIcon } from "@/components/icons";
 import { useArrowState } from "@/hooks/use-arrow-state";
 
 const LLM_PROVIDERS = [
-  {
-    value: "anthropic",
-    label: "Anthropic",
-    description:
-      "Strong writing quality and research synthesis out of the box.",
-  },
-  {
-    value: "openai",
-    label: "OpenAI",
-    description: "Balanced reasoning, tool use, and a broad model lineup.",
-  },
-  {
-    value: "local",
-    label: "Local model",
-    description:
-      "Keep inference on-device when you prefer a fully local stack.",
-  },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "local", label: "Local model" },
 ] as const;
 
 const EMBEDDING_PROVIDERS = [
-  {
-    value: "openai",
-    label: "OpenAI embeddings",
-    description: "A fast default for most hosted setups.",
-  },
-  {
-    value: "local",
-    label: "Local embeddings",
-    description: "Good when you want indexing to stay on your machine.",
-  },
+  { value: "openai", label: "OpenAI embeddings" },
+  { value: "local", label: "Local embeddings" },
 ] as const;
 
-const STEP_HINTS = [
-  "Choose your chat model provider. You can change it later in Settings.",
-  "Add credentials only if needed. Local mode can stay blank.",
-  "Choose how documents are embedded for indexing and retrieval.",
-  "Optional: build a first index now for grounded chat.",
-  "Choose a starter prompt. It is staged, not auto-sent.",
+const STEP_LABELS = [
+  "Provider",
+  "API key",
+  "Embeddings",
+  "Index",
+  "Launch",
 ];
 
 const STARTER_PROMPTS_WITH_INDEX = [
@@ -164,6 +141,45 @@ export default function SetupPage() {
     return nextSettings;
   }, [apiKey, baselineSettings, embeddingProvider, llmProvider]);
 
+  // Providers that never require an API key — chat can launch even when
+  // no credential is configured. Anything else needs a non-empty
+  // `api_key_<provider>` (either from the wizard input, the existing
+  // settings file, or a `credential_pool` entry).
+  const directChatReadiness = useMemo(() => {
+    const NO_KEY_PROVIDERS = new Set<string>([
+      "local",
+      "mock",
+      "browser_webgpu",
+      "local_lm_studio",
+      "local_gguf",
+    ]);
+    if (NO_KEY_PROVIDERS.has(llmProvider)) {
+      return { ready: true as const };
+    }
+    if (apiKey.trim().length > 0) {
+      return { ready: true as const };
+    }
+    const existingKey = baselineSettings[`api_key_${llmProvider}`];
+    if (typeof existingKey === "string" && existingKey.trim().length > 0) {
+      return { ready: true as const };
+    }
+    const credentialPool = baselineSettings.credential_pool;
+    if (
+      credentialPool &&
+      typeof credentialPool === "object" &&
+      !Array.isArray(credentialPool)
+    ) {
+      const entry = (credentialPool as Record<string, unknown>)[llmProvider];
+      if (entry !== undefined && entry !== null && entry !== "") {
+        return { ready: true as const };
+      }
+    }
+    const providerLabel =
+      LLM_PROVIDERS.find((provider) => provider.value === llmProvider)?.label ??
+      llmProvider;
+    return { ready: false as const, providerLabel };
+  }, [apiKey, baselineSettings, llmProvider]);
+
   async function handleFinish() {
     setSaving(true);
     setError(null);
@@ -244,15 +260,11 @@ export default function SetupPage() {
                     <CheckCircle2 className="size-5 text-primary" />
                   ) : null}
                 </div>
-                <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  {provider.description}
-                </p>
               </button>
             );
           })}
         </div>
       ),
-      hint: STEP_HINTS[0],
     },
     {
       title: "Add credentials only if I need them",
@@ -261,51 +273,31 @@ export default function SetupPage() {
           ? "Local model mode does not require a hosted API key. You can continue immediately or add one later if you switch providers."
           : "Paste the API key for the selected provider. You can also add it later in settings.",
       content: (
-        <div className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="space-y-3">
-              <label
-                htmlFor="api_key"
-                className="text-sm font-medium text-foreground"
-              >
-                {llmProvider === "anthropic"
-                  ? "Anthropic API key"
-                  : llmProvider === "openai"
-                    ? "OpenAI API key"
-                    : "Optional API key"}
-              </label>
-              <Input
-                id="api_key"
-                type="password"
-                placeholder={llmProvider === "local" ? "Optional" : "sk-..."}
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-              />
-              <p className="text-sm leading-7 text-muted-foreground">
-                {llmProvider === "local"
-                  ? "Leave this blank if you’re staying fully local."
-                  : "If you skip this now, you can still add it later in your settings file."}
-              </p>
-            </div>
-
-            <div className="rounded-[1.45rem] border border-white/8 bg-black/10 p-4">
-              <AnimatedLucideIcon
-                icon={KeyRound}
-                mode="hoverLift"
-                className="size-5 text-primary"
-              />
-              <p className="mt-3 font-medium text-foreground">
-                Credential posture
-              </p>
-              <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                Keys are not echoed back in the UI. They are only forwarded to
-                the backend settings update when you finish onboarding.
-              </p>
-            </div>
-          </div>
+        <div className="space-y-3">
+          <label
+            htmlFor="api_key"
+            className="text-sm font-medium text-foreground"
+          >
+            {llmProvider === "anthropic"
+              ? "Anthropic API key"
+              : llmProvider === "openai"
+                ? "OpenAI API key"
+                : "Optional API key"}
+          </label>
+          <Input
+            id="api_key"
+            type="password"
+            placeholder={llmProvider === "local" ? "Optional" : "sk-..."}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+          />
+          <p className="text-sm leading-7 text-muted-foreground">
+            {llmProvider === "local"
+              ? "Leave this blank if you’re staying fully local."
+              : "If you skip this now, you can still add it later in your settings file."}
+          </p>
         </div>
       ),
-      hint: STEP_HINTS[1],
     },
     {
       title: "Choose how I should embed documents",
@@ -346,20 +338,15 @@ export default function SetupPage() {
                     <CheckCircle2 className="size-5 text-primary" />
                   ) : null}
                 </div>
-                <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  {provider.description}
-                </p>
               </button>
             );
           })}
         </div>
       ),
-      hint: STEP_HINTS[2],
     },
     {
       title: "Build the first knowledge base",
-      description:
-        "Indexing a small set of documents here makes the app feel useful immediately. You can skip this and import more later, but a quick first index is the smoothest path into chat.",
+      description: "Optional. Index a few files now for grounded chat.",
       content: (
         <IndexBuildStudio
           settingsOverrides={buildSettings}
@@ -368,7 +355,6 @@ export default function SetupPage() {
           successMode="onboarding"
         />
       ),
-      hint: STEP_HINTS[3],
     },
     {
       title: "Stage your first question",
@@ -439,23 +425,31 @@ export default function SetupPage() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <StatusPill
-                  label={builtIndex ? "RAG ready" : "Direct chat ready"}
-                  tone={builtIndex ? "connected" : "neutral"}
-                />
+                {directChatReadiness.ready ? (
+                  <StatusPill
+                    label={builtIndex ? "RAG ready" : "Direct chat ready"}
+                    tone={builtIndex ? "connected" : "neutral"}
+                  />
+                ) : (
+                  <StatusPill
+                    label="Missing API key"
+                    tone="warning"
+                  />
+                )}
                 <StatusPill label="Starter prompt staged" tone="neutral" />
               </div>
 
               <p className="mt-4 text-sm leading-7 text-muted-foreground">
-                {builtIndex
-                  ? "Opens chat with this index preselected and a starter prompt staged."
-                  : "Opens direct chat with a starter prompt staged."}
+                {!directChatReadiness.ready
+                  ? `Add an API key for ${directChatReadiness.providerLabel} or switch to local model.`
+                  : builtIndex
+                    ? "Opens chat with this index preselected and a starter prompt staged."
+                    : "Opens direct chat with a starter prompt staged."}
               </p>
             </div>
           </div>
         </div>
       ),
-      hint: STEP_HINTS[4],
     },
   ];
 
@@ -523,7 +517,7 @@ export default function SetupPage() {
                       : "bg-white/6 text-muted-foreground",
                 )}
               >
-                {index + 1}. {shortenStepTitle(entry.title)}
+                {STEP_LABELS[index]}
               </button>
             ))}
           </div>
@@ -533,7 +527,6 @@ export default function SetupPage() {
             total={steps.length}
             title={steps[step].title}
             description={steps[step].description}
-            hint={steps[step].hint}
           >
             {steps[step].content}
 
@@ -601,11 +594,4 @@ export default function SetupPage() {
     </div>
     </WebGPUCompanionProvider>
   );
-}
-
-function shortenStepTitle(title: string): string {
-  if (title.length <= 28) {
-    return title;
-  }
-  return `${title.slice(0, 25)}...`;
 }

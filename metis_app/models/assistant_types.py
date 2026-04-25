@@ -30,7 +30,7 @@ def _coerce_int(value: Any, default: int = 0) -> int:
 class AssistantIdentity:
     assistant_id: str = "metis-companion"
     name: str = "METIS"
-    archetype: str = "Clippy-style research companion"
+    archetype: str = "Local-first research companion"
     companion_enabled: bool = True
     greeting: str = (
         "I can help you get started, reflect on completed work, and map what I learn in the Brain tab."
@@ -40,7 +40,7 @@ class AssistantIdentity:
         "and records concise reflections without taking over the main chat."
     )
     docked: bool = True
-    minimized: bool = False
+    minimized: bool = True
 
     def to_payload(self) -> dict[str, Any]:
         return asdict(self)
@@ -51,12 +51,12 @@ class AssistantIdentity:
         return cls(
             assistant_id=str(data.get("assistant_id") or "metis-companion"),
             name=str(data.get("name") or "METIS"),
-            archetype=str(data.get("archetype") or "Clippy-style research companion"),
+            archetype=str(data.get("archetype") or "Local-first research companion"),
             companion_enabled=bool(data.get("companion_enabled", True)),
             greeting=str(data.get("greeting") or cls().greeting),
             prompt_seed=str(data.get("prompt_seed") or cls().prompt_seed),
             docked=bool(data.get("docked", True)),
-            minimized=bool(data.get("minimized", False)),
+            minimized=bool(data.get("minimized", True)),
         )
 
 

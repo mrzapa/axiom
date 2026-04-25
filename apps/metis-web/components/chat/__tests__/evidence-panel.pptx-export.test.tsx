@@ -91,14 +91,14 @@ describe("EvidencePanel PPTX export", () => {
     );
   });
 
-  it("disables export when there is no answer and no sources", () => {
+  it("hides export when there are no sources (audit item 33)", () => {
     renderPanel({
       sources: [],
-      latestAnswer: "",
+      latestAnswer: "Grounded response",
       selectedMode: "Evidence Pack",
     });
 
-    expect(screen.getByRole("button", { name: /export pptx/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /export pptx/i })).toBeNull();
   });
 
   it("shows exporting state and prevents duplicate clicks while export is pending", async () => {
