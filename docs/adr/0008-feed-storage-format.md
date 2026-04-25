@@ -204,9 +204,26 @@ Two writers, one cleaner. The cleaner is the only deleter; ad-hoc
     contradicts decision (1) of the *Context* above.
   - `dismissed` and `fading` evicted after 7 days.
   - `absorbed` rows with a non-empty `atlas_entry_id` are retained
-    until the linked Atlas entry is removed; the cleaner does
-    `DELETE FROM comet_events WHERE phase = 'absorbed' AND atlas_entry_id != '' AND atlas_entry_id NOT IN (SELECT entry_id FROM atlas_entries)`
-    against `rag_sessions.db.atlas_entries` once per cycle.
+    until the linked Atlas entry is removed. The lookup is done in
+    Python, **not** in cross-database SQL: `atlas_entries` lives in
+    `rag_sessions.db`, not in `news_items.db`, so a literal
+    `SELECT … FROM atlas_entries` from inside this DB would fail at
+    runtime. Per cycle the cleaner instead:
+    1. Reads `SELECT comet_id, atlas_entry_id FROM comet_events
+       WHERE phase = 'absorbed' AND atlas_entry_id != ''` from
+       `news_items.db`.
+    2. Calls `AtlasRepository.list_entry_ids()` (a thin Python
+       helper that wraps `SELECT entry_id FROM atlas_entries` on
+       `rag_sessions.db`) to get the set of live entry IDs.
+    3. Computes the orphan set in Python (`linked_ids - live_ids`)
+       and issues a parameterized
+       `DELETE FROM comet_events WHERE comet_id IN (?, ?, …)` against
+       `news_items.db`, bounded by the absorbed-linked row count
+       (in practice ≤ a few thousand even at the 50 000-row cap).
+
+    `ATTACH DATABASE` is intentionally not used; keeping the two
+    DBs strictly independent keeps backup/restore, `:memory:`
+    tests, and packaging boundaries clean.
   - `absorbed` rows whose `atlas_entry_id` is still empty (no link
     written yet) are evicted on the same 7-day window as
     `dismissed`/`fading`; this prevents an unbounded build-up if the
@@ -378,6 +395,13 @@ Accepted implementation follow-ups (Phase 3+):
   `routes/comets.py::router` — there is no new "feeds" router.
   Authorisation uses the same `require_token_guard` as the rest of
   `protected_routes`.
+- Add `AtlasRepository.list_entry_ids() -> set[str]` (or
+  `Iterable[str]`) — a thin read-only helper over the existing
+  `atlas_entries` table — so the feed cleaner has a single sanctioned
+  way to learn which Atlas entries are live without reaching across
+  database files. Phase 3 introduces the helper alongside the
+  cleaner; both land together so the contract specified in §4 stays
+  testable.
 
 ## Open Questions
 
