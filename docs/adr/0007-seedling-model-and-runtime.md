@@ -1,7 +1,19 @@
 # 0007 - Seedling Model and Runtime
 
-- **Status:** Accepted (M13 Phase 1)
+- **Status:** Superseded by [ADR 0013](0013-seedling-runtime-frontend-default.md) (2026-04-25)
 - **Date:** 2026-04-24
+
+> **Superseded.** When this ADR was written, the in-browser Bonsai-1.7B
+> WebGPU runtime (`apps/metis-web/lib/webgpu-companion/`) was already
+> shipping as the de-facto always-on companion model and was missed by
+> the original audit. ADR 0013 inverts the runtime decision: Bonsai
+> becomes the default Seedling reflection model and the in-process
+> backend GGUF path becomes opt-in via the existing GGUF import flow.
+> The Llama-3.2-1B catalog-entry follow-up listed under *Consequences*
+> below is dropped from M13 scope. The runtime sub-decisions about
+> single-resident-instance, `seedling_*` settings isolation, and small
+> structured prompts continue to apply on the opt-in backend path
+> (see ADR 0013 §4).
 
 ## Context
 
