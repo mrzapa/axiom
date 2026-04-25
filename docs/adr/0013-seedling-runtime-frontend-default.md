@@ -64,9 +64,12 @@ becomes opt-in — a power-user upgrade, not the baseline.**
 
 - The Seedling reflection surface uses the existing
   `useWebGPUCompanion()` / `webgpu-companion/worker.ts` pipeline.
-  Phase 4 wires *overnight reflection* to that pipeline behind the
-  same opt-in gate that already governs always-on reflection
-  (`metis:bonsai-always-on`). Phase 5 reads the same `webgpu.status`
+  Phase 4 wires the **while-you-work reflection** path (event-driven,
+  one reflection per completed `CompanionActivityEvent`) to that
+  pipeline behind the same opt-in gate that already governs always-on
+  reflection (`metis:bonsai-always-on`). Bonsai does **not** drive
+  overnight reflection — see §3 for the opt-in backend-GGUF path
+  that owns that surface. Phase 5 reads the same `webgpu.status`
   to decide whether the dock's stage badge can show "reflecting now".
 - No backend model download is required to use M13. A user who never
   uploads a GGUF still gets:
