@@ -294,13 +294,16 @@ class NewsIngestService:
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     def _warm_lru(self) -> None:
+        # Transient repo failures must not permanently disable the
+        # read-through cache — leave _lru_warmed=False on exception so
+        # subsequent ticks retry. The in-memory LRU still works as a
+        # fast-path filter even if the warm never succeeds.
         if self._repository is None or self._lru_warmed:
             return
         try:
             recent = self._repository.list_known_hashes(limit=self._max_seen)
         except Exception:  # noqa: BLE001
             log.debug("Warming LRU from feed repository failed", exc_info=True)
-            self._lru_warmed = True
             return
         # ``recent`` is newest-first; the LRU is FIFO with oldest first
         # so we insert in reverse to keep the newest as MRU.
@@ -319,21 +322,29 @@ class NewsIngestService:
             seen_now.add(h)
             candidates.append(item)
 
+        repo_persisted = False
         if self._repository is not None and candidates:
             try:
                 candidates = self._repository.add_news_items(candidates)
+                repo_persisted = True
             except Exception:  # noqa: BLE001
                 log.warning(
-                    "Persistent dedup write failed; falling back to in-memory cache",
+                    "Persistent dedup write failed; skipping LRU mark so the "
+                    "next tick retries the same items",
                     exc_info=True,
                 )
 
-        for item in candidates:
-            h = self._item_hash(item.title, item.url)
-            self._seen_hashes[h] = None
-        # Evict oldest hashes (FIFO) if cache grows too large
-        while len(self._seen_hashes) > self._max_seen:
-            self._seen_hashes.popitem(last=False)
+        # Only mark items as seen in the LRU when they are durably
+        # persisted (or when no repository is configured). Marking them
+        # after a repo write failure would silently drop those items
+        # for the rest of the process lifetime — see ADR 0008 §2.
+        if self._repository is None or repo_persisted:
+            for item in candidates:
+                h = self._item_hash(item.title, item.url)
+                self._seen_hashes[h] = None
+            # Evict oldest hashes (FIFO) if cache grows too large
+            while len(self._seen_hashes) > self._max_seen:
+                self._seen_hashes.popitem(last=False)
         return candidates
 
     def fetch_rss(self, feed_urls: list[str]) -> list[NewsItem]:

@@ -237,3 +237,188 @@ def test_seedling_worker_swallows_tick_work_exceptions() -> None:
 
     # Worker survived the first failure and called tick_work again.
     assert len(calls) >= 2
+
+
+def test_seedling_worker_offloads_blocking_tick_work_via_to_thread() -> None:
+    """Blocking sync work in tick_work must not stall the asyncio loop.
+
+    Architect review I-2: this test demonstrates that
+    ``await asyncio.to_thread(self._tick_work)`` is actually wrapping
+    the call. If a future change replaces it with a direct sync call,
+    a parallel asyncio task that fires before tick_work returns proves
+    the loop wasn't blocked.
+    """
+    import time as _time
+
+    blocked_for = 0.5  # seconds — long enough to dwarf the parallel sleep
+    parallel_returned_at: list[float] = []
+    tick_returned_at: list[float] = []
+
+    def tick_work() -> dict[str, object] | None:
+        _time.sleep(blocked_for)
+        tick_returned_at.append(_time.monotonic())
+        return None
+
+    cache = SeedlingStatusCache(":memory:")
+    schedule = SeedlingSchedule(tick_interval_seconds=0.01)
+    worker = SeedlingWorker(
+        schedule=schedule,
+        status_cache=cache,
+        tick_work=tick_work,
+    )
+
+    async def scenario() -> None:
+        await worker.start()
+
+        async def parallel() -> None:
+            # Race against the long tick_work — if to_thread is used,
+            # this returns within ~50 ms even though tick_work blocks
+            # for 500 ms.
+            await asyncio.sleep(0.05)
+            parallel_returned_at.append(_time.monotonic())
+
+        # Wait long enough to fire at least one tick + parallel.
+        parallel_task = asyncio.create_task(parallel())
+        await asyncio.sleep(0.6)
+        await parallel_task
+        await worker.stop()
+
+    asyncio.run(scenario())
+
+    assert parallel_returned_at, "parallel asyncio task never ran"
+    assert tick_returned_at, "tick_work never returned"
+    # The parallel coroutine must have finished BEFORE the blocking
+    # tick_work returned — proves the event loop wasn't stalled.
+    assert parallel_returned_at[0] < tick_returned_at[0], (
+        "Event loop was blocked by tick_work; "
+        "asyncio.to_thread must be in place around the call"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Settings overrides honored end-to-end (architect review I-1)
+# ---------------------------------------------------------------------------
+
+
+def test_default_tick_work_honors_seedling_feed_db_path(tmp_path, monkeypatch) -> None:
+    """The configured ``seedling_feed_db_path`` must reach the repo singleton.
+
+    Architect review I-1 — without this the override at install time is
+    silently lost.
+    """
+    from metis_app.services.news_feed_repository import (
+        NewsFeedRepository,
+        get_default_repository,
+        reset_default_repository,
+    )
+
+    reset_default_repository(None)
+    db_path = tmp_path / "configured_feed.db"
+
+    fake_settings = {
+        "news_comets_enabled": True,
+        "news_comet_sources": [],
+        "seedling_feed_db_path": str(db_path),
+        "seedling_feed_retention_days": 1,
+        "seedling_feed_max_rows": 1,
+        "seedling_feed_terminal_retention_days": 1,
+    }
+    monkeypatch.setattr(
+        "metis_app.settings_store.load_settings", lambda: dict(fake_settings)
+    )
+
+    try:
+        _default_tick_work()
+        # The singleton resolved through _resolve_feed_repository must
+        # use the configured path so the cleanup pass writes there
+        # (and not at the default <repo_root>/news_items.db).
+        repo = get_default_repository()
+        assert isinstance(repo, NewsFeedRepository)
+        assert str(repo.db_path).replace("\\", "/") == str(db_path).replace("\\", "/")
+        assert db_path.exists() or repo.db_path == ":memory:"
+    finally:
+        reset_default_repository(None)
+
+
+# ---------------------------------------------------------------------------
+# LRU drift on repo failure (architect review I-3 + I-4)
+# ---------------------------------------------------------------------------
+
+
+def test_news_ingest_does_not_lose_items_when_repo_write_fails() -> None:
+    """A repo write failure must NOT mark items as seen.
+
+    Otherwise the items get classified once but never persisted, and
+    the next tick silently skips them via the in-memory LRU. ADR 0008
+    §2 promises the persistent set is the source of truth.
+    """
+    from metis_app.services.news_feed_repository import NewsFeedRepository
+    from metis_app.services.news_ingest_service import NewsIngestService
+
+    class FlakeyRepo(NewsFeedRepository):
+        def __init__(self) -> None:
+            super().__init__(":memory:")
+            self.fail_next = True
+
+        def add_news_items(self, items, *, source_url=""):  # type: ignore[override]
+            if self.fail_next:
+                self.fail_next = False
+                raise RuntimeError("simulated SQLite hiccup")
+            return super().add_news_items(items, source_url=source_url)
+
+    repo = FlakeyRepo()
+    svc = NewsIngestService(repository=repo)
+    item = NewsItem(
+        title="Important",
+        url="https://example.com/important",
+        source_channel="rss",
+        published_at=1.0,
+        fetched_at=2.0,
+    )
+
+    # First tick: repo throws. Items must NOT enter the LRU.
+    first = svc._dedup([item])  # noqa: SLF001
+    assert first == [item]  # the failure is logged, items still flow downstream
+
+    # Second tick: repo succeeds. Items must reach the persistent set.
+    second = svc._dedup([item])  # noqa: SLF001
+    assert second == [item]
+
+    # Third tick: now they're really persisted; should dedupe.
+    third = svc._dedup([item])  # noqa: SLF001
+    assert third == []
+
+
+def test_news_ingest_lru_warm_failure_retries_on_next_call() -> None:
+    """Warm failure must not permanently disable the read-through cache.
+
+    Architect review I-4: a transient repo error during the first
+    poll previously set ``_lru_warmed=True`` and never retried.
+    """
+    from metis_app.services.news_feed_repository import NewsFeedRepository
+    from metis_app.services.news_ingest_service import NewsIngestService
+
+    class FlakeyWarmRepo(NewsFeedRepository):
+        def __init__(self) -> None:
+            super().__init__(":memory:")
+            self.calls: list[int] = []
+            self.fail_warm = True
+
+        def list_known_hashes(self, *, limit: int = 2000):  # type: ignore[override]
+            self.calls.append(len(self.calls))
+            if self.fail_warm:
+                self.fail_warm = False
+                raise RuntimeError("transient warm failure")
+            return super().list_known_hashes(limit=limit)
+
+    repo = FlakeyWarmRepo()
+    svc = NewsIngestService(repository=repo)
+
+    # First call triggers warm failure.
+    svc._dedup([])  # noqa: SLF001 — internal warm path
+    assert svc._lru_warmed is False  # noqa: SLF001 — must allow retry
+
+    # Second call retries the warm and succeeds.
+    svc._dedup([])  # noqa: SLF001
+    assert svc._lru_warmed is True  # noqa: SLF001
+    assert len(repo.calls) >= 2
