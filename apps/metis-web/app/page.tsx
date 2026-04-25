@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { NetworkAuditFirstRunCard } from "@/components/network-audit/first-run-card";
+import { FirstRunBanner } from "@/components/home/first-run-banner";
 import type { LandingStarfieldFrame, LandingWebglStar } from "@/components/home/landing-starfield-webgl.types";
 
 const LandingStarfieldWebgl = dynamic(
@@ -5260,6 +5261,8 @@ export default function Home() {
         <div className="metis-nav-right" />
       </nav>
 
+      <FirstRunBanner />
+
       <NetworkAuditFirstRunCard />
 
       <LandingStarfieldWebgl
@@ -6770,16 +6773,19 @@ body {
   position: fixed; bottom: 32px; right: 32px;
   z-index: 150; width: 48px; height: 48px;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, rgba(40,52,90,0.7), rgba(12,18,35,0.85));
-  border: 1px solid rgba(196,149,58,0.1);
+  /* Soft warm-gold glow that fades to transparent — replaces the hard
+     blue-white lens-flare ring (audit item 5). No fixed-radius edge,
+     no border, no inset cobalt disc. */
+  background: radial-gradient(circle at 50% 50%, rgba(232,184,74,0.18) 0%, rgba(196,149,58,0.08) 35%, rgba(196,149,58,0) 70%);
+  border: none;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
   transition: all 0.5s cubic-bezier(0.16,1,0.3,1);
-  box-shadow: 0 0 20px rgba(196,149,58,0.04), inset 0 0 12px rgba(196,149,58,0.03);
+  box-shadow: none;
 }
 .metis-chat-bubble:hover {
-  border-color: rgba(196,149,58,0.25); transform: scale(1.08);
-  box-shadow: 0 0 30px rgba(196,149,58,0.1), inset 0 0 16px rgba(196,149,58,0.06);
+  transform: scale(1.08);
+  background: radial-gradient(circle at 50% 50%, rgba(232,184,74,0.28) 0%, rgba(196,149,58,0.12) 40%, rgba(196,149,58,0) 75%);
 }
 .metis-celestial-star-svg {
   width: 22px; height: 22px;

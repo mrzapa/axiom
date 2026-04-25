@@ -123,7 +123,9 @@ export function EvidencePanel({ sources, runIds, latestRunId, selectedMode, late
     }, 2600);
   };
 
-  const canExportPptx = Boolean((latestAnswer ?? "").trim() || sources.length > 0);
+  // Audit item 33: hide Export PPTX entirely when there are no sources —
+  // the button is a useless affordance until the assistant references docs.
+  const canExportPptx = sources.length > 0;
 
   const handleExportPptx = async () => {
     if (!canExportPptx || exportingPptx) {
@@ -210,17 +212,19 @@ export function EvidencePanel({ sources, runIds, latestRunId, selectedMode, late
                       Download JSON
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleExportPptx();
-                    }}
-                    disabled={!canExportPptx || exportingPptx}
-                    className="glass-micro-surface inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    <FileDown className="size-3" />
-                    {exportingPptx ? "Exporting…" : "Export PPTX"}
-                  </button>
+                  {canExportPptx && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleExportPptx();
+                      }}
+                      disabled={exportingPptx}
+                      className="glass-micro-surface inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      <FileDown className="size-3" />
+                      {exportingPptx ? "Exporting…" : "Export PPTX"}
+                    </button>
+                  )}
                   {exportStatus && (
                     <span className="text-[10px] text-muted-foreground">{exportStatus}</span>
                   )}

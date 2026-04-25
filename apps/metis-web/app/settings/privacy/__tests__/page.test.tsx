@@ -363,11 +363,12 @@ describe("PrivacySettingsPage — Phase 6 provider kill-switch toggles", () => {
       /block reddit api/i,
     )) as HTMLInputElement;
     expect(checkbox).toBeDisabled();
-    // The inline note renders "Controlled by <code>news_comets_enabled</code>
-    // in other settings" — assert on the code element to avoid matching
-    // the page-level description copy.
-    const code = screen.getByText("news_comets_enabled");
-    expect(code.tagName.toLowerCase()).toBe("code");
+    // The inline note renders "Controlled by <Link>News comets</Link>
+    // in other settings" — the raw setting key is now hidden behind a
+    // user-friendly label that deep-links to the relevant control. We
+    // assert on the link rather than the legacy <code> element.
+    const link = screen.getByRole("link", { name: /news comets/i });
+    expect(link).toHaveAttribute("href", "/");
   });
 
   it("serializes rapid provider flips — second POST waits for the first", async () => {

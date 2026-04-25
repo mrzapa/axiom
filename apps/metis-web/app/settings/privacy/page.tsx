@@ -69,6 +69,41 @@ const INITIAL_EVENT_FETCH_LIMIT = 50;
 const SYNTHETIC_TRIGGER_FEATURE = "synthetic_pass";
 
 // ---------------------------------------------------------------------------
+// Setting-key cross-references
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a provider's ``kill_switch_setting_key`` (a backend-machine-readable
+ * settings key like ``autonomous_research_enabled``) to a user-friendly
+ * label and the in-app deep-link that exposes that setting. The privacy
+ * panel renders these as clickable cross-references rather than dumping
+ * the raw key onto the page — never expose raw keys to the user.
+ *
+ * Tabs use the ``?tab=<value>`` deep-link convention added on the main
+ * settings page (see ``apps/metis-web/app/settings/page.tsx``).
+ */
+const SETTING_KEY_REFS: Record<string, { label: string; href: string }> = {
+  autonomous_research_enabled: {
+    label: "Autonomous research",
+    href: "/settings/?tab=companion",
+  },
+  // The autonomous-research provider selector is not yet surfaced in the
+  // UI; until it is we send users to the Companion tab where the related
+  // toggle lives.
+  autonomous_research_provider: {
+    label: "Autonomous research provider",
+    href: "/settings/?tab=companion",
+  },
+  // ``news_comets_enabled`` is the master toggle for the news-comets
+  // ingestion lane; it is currently controlled from the home dashboard
+  // ("Show news comets" pill) rather than the settings page.
+  news_comets_enabled: {
+    label: "News comets",
+    href: "/",
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
@@ -447,9 +482,30 @@ function ProviderSection({
                       {isLegacy ? (
                         <p className="text-[10px] text-muted-foreground">
                           Controlled by{" "}
-                          <code className="font-mono">
-                            {provider.kill_switch_setting_key}
-                          </code>{" "}
+                          {(() => {
+                            const key = provider.kill_switch_setting_key;
+                            const ref = key
+                              ? SETTING_KEY_REFS[key]
+                              : undefined;
+                            if (ref) {
+                              return (
+                                <Link
+                                  href={ref.href}
+                                  className="font-medium text-foreground underline-offset-2 hover:underline"
+                                >
+                                  {ref.label}
+                                </Link>
+                              );
+                            }
+                            // Fallback for any future kill-switch key the
+                            // privacy panel hasn't been taught about yet —
+                            // still better than nothing, and the missing
+                            // entry will surface in code review when the
+                            // new key is wired up.
+                            return (
+                              <code className="font-mono">{key}</code>
+                            );
+                          })()}{" "}
                           in other settings
                         </p>
                       ) : null}

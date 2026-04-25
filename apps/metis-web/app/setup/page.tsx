@@ -64,12 +64,12 @@ const EMBEDDING_PROVIDERS = [
   },
 ] as const;
 
-const STEP_HINTS = [
-  "Choose your chat model provider. You can change it later in Settings.",
-  "Add credentials only if needed. Local mode can stay blank.",
-  "Choose how documents are embedded for indexing and retrieval.",
-  "Optional: build a first index now for grounded chat.",
-  "Choose a starter prompt. It is staged, not auto-sent.",
+const STEP_LABELS = [
+  "Provider",
+  "API key",
+  "Embeddings",
+  "Index",
+  "Launch",
 ];
 
 const STARTER_PROMPTS_WITH_INDEX = [
@@ -164,6 +164,45 @@ export default function SetupPage() {
     return nextSettings;
   }, [apiKey, baselineSettings, embeddingProvider, llmProvider]);
 
+  // Providers that never require an API key — chat can launch even when
+  // no credential is configured. Anything else needs a non-empty
+  // `api_key_<provider>` (either from the wizard input, the existing
+  // settings file, or a `credential_pool` entry).
+  const directChatReadiness = useMemo(() => {
+    const NO_KEY_PROVIDERS = new Set<string>([
+      "local",
+      "mock",
+      "browser_webgpu",
+      "local_lm_studio",
+      "local_gguf",
+    ]);
+    if (NO_KEY_PROVIDERS.has(llmProvider)) {
+      return { ready: true as const };
+    }
+    if (apiKey.trim().length > 0) {
+      return { ready: true as const };
+    }
+    const existingKey = baselineSettings[`api_key_${llmProvider}`];
+    if (typeof existingKey === "string" && existingKey.trim().length > 0) {
+      return { ready: true as const };
+    }
+    const credentialPool = baselineSettings.credential_pool;
+    if (
+      credentialPool &&
+      typeof credentialPool === "object" &&
+      !Array.isArray(credentialPool)
+    ) {
+      const entry = (credentialPool as Record<string, unknown>)[llmProvider];
+      if (entry !== undefined && entry !== null && entry !== "") {
+        return { ready: true as const };
+      }
+    }
+    const providerLabel =
+      LLM_PROVIDERS.find((provider) => provider.value === llmProvider)?.label ??
+      llmProvider;
+    return { ready: false as const, providerLabel };
+  }, [apiKey, baselineSettings, llmProvider]);
+
   async function handleFinish() {
     setSaving(true);
     setError(null);
@@ -252,7 +291,6 @@ export default function SetupPage() {
           })}
         </div>
       ),
-      hint: STEP_HINTS[0],
     },
     {
       title: "Add credentials only if I need them",
@@ -305,7 +343,6 @@ export default function SetupPage() {
           </div>
         </div>
       ),
-      hint: STEP_HINTS[1],
     },
     {
       title: "Choose how I should embed documents",
@@ -354,7 +391,6 @@ export default function SetupPage() {
           })}
         </div>
       ),
-      hint: STEP_HINTS[2],
     },
     {
       title: "Build the first knowledge base",
@@ -368,7 +404,6 @@ export default function SetupPage() {
           successMode="onboarding"
         />
       ),
-      hint: STEP_HINTS[3],
     },
     {
       title: "Stage your first question",
@@ -439,23 +474,31 @@ export default function SetupPage() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <StatusPill
-                  label={builtIndex ? "RAG ready" : "Direct chat ready"}
-                  tone={builtIndex ? "connected" : "neutral"}
-                />
+                {directChatReadiness.ready ? (
+                  <StatusPill
+                    label={builtIndex ? "RAG ready" : "Direct chat ready"}
+                    tone={builtIndex ? "connected" : "neutral"}
+                  />
+                ) : (
+                  <StatusPill
+                    label="Missing API key"
+                    tone="warning"
+                  />
+                )}
                 <StatusPill label="Starter prompt staged" tone="neutral" />
               </div>
 
               <p className="mt-4 text-sm leading-7 text-muted-foreground">
-                {builtIndex
-                  ? "Opens chat with this index preselected and a starter prompt staged."
-                  : "Opens direct chat with a starter prompt staged."}
+                {!directChatReadiness.ready
+                  ? `Add an API key for ${directChatReadiness.providerLabel} or switch to local model.`
+                  : builtIndex
+                    ? "Opens chat with this index preselected and a starter prompt staged."
+                    : "Opens direct chat with a starter prompt staged."}
               </p>
             </div>
           </div>
         </div>
       ),
-      hint: STEP_HINTS[4],
     },
   ];
 
@@ -523,7 +566,7 @@ export default function SetupPage() {
                       : "bg-white/6 text-muted-foreground",
                 )}
               >
-                {index + 1}. {shortenStepTitle(entry.title)}
+                {STEP_LABELS[index]}
               </button>
             ))}
           </div>
@@ -533,7 +576,6 @@ export default function SetupPage() {
             total={steps.length}
             title={steps[step].title}
             description={steps[step].description}
-            hint={steps[step].hint}
           >
             {steps[step].content}
 
@@ -601,11 +643,4 @@ export default function SetupPage() {
     </div>
     </WebGPUCompanionProvider>
   );
-}
-
-function shortenStepTitle(title: string): string {
-  if (title.length <= 28) {
-    return title;
-  }
-  return `${title.slice(0, 25)}...`;
 }
