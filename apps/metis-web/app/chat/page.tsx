@@ -13,6 +13,7 @@ import {
   fetchForecastSchema,
   fetchSession,
   fetchSettings,
+  MissingProviderCredentialError,
   queryDirect,
   queryForecast,
   queryKnowledgeSearch,
@@ -908,20 +909,42 @@ function ChatPageContent() {
           }),
         );
       } catch (error) {
-        appendMessages([
-          createMessage(
-            {
-              role: "assistant",
-              content:
-                error instanceof Error ? error.message : "An error occurred.",
-              ts: new Date().toISOString(),
-              run_id: "",
-              sources: [],
-              query_mode: "direct",
-            },
-            { status: "error" },
-          ),
-        ]);
+        if (error instanceof MissingProviderCredentialError) {
+          appendMessages([
+            createMessage(
+              {
+                role: "assistant",
+                content: "",
+                ts: new Date().toISOString(),
+                run_id: "",
+                sources: [],
+                query_mode: "direct",
+                configError: {
+                  kind: "missing_provider_credential",
+                  provider: error.detail.provider,
+                  settings_key: error.detail.settings_key,
+                  message: error.detail.message,
+                },
+              },
+              { status: "error" },
+            ),
+          ]);
+        } else {
+          appendMessages([
+            createMessage(
+              {
+                role: "assistant",
+                content:
+                  error instanceof Error ? error.message : "An error occurred.",
+                ts: new Date().toISOString(),
+                run_id: "",
+                sources: [],
+                query_mode: "direct",
+              },
+              { status: "error" },
+            ),
+          ]);
+        }
       } finally {
         setIsSending(false);
       }

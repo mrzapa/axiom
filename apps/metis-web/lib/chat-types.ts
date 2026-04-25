@@ -124,6 +124,13 @@ export interface ArrowArtifact {
   payload_truncated?: boolean;
 }
 
+export interface ChatMessageConfigError {
+  kind: "missing_provider_credential";
+  provider: string;
+  settings_key: string;
+  message: string;
+}
+
 export interface ChatMessageContent {
   role: string;
   content: string;
@@ -136,6 +143,7 @@ export interface ChatMessageContent {
   llm_provider?: string;
   llm_model?: string;
   query_mode?: string;
+  configError?: ChatMessageConfigError;
 }
 
 export type ChatMessageStatus = "streaming" | "complete" | "aborted" | "error";

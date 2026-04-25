@@ -2158,6 +2158,45 @@ export async function checkApiCompatibility(): Promise<{
   }
 }
 
+export interface MissingProviderCredentialDetail {
+  error: "missing_provider_credential";
+  provider: string;
+  settings_key: string;
+  message: string;
+}
+
+export class MissingProviderCredentialError extends Error {
+  readonly detail: MissingProviderCredentialDetail;
+  constructor(detail: MissingProviderCredentialDetail) {
+    super(detail.message);
+    this.name = "MissingProviderCredentialError";
+    this.detail = detail;
+  }
+}
+
+function parseMissingProviderCredentialDetail(body: string): MissingProviderCredentialDetail | null {
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown };
+    const detail = parsed?.detail;
+    if (
+      detail &&
+      typeof detail === "object" &&
+      (detail as { error?: unknown }).error === "missing_provider_credential"
+    ) {
+      const d = detail as Record<string, unknown>;
+      return {
+        error: "missing_provider_credential",
+        provider: typeof d.provider === "string" ? d.provider : "",
+        settings_key: typeof d.settings_key === "string" ? d.settings_key : "",
+        message: typeof d.message === "string" ? d.message : "No model provider is configured.",
+      };
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
 export async function queryDirect(
   prompt: string,
   settings: Record<string, unknown>,
@@ -2169,8 +2208,14 @@ export async function queryDirect(
     body: JSON.stringify({ prompt, settings, session_id: sessionId ?? "" }),
   });
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`Direct query failed (${res.status}): ${detail}`);
+    const body = await res.text();
+    if (res.status === 422) {
+      const detail = parseMissingProviderCredentialDetail(body);
+      if (detail) {
+        throw new MissingProviderCredentialError(detail);
+      }
+    }
+    throw new Error(`Direct query failed (${res.status}): ${body}`);
   }
   return res.json();
 }

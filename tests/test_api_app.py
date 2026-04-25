@@ -420,6 +420,34 @@ def test_query_direct_happy_path(monkeypatch) -> None:
     assert captured == {"prompt": "Say hello", "session_id": ""}
 
 
+def test_query_direct_returns_structured_error_when_provider_key_missing(monkeypatch) -> None:
+    """A real provider with no credential must surface as a 422 with a
+    structured payload — not a mock-shaped ``answer_text`` masquerading
+    as a real reply (audit item 4 from the M01 plan).
+    """
+    fake_orchestrator = MagicMock()
+    _patch_workspace_orchestrator(monkeypatch, lambda: fake_orchestrator)
+    client = TestClient(app=api_app_module.create_app())
+
+    response = client.post(
+        "/v1/query/direct",
+        json={
+            "prompt": "Say hello",
+            "settings": {"llm_provider": "anthropic", "api_key_anthropic": ""},
+        },
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    detail = payload["detail"]
+    assert detail["error"] == "missing_provider_credential"
+    assert detail["provider"] == "anthropic"
+    assert detail["settings_key"] == "api_key_anthropic"
+    assert "Settings" in detail["message"]
+    # The orchestrator must not be invoked — no mock fallback should run.
+    assert fake_orchestrator.run_direct_query.call_count == 0
+
+
 def test_query_direct_serializes_artifacts(monkeypatch) -> None:
     client = TestClient(app=api_app_module.create_app())
 

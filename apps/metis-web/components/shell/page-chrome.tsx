@@ -1,11 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import {
-  Activity,
   Home,
   Lightbulb,
   MessageSquare,
@@ -38,8 +37,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings2 },
-  { href: "/diagnostics", label: "Diagnostics", icon: Activity },
-  { href: "/improvements", label: "Pipeline", icon: Lightbulb },
+  { href: "/improvements", label: "Research log", icon: Lightbulb },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -62,8 +60,23 @@ export function PageChrome({
   withWebGPUProvider = true,
 }: PageChromeProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const isStarscape = tone === "starscape";
   const reducedMotion = useReducedMotion();
+
+  // Diagnostics is no longer a primary nav item — keep it reachable via
+  // Cmd+Shift+D (mac) / Ctrl+Shift+D (win/linux) for power users.
+  useEffect(() => {
+    function handler(event: KeyboardEvent) {
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && event.shiftKey && (event.key === "D" || event.key === "d")) {
+        event.preventDefault();
+        router.push("/diagnostics");
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [router]);
 
   const content = (
     <div

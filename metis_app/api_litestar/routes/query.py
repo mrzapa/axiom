@@ -41,6 +41,52 @@ from metis_app.api_litestar.common import parse_last_event_id, run_engine
 _RAG_STREAM_MANAGER = ReplayableRunStreamManager()
 
 
+# Providers that require an API key shipped with the request settings.
+# ``mock`` and the local providers (``local_lm_studio``, ``local_gguf``)
+# are intentionally absent — they have no credential to check.
+_PROVIDER_API_KEY_FIELDS: dict[str, str] = {
+    "openai": "api_key_openai",
+    "anthropic": "api_key_anthropic",
+    "google": "api_key_google",
+    "xai": "api_key_xai",
+}
+
+
+def _check_provider_credentials(settings: dict[str, Any] | None) -> None:
+    """Raise a structured 422 when a real provider is selected without a key.
+
+    Returning a payload like ``{"error": "missing_provider_credential",
+    "provider": ..., "settings_key": ..., "message": ...}`` lets the chat
+    client render a "set up your provider" card instead of treating the
+    error string as a chat reply. The explicit ``mock`` provider stays
+    functional — it is the dev/test affordance.
+    """
+    settings = settings or {}
+    provider = str(settings.get("llm_provider") or "").strip().lower()
+    settings_key = _PROVIDER_API_KEY_FIELDS.get(provider)
+    if not settings_key:
+        return
+    # Pooled credentials count as configured even if the per-provider
+    # field is empty, since ``create_llm`` consumes the pool first.
+    pool = (settings.get("credential_pool") or {}).get(provider) or []
+    if pool:
+        return
+    if str(settings.get(settings_key) or "").strip():
+        return
+    raise LitestarHTTPException(
+        status_code=422,
+        detail={
+            "error": "missing_provider_credential",
+            "provider": provider,
+            "settings_key": settings_key,
+            "message": (
+                f"No API key configured for provider '{provider}'. "
+                "Set one in Settings, or switch to a local model."
+            ),
+        },
+    )
+
+
 @post("/v1/query/rag", status_code=200)
 def api_query_rag(data: RagQueryRequestModel) -> dict[str, Any]:
     orchestrator = WorkspaceOrchestrator()
@@ -65,6 +111,7 @@ def api_search_knowledge(data: KnowledgeSearchRequestModel) -> dict[str, Any]:
 
 @post("/v1/query/direct", status_code=200)
 def api_query_direct(data: DirectQueryRequestModel) -> dict[str, Any]:
+    _check_provider_credentials(data.settings)
     orchestrator = WorkspaceOrchestrator()
     result = run_engine(
         orchestrator.run_direct_query,
@@ -156,6 +203,7 @@ def api_openai_chat_completions(
             detail="No user message found in the messages array.",
         )
 
+    _check_provider_credentials(settings)
     direct_req = DirectQueryRequestModel(prompt=prompt, settings=settings)
     orchestrator = WorkspaceOrchestrator()
     result = run_engine(orchestrator.run_direct_query, direct_req.to_engine())
