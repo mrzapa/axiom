@@ -46,7 +46,10 @@ export function FacultyGlyphPanel({ faculty }: FacultyGlyphPanelProps) {
 
       <div className="relative grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(220px,0.85fr)] lg:items-center">
         <div className="space-y-3">
-          <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.32em] text-[#d6b361]">
+          <div
+            className="flex items-center gap-2 text-[11px] uppercase tracking-[0.32em] text-[#d6b361]"
+            title="The category symbol for this star (Knowledge / Memory / Reasoning…)"
+          >
             <Sparkles className="size-3.5" />
             Faculty sigil
           </div>

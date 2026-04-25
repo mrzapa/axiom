@@ -13,6 +13,39 @@ import { Input } from "@/components/ui/input";
 import { updateSettings } from "@/lib/api";
 import { AlertCircle, Cpu, Loader2 } from "lucide-react";
 import { useArrowState } from "@/hooks/use-arrow-state";
+import { cn } from "@/lib/utils";
+
+// Supported providers shown in the modal's <select>.
+// Keep in sync with the providers the wizard / settings page also expose.
+const PROVIDER_OPTIONS = [
+  "anthropic",
+  "openai",
+  "google",
+  "xai",
+  "webgpu",
+  "local_lm_studio",
+  "local_gguf",
+  "mock",
+] as const;
+
+type ProviderOption = (typeof PROVIDER_OPTIONS)[number];
+
+function isKnownProvider(value: string): value is ProviderOption {
+  return (PROVIDER_OPTIONS as readonly string[]).includes(value);
+}
+
+function modelPlaceholderFor(provider: string): string {
+  switch (provider) {
+    case "anthropic":
+      return "e.g. claude-opus-4-6";
+    case "openai":
+      return "e.g. gpt-4o";
+    case "webgpu":
+      return "Bonsai 1.7B";
+    default:
+      return "Model identifier";
+  }
+}
 
 interface ModelStatusDialogProps {
   open: boolean;
@@ -100,12 +133,35 @@ export function ModelStatusDialog({
             <label className="text-xs font-medium text-muted-foreground">
               Provider
             </label>
-            <Input
-              value={draftProvider}
-              onChange={(e) => setDraftProvider(e.target.value)}
-              placeholder="e.g. anthropic, openai, local_gguf"
+            <select
+              value={isKnownProvider(draftProvider) ? draftProvider : ""}
+              onChange={(e) => {
+                const next = e.target.value;
+                setDraftProvider(next);
+                // WebGPU only supports Bonsai 1.7B — pre-fill it so the user can save immediately.
+                if (next === "webgpu") {
+                  setDraftModel("Bonsai 1.7B");
+                }
+              }}
               disabled={saving}
-            />
+              className={cn(
+                "h-9 w-full min-w-0 rounded-xl border border-input/80 bg-card/70 px-3 py-1.5 text-sm backdrop-blur-md transition-[border-color,box-shadow,background-color] outline-none",
+                "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40",
+                "disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50",
+                "dark:bg-input/30 dark:hover:border-primary/25",
+              )}
+            >
+              {!isKnownProvider(draftProvider) && (
+                <option value="" disabled>
+                  Select a provider
+                </option>
+              )}
+              {PROVIDER_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="space-y-1.5">
@@ -115,8 +171,9 @@ export function ModelStatusDialog({
             <Input
               value={draftModel}
               onChange={(e) => setDraftModel(e.target.value)}
-              placeholder="e.g. claude-opus-4-6, gpt-4o"
+              placeholder={modelPlaceholderFor(draftProvider)}
               disabled={saving}
+              readOnly={draftProvider === "webgpu"}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && canSave) handleSave();
               }}

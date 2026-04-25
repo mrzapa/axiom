@@ -358,6 +358,7 @@ export function ChatPanel({
             onClick={() => onAgenticModeChange?.(!agenticMode)}
             disabled={agenticModeSaving}
             aria-pressed={agenticMode}
+            title={`Agentic mode runs multi-step research with self-correction loops. Currently ${agenticMode ? "on" : "off"}.`}
             className={cn(
               "chat-control-pill flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors",
               agenticMode
@@ -376,6 +377,7 @@ export function ChatPanel({
           </Link>
           <Link
             href="/settings?tab=models&modelsTab=heretic"
+            title="Configure local-model 'uncensored mode' (Heretic Abliteration tooling)"
             className="chat-control-pill rounded-full px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
           >
             Heretic
@@ -387,6 +389,7 @@ export function ChatPanel({
                 type="button"
                 onClick={() => setModelDialogOpen(true)}
                 aria-label="Change model"
+                title="Click to change model"
                 className="chat-control-pill cursor-pointer rounded-full px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
               >
                 {[modelProvider, modelName].filter(Boolean).join(" / ")}
@@ -394,6 +397,7 @@ export function ChatPanel({
               <button
                 type="button"
                 onClick={() => setModelDialogOpen(true)}
+                title="Change model or provider"
                 className="chat-control-pill rounded-full px-2 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/12"
               >
                 Change
@@ -887,6 +891,7 @@ export function ChatPanel({
               type="button"
               onClick={() => setQueryMode("direct")}
               data-active={queryMode === "direct" ? "true" : "false"}
+              title="Direct mode: chat with the model without retrieving documents"
               className={cn(
                 "chat-control-pill rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
                 queryMode === "direct"
@@ -900,6 +905,7 @@ export function ChatPanel({
               type="button"
               onClick={() => setQueryMode("rag")}
               data-active={queryMode === "rag" ? "true" : "false"}
+              title="RAG mode: retrieve documents from your index and answer with citations"
               className={cn(
                 "chat-control-pill rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
                 queryMode === "rag"

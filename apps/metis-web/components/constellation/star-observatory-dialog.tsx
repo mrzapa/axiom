@@ -317,7 +317,12 @@ function StarIdentityPanel({ profile, className }: StarIdentityPanelProps) {
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Stellar identity</div>
+          <div
+            className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+            title="Procedural identity card based on this star's seed and content type"
+          >
+            Stellar identity
+          </div>
           <div className="mt-2 text-sm text-slate-300">
             Procedural character sheet derived from the star&rsquo;s seed and content type.
           </div>
@@ -326,6 +331,7 @@ function StarIdentityPanel({ profile, className }: StarIdentityPanelProps) {
           variant="outline"
           className="border-white/12 bg-white/6 text-slate-200"
           data-field="archetype"
+          title="Standard procedural archetype (vs. variable / nebula / etc.)"
         >
           {archetypeLabel}
         </Badge>
@@ -333,20 +339,35 @@ function StarIdentityPanel({ profile, className }: StarIdentityPanelProps) {
 
       <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-white/8 bg-white/4 px-4 py-3">
-          <dt className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Spectral class</dt>
+          <dt
+            className="text-[11px] uppercase tracking-[0.24em] text-slate-400"
+            title="Astronomy class — derived from the star's content; determines visual style"
+          >
+            Spectral class
+          </dt>
           <dd className="mt-2 text-base font-medium text-white" data-field="spectral-class">
             {spectralLabel}
           </dd>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/4 px-4 py-3">
-          <dt className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Temperature</dt>
+          <dt
+            className="text-[11px] uppercase tracking-[0.24em] text-slate-400"
+            title="Procedural surface temperature for the star, in Kelvin"
+          >
+            Temperature
+          </dt>
           <dd className="mt-2 text-base font-medium text-white" data-field="temperature">
             {temperatureLabel}
             <span className="ml-1 text-xs font-normal tracking-wide text-slate-400">K</span>
           </dd>
         </div>
         <div className="rounded-2xl border border-white/8 bg-white/4 px-4 py-3">
-          <dt className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Luminosity</dt>
+          <dt
+            className="text-[11px] uppercase tracking-[0.24em] text-slate-400"
+            title="Procedural brightness in solar units (1 L☉ = brightness of our Sun)"
+          >
+            Luminosity
+          </dt>
           <dd className="mt-2 text-base font-medium text-white" data-field="luminosity">
             {luminosityLabel}
             <span className="ml-1 text-xs font-normal tracking-wide text-slate-400">L☉</span>
@@ -355,26 +376,41 @@ function StarIdentityPanel({ profile, className }: StarIdentityPanelProps) {
       </dl>
 
       <div className="mt-4">
-        <div className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Palette</div>
+        <div
+          className="text-[11px] uppercase tracking-[0.24em] text-slate-400"
+          title="Color palette derived from the star — core, halo, accent, rim, surface"
+        >
+          Palette
+        </div>
         <ul
           className="mt-2 flex flex-wrap items-center gap-2"
           aria-label="Stellar palette"
           data-field="palette"
         >
-          {(["core", "halo", "accent", "rim", "surface"] as const).map((key) => (
-            <li
-              key={key}
-              className="flex items-center gap-2 rounded-full border border-white/8 bg-white/4 px-2.5 py-1 text-xs text-slate-200"
-              data-palette-key={key}
-            >
-              <span
-                aria-hidden="true"
-                className="inline-block size-3 rounded-full ring-1 ring-white/15"
-                style={{ background: paletteSwatchCss(palette[key]) }}
-              />
-              {key}
-            </li>
-          ))}
+          {(["core", "halo", "accent", "rim", "surface"] as const).map((key) => {
+            const swatchTitle: Record<typeof key, string> = {
+              core: "Core: the star's central body color",
+              halo: "Halo: the soft glow surrounding the core",
+              accent: "Accent: highlight color used for sparkles and rays",
+              rim: "Rim: outer edge color where the halo fades to space",
+              surface: "Surface: deep tone underneath the core, used for shading",
+            } as const;
+            return (
+              <li
+                key={key}
+                className="flex items-center gap-2 rounded-full border border-white/8 bg-white/4 px-2.5 py-1 text-xs text-slate-200"
+                data-palette-key={key}
+                title={swatchTitle[key]}
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block size-3 rounded-full ring-1 ring-white/15"
+                  style={{ background: paletteSwatchCss(palette[key]) }}
+                />
+                {key}
+              </li>
+            );
+          })}
         </ul>
       </div>
     </section>

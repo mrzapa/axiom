@@ -122,27 +122,31 @@ export function CatalogueStarInspector({
 
       <dl className="metis-catalogue-inspector-fields">
         <div className="metis-catalogue-inspector-field">
-          <dt>Spectral class</dt>
+          <dt title="Astronomy class — derived from the star's content; determines visual style">
+            Spectral class
+          </dt>
           <dd data-field="spectral-class">{spectral}</dd>
         </div>
         <div className="metis-catalogue-inspector-field">
-          <dt>Temperature</dt>
+          <dt title="Procedural surface temperature for the star, in Kelvin">Temperature</dt>
           <dd data-field="temperature">{temperature} K</dd>
         </div>
         <div className="metis-catalogue-inspector-field">
-          <dt>Luminosity</dt>
+          <dt title="Procedural brightness in solar units (1 L☉ = brightness of our Sun)">
+            Luminosity
+          </dt>
           <dd data-field="luminosity">{luminosity} L☉</dd>
         </div>
         <div className="metis-catalogue-inspector-field">
-          <dt>Apparent magnitude</dt>
+          <dt title="Brightness on the visible-star scale; lower = brighter">Apparent magnitude</dt>
           <dd data-field="magnitude">{magnitude}</dd>
         </div>
         <div className="metis-catalogue-inspector-field">
-          <dt>Archetype</dt>
+          <dt title="Standard procedural archetype (vs. variable / nebula / etc.)">Archetype</dt>
           <dd data-field="archetype">{archetype}</dd>
         </div>
         <div className="metis-catalogue-inspector-field">
-          <dt>Coordinates</dt>
+          <dt title="Position in the procedural starfield (world coordinates)">Coordinates</dt>
           <dd data-field="coordinates">{coords}</dd>
         </div>
       </dl>

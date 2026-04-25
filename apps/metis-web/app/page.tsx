@@ -2234,6 +2234,9 @@ export default function Home() {
 
     let W = window.innerWidth;
     let H = window.innerHeight;
+    // Cap DPR at 2 — beyond that the buffer cost outweighs visible gain on
+    // canvases that already cover the whole viewport.
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
     const projectedUserStarTargets: ProjectedUserStarHitTarget[] = [];
     let projectedUserStarRenderState = new Map<string, ProjectedUserStarRenderState>();
     const projectedCandidateById = new Map<string, StarData>();
@@ -2242,13 +2245,27 @@ export default function Home() {
     function syncCanvasBounds() {
       const fallbackWidth = window.innerWidth;
       const fallbackHeight = window.innerHeight;
-      W = canvas!.width = fallbackWidth;
-      H = canvas!.height = fallbackHeight;
       const rect = canvas!.getBoundingClientRect();
       const width = rect.width || fallbackWidth;
       const height = rect.height || fallbackHeight;
       const left = rect.left ?? 0;
       const top = rect.top ?? 0;
+      // Sample DPR live so pinch-zoom / window-drag-between-monitors keeps
+      // the buffer crisp. Cap at 2 to bound memory.
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = width;
+      H = height;
+      canvas!.width = Math.round(width * dpr);
+      canvas!.height = Math.round(height * dpr);
+      canvas!.style.width = `${width}px`;
+      canvas!.style.height = `${height}px`;
+      // setTransform (not scale) — we own the matrix here, so re-apply
+      // unconditionally on every resize to avoid compounding scales.
+      // Guard for environments (JSDOM tests) that don't implement
+      // setTransform on the canvas mock.
+      if (typeof ctx?.setTransform === "function") {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
       canvasBoundsRef.current = {
         left,
         top,
@@ -3406,8 +3423,12 @@ export default function Home() {
       );
       // Match the parallax applied to constellation nodes so Polaris drifts
       // in sync with the surrounding star field on mouse movement.
-      const ppx = projected.x + (mouse.x - W / 2) * 0.015;
-      const ppy = projected.y + (mouse.y - H / 2) * 0.015;
+      // Round to half-pixel so the core disk, halo gradients, orbit ring,
+      // and diffraction rays all rasterize with the same sub-pixel rounding
+      // — otherwise small filled arcs and thin strokes can land on different
+      // pixel boundaries at high zoom and appear visually misaligned.
+      const ppx = Math.round(projected.x + (mouse.x - W / 2) * 0.015) + 0.5;
+      const ppy = Math.round(projected.y + (mouse.y - H / 2) * 0.015) + 0.5;
       const sc = getZoomResponsiveNodeScale(backgroundZoomRef.current);
       const coreR = 5 * sc;
 
@@ -4254,12 +4275,24 @@ export default function Home() {
       // Draw Polaris to an offscreen canvas, then composite back with a soft
       // blur layer underneath for a real glow effect.
       if (!reducedMotion && ctx) {
-        // Lazy-init offscreen canvas at matching size
-        if (!bloomCanvasRef.current || bloomCanvasRef.current.width !== W || bloomCanvasRef.current.height !== H) {
+        // Lazy-init offscreen canvas at matching size. The bloom buffer is
+        // sized in physical pixels (W * dpr × H * dpr) so it matches the
+        // main canvas backing store, then its 2D context is pre-scaled so
+        // draw calls use the same CSS-pixel coordinate space as the main ctx.
+        const bufferW = Math.round(W * dpr);
+        const bufferH = Math.round(H * dpr);
+        if (
+          !bloomCanvasRef.current
+          || bloomCanvasRef.current.width !== bufferW
+          || bloomCanvasRef.current.height !== bufferH
+        ) {
           bloomCanvasRef.current = document.createElement("canvas");
-          bloomCanvasRef.current.width = W;
-          bloomCanvasRef.current.height = H;
+          bloomCanvasRef.current.width = bufferW;
+          bloomCanvasRef.current.height = bufferH;
           bloomCtxRef.current = bloomCanvasRef.current.getContext("2d");
+          if (typeof bloomCtxRef.current?.setTransform === "function") {
+            bloomCtxRef.current.setTransform(dpr, 0, 0, dpr, 0, 0);
+          }
         }
         const bCtx = bloomCtxRef.current;
         if (bCtx) {
@@ -4273,16 +4306,19 @@ export default function Home() {
           drawPolarisMetis(ts);
           swapCtx(mainCtx);
 
+          // Pass explicit destination size so the bloom is painted into CSS
+          // pixels (the main ctx is already scaled by dpr, so the implicit
+          // 1:1 pixel copy would otherwise draw at half the intended size).
           // Layer 1: blurred glow underneath (additive blend)
           mainCtx.save();
           mainCtx.filter = "blur(6px)";
           mainCtx.globalCompositeOperation = "lighter";
           mainCtx.globalAlpha = 0.35;
-          mainCtx.drawImage(bloomCanvasRef.current, 0, 0);
+          mainCtx.drawImage(bloomCanvasRef.current, 0, 0, W, H);
           mainCtx.restore();
 
           // Layer 2: crisp original on top
-          mainCtx.drawImage(bloomCanvasRef.current, 0, 0);
+          mainCtx.drawImage(bloomCanvasRef.current, 0, 0, W, H);
         } else {
           drawPolarisMetis(ts);
         }

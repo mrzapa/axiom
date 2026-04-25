@@ -64,12 +64,18 @@ export function CatalogueFilterPanel({ state, onStateChange }: CatalogueFilterPa
       aria-label="Catalogue filter"
       data-testid="catalogue-filter-panel"
     >
-      <div className="metis-catalogue-filter-row" role="group" aria-label="Spectral class">
+      <div
+        className="metis-catalogue-filter-row"
+        role="group"
+        aria-label="Spectral class"
+        title="Filter by spectral class — astronomy class derived from the star's content"
+      >
         <button
           type="button"
           className="metis-catalogue-filter-chip"
           aria-pressed={allActive}
           onClick={clearFamilies}
+          title="Show all spectral classes"
         >
           All
         </button>
@@ -83,13 +89,17 @@ export function CatalogueFilterPanel({ state, onStateChange }: CatalogueFilterPa
               data-family={family}
               aria-pressed={pressed}
               onClick={() => toggleFamily(family)}
+              title={`Show only spectral class ${family}`}
             >
               {family}
             </button>
           );
         })}
       </div>
-      <label className="metis-catalogue-filter-slider-label">
+      <label
+        className="metis-catalogue-filter-slider-label"
+        title="Brightness on the visible-star scale; lower = brighter. Hides dimmer stars."
+      >
         <span className="metis-catalogue-filter-slider-text">
           Magnitude ≤ {formatMagnitude(state.maxMagnitude)}
         </span>

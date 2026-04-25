@@ -81,6 +81,8 @@ export default function SetupPage() {
   const [apiKey, setApiKey] = useArrowState("");
   const [embeddingProvider, setEmbeddingProvider] =
     useArrowState<(typeof EMBEDDING_PROVIDERS)[number]["value"]>("openai");
+  const [embeddingProviderTouched, setEmbeddingProviderTouched] =
+    useArrowState(false);
   const [baselineSettings, setBaselineSettings] = useArrowState<
     Record<string, unknown>
   >({});
@@ -119,13 +121,32 @@ export default function SetupPage() {
             setEmbeddingProvider(
               candidate as (typeof EMBEDDING_PROVIDERS)[number]["value"],
             );
+            setEmbeddingProviderTouched(true);
           }
         }
       })
       .catch(() => {
         // The onboarding flow can still proceed with sane defaults.
       });
-  }, [setBaselineSettings, setEmbeddingProvider, setLlmProvider]);
+  }, [
+    setBaselineSettings,
+    setEmbeddingProvider,
+    setEmbeddingProviderTouched,
+    setLlmProvider,
+  ]);
+
+  // Auto-pair embedding default with the chosen LLM provider until the user
+  // overrides it. Anthropic and Local both default to local embeddings (the
+  // local-first vision); OpenAI defaults to OpenAI embeddings so the same key
+  // covers both calls.
+  useEffect(() => {
+    if (embeddingProviderTouched) {
+      return;
+    }
+    const defaultEmbedding: (typeof EMBEDDING_PROVIDERS)[number]["value"] =
+      llmProvider === "openai" ? "openai" : "local";
+    setEmbeddingProvider(defaultEmbedding);
+  }, [embeddingProviderTouched, llmProvider, setEmbeddingProvider]);
 
   const starterPrompts = builtIndex
     ? STARTER_PROMPTS_WITH_INDEX
@@ -305,7 +326,7 @@ export default function SetupPage() {
       ),
     },
     {
-      title: "Add credentials only if I need them",
+      title: "Add an API key (optional)",
       description:
         llmProvider === "local"
           ? "Local model mode does not require a hosted API key. You can continue immediately or add one later if you switch providers."
@@ -338,7 +359,7 @@ export default function SetupPage() {
       ),
     },
     {
-      title: "Choose how I should embed documents",
+      title: "Choose your embedding provider",
       description:
         "Embeddings power document similarity, search quality, and grounded answers. This decision mostly affects indexing, not direct chat.",
       content: (
@@ -349,7 +370,10 @@ export default function SetupPage() {
               <button
                 key={provider.value}
                 type="button"
-                onClick={() => setEmbeddingProvider(provider.value)}
+                onClick={() => {
+                  setEmbeddingProviderTouched(true);
+                  setEmbeddingProvider(provider.value);
+                }}
                 className={cn(
                   "cursor-pointer rounded-[1.5rem] border p-5 text-left transition-all duration-200",
                   active
