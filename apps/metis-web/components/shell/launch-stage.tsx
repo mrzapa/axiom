@@ -32,6 +32,7 @@ export function LaunchStage({
         initial={reducedMotion ? false : { opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.56, ease: "easeOut" }}
+        suppressHydrationWarning
         className="glass-panel-strong relative z-10 w-full max-w-5xl overflow-hidden rounded-[2rem]"
       >
         <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] lg:p-10">
