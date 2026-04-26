@@ -113,6 +113,7 @@ import {
 } from "@/lib/landing-stars";
 import { deriveUserStarContentType } from "@/lib/user-star-content-type";
 import { buildLandingStarRenderPlan } from "@/lib/landing-stars/landing-star-lod";
+import { generateNebulae, getCosmosSeed, nebulaPositionAt } from "@/lib/landing-nebulae";
 import {
   getLandingStarInteractionHitRadius,
   getLandingStarSelectableApparentSize,
@@ -280,6 +281,12 @@ interface ProjectedUserStarRenderState {
   attachmentCount: number;
   dragging: boolean;
   fadeIn: number;
+  /**
+   * One-shot 0..1 flash applied during the spawn window — drives the
+   * "ignition" feel by briefly bumping core + halo brightness right
+   * after a star is added. Decays to 0 outside the spawn window.
+   */
+  spawnFlash: number;
   influenceColors: ReturnType<typeof buildStarInfluenceColors>;
   mixed: [number, number, number];
   profile: ReturnType<typeof createUserStarVisualProfile>;
@@ -687,8 +694,48 @@ function getResolvedStarPoint(
   };
 }
 
+/**
+ * Linear progress 0..1 for a star's spawn animation.
+ * Used as the input to easing functions below.
+ */
+function getStarSpawnLinear(
+  star: Pick<UserStar, "createdAt">,
+  nowMs: number,
+): number {
+  return Math.max(
+    0,
+    Math.min(1, (nowMs - star.createdAt) / USER_STAR_FADE_IN_DURATION_MS),
+  );
+}
+
+/**
+ * Star opacity curve. Eased with `expo.out` so a freshly-added star
+ * pops into view fast and settles — replaces the previous linear ramp
+ * that felt like a fade-in instead of an ignition.
+ */
 function getStarFadeProgress(star: Pick<UserStar, "createdAt">, nowMs: number): number {
-  return Math.max(0, Math.min(1, (nowMs - star.createdAt) / USER_STAR_FADE_IN_DURATION_MS));
+  const t = getStarSpawnLinear(star, nowMs);
+  if (t >= 1) return 1;
+  return 1 - Math.pow(2, -10 * t);
+}
+
+/**
+ * One-shot brightness flash applied to a star's core + halo during
+ * spawn. Spikes to 1 during the first ~12% of the spawn window then
+ * decays to 0 — gives the "ignition" feel without scaling geometry.
+ * Returns 0 once the spawn window has elapsed.
+ */
+function getStarSpawnFlash(
+  star: Pick<UserStar, "createdAt">,
+  nowMs: number,
+): number {
+  const t = getStarSpawnLinear(star, nowMs);
+  if (t >= 1) return 0;
+  const peak = 0.12;
+  if (t < peak) return t / peak;
+  // Ease-out to zero across the rest of the window.
+  const after = (t - peak) / (1 - peak);
+  return Math.max(0, 1 - Math.pow(after, 2));
 }
 
 function cloneUserStarSnapshot(stars: readonly UserStar[]): UserStar[] {
@@ -922,6 +969,12 @@ export default function Home() {
   const optimisticIndexKeysRef = useRef<Set<string>>(new Set());
   const starDiveFocusedStarIdRef = useRef<string | null>(null);
   const starDiveFocusStrengthRef = useRef(0);
+  // Hover spotlight — dims ambient stars when the user is inspecting one
+  // of their own stars. Lower target (~0.4) than the dive focus so the
+  // effect is "lean in" rather than full immersion. Tween-driven so the
+  // spotlight fades in/out cleanly.
+  const hoverFocusStrengthRef = useRef(0);
+  const hoverFocusTweenRef = useRef<gsap.core.Tween | null>(null);
   const starDiveFocusWorldPosRef = useRef<Point | null>(null);
   const starDiveFocusProfileRef = useRef<StellarProfile | null>(null);
   const starDiveFocusNameRef = useRef<string | null>(null);
@@ -969,6 +1022,24 @@ export default function Home() {
 
   useEffect(() => {
     hoveredUserStarIdRef.current = hoveredUserStarId;
+    // Drive the hover-spotlight strength via GSAP so the dimming
+    // ramps in/out smoothly. Skip while a dive is active so the dive's
+    // own focus animation owns the uniforms.
+    const reduced =
+      typeof window !== "undefined"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const target = hoveredUserStarId ? 0.42 : 0;
+    hoverFocusTweenRef.current?.kill();
+    if (reduced) {
+      hoverFocusStrengthRef.current = target;
+      return;
+    }
+    hoverFocusTweenRef.current = gsap.to(hoverFocusStrengthRef, {
+      current: target,
+      duration: hoveredUserStarId ? 0.32 : 0.6,
+      ease: hoveredUserStarId ? "power2.out" : "power2.inOut",
+      overwrite: true,
+    });
   }, [hoveredUserStarId]);
 
   // M12 Phase 3 — read URL hash on mount, restore filter state if present.
@@ -2288,12 +2359,9 @@ export default function Home() {
     backgroundZoomRef.current = clampBackgroundZoomFactor(backgroundZoomRef.current);
     backgroundZoomTargetRef.current = clampBackgroundZoomFactor(backgroundZoomTargetRef.current);
 
-    /* nebulae */
-    const nebulae = [
-      { x: W * 0.72, y: H * 0.35, rx: 380, ry: 260, angle: 0.3, color: [14, 22, 60], opacity: 0.25 },
-      { x: W * 0.25, y: H * 0.65, rx: 300, ry: 200, angle: -0.4, color: [20, 15, 35], opacity: 0.2 },
-      { x: W * 0.55, y: H * 0.2, rx: 220, ry: 150, angle: 0.8, color: [10, 18, 48], opacity: 0.15 },
-    ];
+    /* nebulae — procedurally generated, seeded per user. */
+    const cosmosSeed = getCosmosSeed();
+    let nebulae = generateNebulae(cosmosSeed, W, H);
 
     /* Star catalogue – lazy initialisation inside this effect closure */
     const catalogue = new StarCatalogue(DEFAULT_CATALOGUE_CONFIG, generateStellarProfile);
@@ -2914,9 +2982,23 @@ export default function Home() {
         : null;
       const zoomNorm = Math.log2(Math.max(0.002, backgroundCamera.zoomFactor) + 1) / Math.log2(2001);
       const diveView = starDiveFocusViewRef.current;
-      const focusStrengthForFrame = diveView ? diveView.focusStrength : 0;
-      const focusCenterX = diveView ? diveView.screenX : 0;
-      const focusCenterY = diveView ? diveView.screenY : 0;
+      // Hover spotlight: when the user hovers a user-star and no dive is
+      // active, dim ambient stars by a small fraction so the inspected
+      // star reads as the foreground subject. Star dive always wins.
+      let focusStrengthForFrame = diveView ? diveView.focusStrength : 0;
+      let focusCenterX = diveView ? diveView.screenX : 0;
+      let focusCenterY = diveView ? diveView.screenY : 0;
+      if (!diveView && hoverFocusStrengthRef.current > 0.01) {
+        const hoveredId = hoveredUserStarIdRef.current;
+        const hoveredState = hoveredId
+          ? projectedUserStarRenderState.get(hoveredId)
+          : null;
+        if (hoveredState) {
+          focusStrengthForFrame = hoverFocusStrengthRef.current;
+          focusCenterX = hoveredState.target.x;
+          focusCenterY = hoveredState.target.y;
+        }
+      }
       // Focus sharp-zone shrinks as dive progresses so more ambient stars drift
       // into bokeh; widen from ~40% of min viewport dim down to ~12%.
       const minViewportDim = Math.min(W, H);
@@ -2943,10 +3025,15 @@ export default function Home() {
       lastVisibleStarfieldY = backgroundCamera.y;
     }
 
-    function drawNebulae() {
+    function drawNebulae(tMs: number) {
+      const tSec = tMs / 1000;
       nebulae.forEach(n => {
-        const nx = n.x + (mouse.x - W / 2) * 0.005;
-        const ny = n.y + (mouse.y - H / 2) * 0.005;
+        const drifted = nebulaPositionAt(n, tSec);
+        // Subtle parallax response to the cursor preserved from the
+        // previous renderer — keeps the nebulae feeling slightly
+        // depth-aware when the user moves the mouse.
+        const nx = drifted.x + (mouse.x - W / 2) * 0.005;
+        const ny = drifted.y + (mouse.y - H / 2) * 0.005;
         ctx!.save();
         ctx!.translate(nx, ny);
         ctx!.rotate(n.angle);
@@ -3022,6 +3109,7 @@ export default function Home() {
           attachmentCount: getStarAttachmentCount(star),
           dragging: dragStateRef.current?.starId === star.id && dragStateRef.current.moved,
           fadeIn: getStarFadeProgress(star, renderTimeMs),
+          spawnFlash: getStarSpawnFlash(star, renderTimeMs),
           influenceColors,
           mixed,
           profile: createUserStarVisualProfile(star.id),
@@ -3270,6 +3358,7 @@ export default function Home() {
           attachmentCount,
           dragging,
           fadeIn,
+          spawnFlash,
           influenceColors,
           mixed,
           profile,
@@ -3310,13 +3399,17 @@ export default function Home() {
         const haloCenterY = py + profile.asymmetryOffset.y * sz * 1.8;
         const auraRadius = sz * (2.8 + profile.coreIntensity * 0.72 + ringCount * 0.14);
 
+        // Spawn-flash bonus on halo brightness — kicks in only during the
+        // ignition window and decays to zero, so steady-state rendering is
+        // identical to before the cinematic landed.
+        const haloFlashBonus = spawnFlash * 0.34;
         const halo = ctx!.createRadialGradient(haloCenterX, haloCenterY, sz * 0.22, px, py, haloRadius);
-        halo.addColorStop(0, `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${(0.14 + profile.coreIntensity * 0.04 + (selected ? 0.08 : 0) + (semanticHighlighted ? 0.08 : 0) + (ragHighlighted ? ragPulseStrength * 0.12 : 0)) * fadeIn})`);
-        halo.addColorStop(Math.min(0.76, 0.48 + profile.haloFalloff * 0.18), `rgba(${fillColor[0]},${fillColor[1]},${fillColor[2]},${(0.05 + richness * 0.02) * fadeIn})`);
+        halo.addColorStop(0, `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${(0.14 + profile.coreIntensity * 0.04 + (selected ? 0.08 : 0) + (semanticHighlighted ? 0.08 : 0) + (ragHighlighted ? ragPulseStrength * 0.12 : 0) + haloFlashBonus) * fadeIn})`);
+        halo.addColorStop(Math.min(0.76, 0.48 + profile.haloFalloff * 0.18), `rgba(${fillColor[0]},${fillColor[1]},${fillColor[2]},${(0.05 + richness * 0.02 + haloFlashBonus * 0.6) * fadeIn})`);
         halo.addColorStop(1, "rgba(0,0,0,0)");
         ctx!.fillStyle = halo;
         ctx!.beginPath();
-        ctx!.arc(px, py, haloRadius, 0, Math.PI * 2);
+        ctx!.arc(px, py, haloRadius * (1 + spawnFlash * 0.18), 0, Math.PI * 2);
         ctx!.fill();
 
         if (influenceColors.length > 1) {
@@ -3384,6 +3477,10 @@ export default function Home() {
           py,
           sz * 1.42,
         );
+        // During spawn the core inflates briefly (max ~22%) for an
+        // ignition feel — independent of fadeIn opacity so steady-state
+        // size is unchanged once the flash decays.
+        const coreSpawnScale = 1 + spawnFlash * 0.22;
         fill.addColorStop(0, `rgba(255,255,255,${Math.min(1, (0.95 + profile.coreIntensity * 0.08) * fadeIn)})`);
         fill.addColorStop(0.16, `rgba(${coreColor[0]},${coreColor[1]},${coreColor[2]},${0.98 * fadeIn})`);
         fill.addColorStop(0.24, `rgba(${fillColor[0]},${fillColor[1]},${fillColor[2]},${0.94 * fadeIn})`);
@@ -3391,7 +3488,7 @@ export default function Home() {
         fill.addColorStop(1, `rgba(${shadowColor[0]},${shadowColor[1]},${shadowColor[2]},${0.98 * fadeIn})`);
         ctx!.fillStyle = fill;
         ctx!.beginPath();
-        ctx!.arc(px, py, sz, 0, Math.PI * 2);
+        ctx!.arc(px, py, sz * coreSpawnScale, 0, Math.PI * 2);
         ctx!.fill();
 
         const satelliteCount = Math.min(attachmentCount, 3);
@@ -4252,7 +4349,7 @@ export default function Home() {
         ctx!.globalAlpha = Math.max(0, canvasOverlayAlpha);
       }
 
-      drawNebulae();
+      drawNebulae(ts);
       drawDust();
 
       // ── Comet lifecycle: tick, draw, burst effects ──
@@ -4365,9 +4462,9 @@ export default function Home() {
         zoomFactor: backgroundZoomRef.current,
       });
       syncStaticNodeHitZones();
-      nebulae[0].x = W * 0.72; nebulae[0].y = H * 0.35;
-      nebulae[1].x = W * 0.25; nebulae[1].y = H * 0.65;
-      nebulae[2].x = W * 0.55; nebulae[2].y = H * 0.2;
+      // Regenerate nebulae for the new viewport. Same seed → same
+      // arrangement, just rescaled to the new W/H.
+      nebulae = generateNebulae(cosmosSeed, W, H);
       lastVisibleStarfieldWidth = -1;
       lastConstellationProjectionWidth = -1;
     }
