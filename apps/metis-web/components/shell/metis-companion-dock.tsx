@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { BrainIcon } from "@/components/icons";
 import { HermesHud } from "@/components/shell/hud";
+import { SeedlingPulseWidget } from "@/components/shell/seedling-pulse-widget";
 import { useArrowState } from "@/hooks/use-arrow-state";
 import { useWebGPUCompanionContext } from "@/lib/webgpu-companion/webgpu-companion-context";
 
@@ -796,43 +797,88 @@ export function MetisCompanionDock({
                   </div>
                 ) : null}
 
-                {/* ── Thought log ───────────────────────────────────────────
-                    Shows the 8 most recent CompanionActivityEvents emitted by
-                    RAG queries, index builds, autonomous research, and
-                    reflections. Subscribers are added via subscribeCompanionActivity(). ── */}
-                {thoughts.length > 0 && (
-                  <div className="rounded-[1.15rem] border border-white/8 bg-white/4 px-3 py-2.5 backdrop-blur-sm">
-                    <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      Recent activity
-                    </p>
-                    <ul className="max-h-40 space-y-1.5 overflow-y-auto">
-                      {thoughts.map((t, i) => {
-                        const sourceColors: Record<string, string> = {
-                          rag_stream: "text-blue-400",
-                          index_build: "text-green-400",
-                          autonomous_research: "text-violet-400",
-                          reflection: "text-amber-400",
-                          seedling: "text-emerald-400",
-                          news_comet: "text-orange-400",
-                        };
-                        const stateIcon =
-                          t.state === "running"
-                            ? "▸"
-                            : t.state === "completed"
-                              ? "✓"
-                              : "⚠";
-                        return (
-                          <li key={i} className="flex items-start gap-2 text-xs leading-5">
-                            <span className={cn("mt-0.5 shrink-0 text-[10px]", sourceColors[t.source] ?? "text-muted-foreground")}>
-                              {stateIcon}
-                            </span>
-                            <span className="min-w-0 text-foreground/80">{t.summary}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
+                {/* ── Activity surface ──────────────────────────────────────
+                    Seedling lifecycle is represented by the ambient
+                    SeedlingPulseWidget (replaces the previous text-heavy
+                    "Seedling heartbeat" entries).  Other CompanionActivityEvent
+                    sources (rag_stream, index_build, autonomous_research,
+                    reflection, news_comet) still render as the recent-activity
+                    text log alongside the widget. ── */}
+                {(() => {
+                  const nonSeedlingThoughts = thoughts.filter(
+                    (t) => t.source !== "seedling",
+                  );
+                  const showWidget = seedlingStatus !== null;
+                  const showList = nonSeedlingThoughts.length > 0;
+                  if (!showWidget && !showList) return null;
+                  const sourceColors: Record<string, string> = {
+                    rag_stream: "text-blue-400",
+                    index_build: "text-green-400",
+                    autonomous_research: "text-violet-400",
+                    reflection: "text-amber-400",
+                    seedling: "text-emerald-400",
+                    news_comet: "text-orange-400",
+                  };
+                  return (
+                    <div className="rounded-[1.15rem] border border-white/8 bg-white/4 px-3 py-2.5 backdrop-blur-sm">
+                      <div className="flex items-start gap-3">
+                        {showWidget ? (
+                          <SeedlingPulseWidget
+                            status={seedlingStatus}
+                            onActivate={() => {
+                              if (minimized) {
+                                void handleMinimizeToggle();
+                              }
+                            }}
+                            className="shrink-0"
+                          />
+                        ) : null}
+                        <div className="min-w-0 flex-1">
+                          <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                            Recent activity
+                          </p>
+                          {showList ? (
+                            <ul className="max-h-40 space-y-1.5 overflow-y-auto">
+                              {nonSeedlingThoughts.map((t, i) => {
+                                const stateIcon =
+                                  t.state === "running"
+                                    ? "▸"
+                                    : t.state === "completed"
+                                      ? "✓"
+                                      : "⚠";
+                                return (
+                                  <li
+                                    key={i}
+                                    className="flex items-start gap-2 text-xs leading-5"
+                                  >
+                                    <span
+                                      className={cn(
+                                        "mt-0.5 shrink-0 text-[10px]",
+                                        sourceColors[t.source] ??
+                                          "text-muted-foreground",
+                                      )}
+                                    >
+                                      {stateIcon}
+                                    </span>
+                                    <span className="min-w-0 text-foreground/80">
+                                      {t.summary}
+                                    </span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <p className="text-xs leading-5 text-muted-foreground">
+                              {seedlingStatus?.running
+                                ? "METIS is breathing — waiting on new signals."
+                                : "Seedling resting. METIS will resume on its own."}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-2 gap-2">
                   <Button
