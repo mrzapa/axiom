@@ -38,6 +38,7 @@ def test_status_payload_sanitizes_stage_and_queue_depth() -> None:
         "queue_depth": 0,
         "model_status": "frontend_only",
         "last_overnight_reflection_at": None,
+        "last_overnight_attempt_at": None,
     }
 
 
@@ -50,10 +51,12 @@ def test_status_payload_round_trips_phase4b_fields() -> None:
         "queue_depth": 0,
         "model_status": "backend_configured",
         "last_overnight_reflection_at": "2026-04-25T06:00:00+00:00",
+        "last_overnight_attempt_at": "2026-04-25T06:00:30+00:00",
     }
     status = SeedlingStatus.from_dict(payload)
     assert status.model_status == "backend_configured"
     assert status.last_overnight_reflection_at == "2026-04-25T06:00:00+00:00"
+    assert status.last_overnight_attempt_at == "2026-04-25T06:00:30+00:00"
     assert status.to_dict() == payload
 
 

@@ -76,28 +76,28 @@ def test_compute_model_status_backend_disabled_when_path_missing_and_toggle_off(
 def test_is_cadence_due_first_run_always_true() -> None:
     settings = {"seedling_reflection_cadence_hours": 24}
     now = datetime(2026, 4, 25, 8, 0, tzinfo=timezone.utc)
-    assert is_cadence_due(settings, last_overnight_reflection_at=None, now=now) is True
+    assert is_cadence_due(settings, last_overnight_attempt_at=None, now=now) is True
 
 
 def test_is_cadence_due_blocks_inside_window() -> None:
     settings = {"seedling_reflection_cadence_hours": 24}
     now = datetime(2026, 4, 25, 8, 0, tzinfo=timezone.utc)
     last = now - timedelta(hours=12)
-    assert is_cadence_due(settings, last_overnight_reflection_at=last, now=now) is False
+    assert is_cadence_due(settings, last_overnight_attempt_at=last, now=now) is False
 
 
 def test_is_cadence_due_passes_after_window() -> None:
     settings = {"seedling_reflection_cadence_hours": 24}
     now = datetime(2026, 4, 25, 8, 0, tzinfo=timezone.utc)
     last = now - timedelta(hours=25)
-    assert is_cadence_due(settings, last_overnight_reflection_at=last, now=now) is True
+    assert is_cadence_due(settings, last_overnight_attempt_at=last, now=now) is True
 
 
 def test_is_cadence_due_zero_means_every_tick() -> None:
     settings = {"seedling_reflection_cadence_hours": 0}
     now = datetime(2026, 4, 25, 8, 0, tzinfo=timezone.utc)
     last = now - timedelta(seconds=1)
-    assert is_cadence_due(settings, last_overnight_reflection_at=last, now=now) is True
+    assert is_cadence_due(settings, last_overnight_attempt_at=last, now=now) is True
 
 
 def test_is_quiet_window_treats_unknown_activity_as_quiet() -> None:
@@ -167,7 +167,7 @@ def test_runner_skips_when_model_status_not_backend_configured(tmp_path) -> None
     result = maybe_run_overnight_reflection(
         settings=settings,
         record_external_reflection=_stub_persist(captured),
-        last_overnight_reflection_at=None,
+        last_overnight_attempt_at=None,
         last_user_activity_at=None,
         generator=lambda *_: "should not be called",
     )
@@ -183,7 +183,7 @@ def test_runner_skips_when_cadence_not_due(tmp_path) -> None:
     result = maybe_run_overnight_reflection(
         settings=settings,
         record_external_reflection=_stub_persist(captured),
-        last_overnight_reflection_at=now - timedelta(hours=4),
+        last_overnight_attempt_at=now - timedelta(hours=4),
         last_user_activity_at=None,
         generator=lambda *_: "should not be called",
         now=now,
@@ -200,7 +200,7 @@ def test_runner_skips_when_user_active(tmp_path) -> None:
     result = maybe_run_overnight_reflection(
         settings=settings,
         record_external_reflection=_stub_persist(captured),
-        last_overnight_reflection_at=now - timedelta(days=2),
+        last_overnight_attempt_at=now - timedelta(days=2),
         last_user_activity_at=now - timedelta(minutes=5),
         generator=lambda *_: "should not be called",
         now=now,
@@ -225,7 +225,7 @@ def test_runner_runs_and_persists_when_all_gates_open(tmp_path) -> None:
     result = maybe_run_overnight_reflection(
         settings=settings,
         record_external_reflection=_stub_persist(captured),
-        last_overnight_reflection_at=None,
+        last_overnight_attempt_at=None,
         last_user_activity_at=now - timedelta(hours=2),
         activity={
             "recent_reflections": [{"title": "Atlas auto-save", "summary": "Saved."}],
@@ -249,7 +249,7 @@ def test_runner_treats_empty_generation_as_skipped(tmp_path) -> None:
     result = maybe_run_overnight_reflection(
         settings=settings,
         record_external_reflection=_stub_persist(captured),
-        last_overnight_reflection_at=None,
+        last_overnight_attempt_at=None,
         last_user_activity_at=now - timedelta(hours=4),
         generator=lambda *_: "   ",
         now=now,
@@ -270,7 +270,7 @@ def test_runner_records_generator_error_without_persisting(tmp_path) -> None:
     result = maybe_run_overnight_reflection(
         settings=settings,
         record_external_reflection=_stub_persist(captured),
-        last_overnight_reflection_at=None,
+        last_overnight_attempt_at=None,
         last_user_activity_at=now - timedelta(hours=4),
         generator=_bad_generator,
         now=now,
@@ -293,7 +293,7 @@ def test_runner_propagates_persist_skip(tmp_path) -> None:
     result = maybe_run_overnight_reflection(
         settings=settings,
         record_external_reflection=_record,
-        last_overnight_reflection_at=None,
+        last_overnight_attempt_at=None,
         last_user_activity_at=now - timedelta(hours=4),
         generator=lambda *_: "Some overnight reflection text.",
         now=now,
@@ -450,6 +450,133 @@ def test_lifecycle_overnight_integration_persists_and_bumps_worker(
     assert (datetime.now(timezone.utc) - bumped).total_seconds() < 5
 
     # Cleanup.
+    lifecycle.reset_seedling_worker(None)
+
+
+def test_lifecycle_records_failure_state_on_generator_error(
+    tmp_path, monkeypatch
+) -> None:
+    """Codex P1 from PR #550: a generator failure must (a) flip
+    ``model_status`` to ``backend_unavailable`` and (b) bump
+    ``last_overnight_attempt_at`` so the next tick respects the
+    cadence — *without* lying about a successful reflection."""
+    from datetime import datetime, timezone
+
+    from metis_app.seedling import lifecycle
+    from metis_app.seedling.scheduler import SeedlingSchedule
+    from metis_app.seedling.status import SeedlingStatusCache
+    from metis_app.seedling.worker import SeedlingWorker
+
+    cache = SeedlingStatusCache(tmp_path / "status.json")
+    worker = SeedlingWorker(
+        schedule=SeedlingSchedule(tick_interval_seconds=60),
+        status_cache=cache,
+    )
+    lifecycle.reset_seedling_worker(worker)
+
+    fake_settings = _gguf_settings(tmp_path=tmp_path, enabled=True)
+    monkeypatch.setattr(
+        "metis_app.settings_store.load_settings", lambda: dict(fake_settings)
+    )
+
+    class _Orchestrator:
+        def list_assistant_memory(self, limit=6):
+            return []
+
+        def get_assistant_snapshot(self):
+            return {"status": {"last_reflection_at": "2026-04-25T00:00:00+00:00"}}
+
+        def record_companion_reflection(self, **_kwargs):
+            raise AssertionError("persist must not be called when generator fails")
+
+    monkeypatch.setattr(
+        "metis_app.services.workspace_orchestrator.WorkspaceOrchestrator",
+        _Orchestrator,
+    )
+
+    def _exploding_generator(*_args):
+        raise RuntimeError("simulated llama-cpp failure")
+
+    monkeypatch.setattr(
+        "metis_app.seedling.overnight._default_generator", _exploding_generator
+    )
+
+    result = lifecycle._default_tick_work()
+    # News comets are disabled in _gguf_settings, so the lifecycle
+    # returns the overnight payload directly (not nested under "overnight").
+    assert isinstance(result, dict)
+    assert result.get("ran") is False
+    assert result.get("reason") == "generator_error"
+
+    # Cadence anchor bumped — next tick blocked until cadence window
+    # elapses, no tight retry loop.
+    assert worker.status.last_overnight_attempt_at is not None
+    bumped = datetime.fromisoformat(
+        worker.status.last_overnight_attempt_at.replace("Z", "+00:00")
+    )
+    assert (datetime.now(timezone.utc) - bumped).total_seconds() < 5
+
+    # Success timestamp untouched — the UI's morning-after card must
+    # not lie about a successful reflection.
+    assert worker.status.last_overnight_reflection_at is None
+
+    # model_status flipped to backend_unavailable — the dock pill now
+    # reflects the runtime failure.
+    assert worker.status.model_status == "backend_unavailable"
+
+    lifecycle.reset_seedling_worker(None)
+
+
+def test_status_route_keeps_backend_unavailable_sticky_over_fresh_configured(
+    tmp_path, monkeypatch
+) -> None:
+    """Codex P1 follow-up: once the runtime is known broken, the status
+    route must not advertise ``backend_configured`` next read just
+    because settings still say so. A user-initiated settings change
+    (toggle off or path empty) clears the sticky failure."""
+    from litestar.testing import TestClient
+
+    from metis_app.api_litestar import create_app
+    from metis_app.seedling import lifecycle
+    from metis_app.seedling.scheduler import SeedlingSchedule
+    from metis_app.seedling.status import SeedlingStatusCache
+    from metis_app.seedling.worker import SeedlingWorker
+
+    cache = SeedlingStatusCache(tmp_path / "status.json")
+    worker = SeedlingWorker(
+        schedule=SeedlingSchedule(tick_interval_seconds=60),
+        status_cache=cache,
+    )
+    lifecycle.reset_seedling_worker(worker)
+    # Pre-poison the worker as if a prior tick discovered the runtime
+    # is broken.
+    worker.set_overnight_status(model_status="backend_unavailable")
+
+    fake_settings = _gguf_settings(tmp_path=tmp_path, enabled=True)
+    monkeypatch.setattr(
+        "metis_app.settings_store.load_settings", lambda: dict(fake_settings)
+    )
+
+    with TestClient(app=create_app()) as client:
+        resp = client.get("/v1/seedling/status")
+        assert resp.status_code == 200
+        # Even though compute_model_status(settings) == "backend_configured",
+        # the cached "backend_unavailable" wins.
+        assert resp.json()["model_status"] == "backend_unavailable"
+
+        # Toggle off → settings derive backend_disabled. Sticky failure
+        # cleared because the user explicitly changed policy; the next
+        # opt-in attempt gets a fresh shot.
+        fake_settings["seedling_backend_reflection_enabled"] = False
+        resp2 = client.get("/v1/seedling/status")
+        assert resp2.json()["model_status"] == "backend_disabled"
+
+        # Toggle back on. The sticky was cleared on the disable read
+        # above, so this read returns the fresh "backend_configured".
+        fake_settings["seedling_backend_reflection_enabled"] = True
+        resp3 = client.get("/v1/seedling/status")
+        assert resp3.json()["model_status"] == "backend_configured"
+
     lifecycle.reset_seedling_worker(None)
 
 

@@ -94,6 +94,7 @@ class SeedlingWorker:
             queue_depth=0,
             model_status=self._status.model_status,
             last_overnight_reflection_at=self._status.last_overnight_reflection_at,
+            last_overnight_attempt_at=self._status.last_overnight_attempt_at,
         )
         self._status_cache.write(self._status)
         self._emit("completed", "Seedling lifecycle stopped")
@@ -102,9 +103,10 @@ class SeedlingWorker:
     def tick(self) -> SeedlingStatus:
         """Publish a no-op heartbeat for Phase 2 liveness.
 
-        Preserves ``model_status`` and ``last_overnight_reflection_at``
-        across ticks so Phase 4b's overnight scheduler decisions are
-        stable. The lifecycle hook updates those fields explicitly via
+        Preserves Phase 4b state (``model_status``,
+        ``last_overnight_reflection_at``, ``last_overnight_attempt_at``)
+        across ticks so the overnight scheduler decisions are stable.
+        The lifecycle hook updates those fields explicitly via
         :meth:`set_overnight_status` after each scheduling decision.
         """
         now = self._clock()
@@ -117,6 +119,7 @@ class SeedlingWorker:
             queue_depth=0,
             model_status=self._status.model_status,
             last_overnight_reflection_at=self._status.last_overnight_reflection_at,
+            last_overnight_attempt_at=self._status.last_overnight_attempt_at,
         )
         self._status_cache.write(self._status)
         self._emit("running", "Seedling heartbeat")
@@ -127,15 +130,25 @@ class SeedlingWorker:
         *,
         model_status: str | None = None,
         last_overnight_reflection_at: str | None = None,
+        last_overnight_attempt_at: str | None = None,
     ) -> SeedlingStatus:
         """Update the Phase 4b status fields without triggering a tick.
 
         Called by :func:`metis_app.seedling.lifecycle._default_tick_work`
-        after the overnight scheduler decides whether to recompute
-        ``model_status`` (every tick) or bump
-        ``last_overnight_reflection_at`` (only on success). Cache write
-        happens synchronously so the next ``GET /v1/seedling/status``
-        sees the fresh values.
+        after the overnight scheduler decides what to bump:
+
+        - ``model_status`` is recomputed every tick from settings; the
+          lifecycle also flips it to ``"backend_unavailable"`` after
+          generator failures so the dock pill matches reality
+          (Codex P1 fix from PR #550 review).
+        - ``last_overnight_reflection_at`` only bumps on *successful*
+          persistence and powers the future "morning-after" UI card.
+        - ``last_overnight_attempt_at`` bumps on *every* attempt
+          (success or failure) so a failing GGUF cannot trigger a tight
+          retry loop — the cadence gate consults this column.
+
+        Cache write happens synchronously so the next
+        ``GET /v1/seedling/status`` sees the fresh values.
         """
         next_model_status = self._status.model_status
         if model_status is not None and model_status != self._status.model_status:
@@ -152,9 +165,15 @@ class SeedlingWorker:
             text = (last_overnight_reflection_at or "").strip()
             next_last_overnight = text or None
 
+        next_last_attempt = self._status.last_overnight_attempt_at
+        if last_overnight_attempt_at is not None:
+            text = (last_overnight_attempt_at or "").strip()
+            next_last_attempt = text or None
+
         if (
             next_model_status == self._status.model_status
             and next_last_overnight == self._status.last_overnight_reflection_at
+            and next_last_attempt == self._status.last_overnight_attempt_at
         ):
             return self._status
 
@@ -166,6 +185,7 @@ class SeedlingWorker:
             queue_depth=self._status.queue_depth,
             model_status=next_model_status,
             last_overnight_reflection_at=next_last_overnight,
+            last_overnight_attempt_at=next_last_attempt,
         )
         self._status_cache.write(self._status)
         return self._status

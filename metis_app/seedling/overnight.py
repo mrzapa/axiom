@@ -96,10 +96,17 @@ def is_quiet_window(
 def is_cadence_due(
     settings: dict[str, Any],
     *,
-    last_overnight_reflection_at: datetime | None,
+    last_overnight_attempt_at: datetime | None,
     now: datetime,
 ) -> bool:
-    """Have we waited long enough since the last overnight reflection?"""
+    """Have we waited long enough since the last overnight attempt?
+
+    Uses the *attempt* anchor (success OR failure) rather than the
+    success-only ``last_overnight_reflection_at`` so a failing GGUF
+    cannot retry every tick — Codex P1 from PR #550 review. The
+    runner is responsible for bumping ``last_overnight_attempt_at``
+    after every cycle.
+    """
     cadence_hours = max(
         0.0,
         float(settings.get("seedling_reflection_cadence_hours", 24)),
@@ -108,9 +115,9 @@ def is_cadence_due(
         # A cadence of zero means "every tick" — useful for tests
         # but the production default is 24h.
         return True
-    if last_overnight_reflection_at is None:
+    if last_overnight_attempt_at is None:
         return True
-    elapsed_seconds = (now - last_overnight_reflection_at).total_seconds()
+    elapsed_seconds = (now - last_overnight_attempt_at).total_seconds()
     return elapsed_seconds >= cadence_hours * 3600.0
 
 
@@ -177,7 +184,7 @@ def maybe_run_overnight_reflection(
     *,
     settings: dict[str, Any],
     record_external_reflection: Callable[..., dict[str, Any]],
-    last_overnight_reflection_at: datetime | None,
+    last_overnight_attempt_at: datetime | None,
     last_user_activity_at: datetime | None,
     activity: dict[str, Any] | None = None,
     generator: OvernightGenerator | None = None,
@@ -188,7 +195,9 @@ def maybe_run_overnight_reflection(
     Returns a dict with ``ran: bool``, ``reason: str | None``, and the
     underlying ``record_external_reflection`` payload on success. The
     Seedling worker tick uses ``ran`` to decide whether to bump
-    ``last_overnight_reflection_at`` in the status cache.
+    ``last_overnight_reflection_at`` (success only); it always bumps
+    ``last_overnight_attempt_at`` after this call returns so a failing
+    cycle still resets the cadence and prevents tight retries.
     """
     current = now or datetime.now(timezone.utc)
     model_status = compute_model_status(settings)
@@ -197,7 +206,7 @@ def maybe_run_overnight_reflection(
 
     if not is_cadence_due(
         settings,
-        last_overnight_reflection_at=last_overnight_reflection_at,
+        last_overnight_attempt_at=last_overnight_attempt_at,
         now=current,
     ):
         return {"ran": False, "reason": "cadence_not_due"}

@@ -55,10 +55,15 @@ class SeedlingStatus:
     # ADR 0013 §2 — additive in v0; clients that don't know the field
     # default it to "frontend_only" client-side until a backend payload
     # is observed. ``last_overnight_reflection_at`` is the most recent
-    # successful overnight cycle; the dock pivots its "morning-after"
+    # **successful** overnight cycle; the dock pivots its "morning-after"
     # copy off this value plus ``model_status``.
+    # ``last_overnight_attempt_at`` is the most recent attempt of any
+    # outcome — success, generator error, persist skip, etc. The
+    # cadence gate pivots on this so a failing GGUF doesn't enter a
+    # tight retry loop (Codex P1 from PR #550 review).
     model_status: SeedlingModelStatus = "frontend_only"
     last_overnight_reflection_at: str | None = None
+    last_overnight_attempt_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,6 +74,7 @@ class SeedlingStatus:
             "queue_depth": max(0, int(self.queue_depth)),
             "model_status": self.model_status,
             "last_overnight_reflection_at": self.last_overnight_reflection_at,
+            "last_overnight_attempt_at": self.last_overnight_attempt_at,
         }
 
     @classmethod
@@ -96,6 +102,9 @@ class SeedlingStatus:
             model_status=model_status,
             last_overnight_reflection_at=_optional_text(
                 payload.get("last_overnight_reflection_at")
+            ),
+            last_overnight_attempt_at=_optional_text(
+                payload.get("last_overnight_attempt_at")
             ),
         )
 

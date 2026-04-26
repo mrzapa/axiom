@@ -105,14 +105,17 @@ def _maybe_run_overnight(settings: dict[str, Any]) -> dict[str, Any] | None:
         return {"ran": False, "reason": f"model_status={model_status}"}
 
     worker = _worker
-    last_overnight: datetime | None = None
-    if worker is not None and worker.status.last_overnight_reflection_at:
+    # Cadence pivots on the *attempt* anchor (success OR failure) so a
+    # failing GGUF doesn't enter a tight retry loop — Codex P1 from
+    # PR #550 review.
+    last_attempt: datetime | None = None
+    if worker is not None and worker.status.last_overnight_attempt_at:
         try:
-            last_overnight = datetime.fromisoformat(
-                worker.status.last_overnight_reflection_at.replace("Z", "+00:00")
+            last_attempt = datetime.fromisoformat(
+                worker.status.last_overnight_attempt_at.replace("Z", "+00:00")
             )
         except ValueError:
-            last_overnight = None
+            last_attempt = None
 
     orchestrator = WorkspaceOrchestrator()
     activity = _collect_overnight_activity(orchestrator)
@@ -121,18 +124,57 @@ def _maybe_run_overnight(settings: dict[str, Any]) -> dict[str, Any] | None:
     payload = maybe_run_overnight_reflection(
         settings=settings,
         record_external_reflection=orchestrator.record_companion_reflection,
-        last_overnight_reflection_at=last_overnight,
+        last_overnight_attempt_at=last_attempt,
         last_user_activity_at=last_user_activity_at,
         activity=activity,
     )
-    if payload.get("ran"):
+    if worker is not None:
         try:
-            now_iso = datetime.now(timezone.utc).isoformat()
-            if worker is not None:
-                worker.set_overnight_status(last_overnight_reflection_at=now_iso)
+            _record_overnight_outcome(worker=worker, payload=payload)
         except Exception:  # noqa: BLE001
-            log.debug("Failed to bump last_overnight_reflection_at", exc_info=True)
+            log.debug("Failed to record overnight outcome", exc_info=True)
     return payload
+
+
+def _record_overnight_outcome(*, worker: SeedlingWorker, payload: dict[str, Any]) -> None:
+    """Translate the runner's outcome into worker-status updates.
+
+    Three branches:
+
+    - **Success** (``ran=True``) — bump *both* anchors: cadence resets
+      via ``last_overnight_attempt_at`` and the success timestamp
+      ``last_overnight_reflection_at`` powers the morning-after card.
+      Also clear any prior ``backend_unavailable`` since the model
+      just demonstrated it can load.
+    - **Generator error** (``reason="generator_error"``) — the model
+      is configured but cannot run. Bump the attempt anchor (back-off)
+      and flip ``model_status`` to ``backend_unavailable`` so the dock
+      stops claiming the backend is healthy. Codex P1 fix.
+    - **Other skip reasons** (cadence not due, user active, model
+      status disabled, persist skipped) — no state change. The next
+      tick will re-evaluate cleanly.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    reason = (payload.get("reason") or "")
+
+    if payload.get("ran"):
+        worker.set_overnight_status(
+            last_overnight_reflection_at=now_iso,
+            last_overnight_attempt_at=now_iso,
+            model_status="backend_configured",
+        )
+        return
+
+    if reason == "generator_error":
+        worker.set_overnight_status(
+            last_overnight_attempt_at=now_iso,
+            model_status="backend_unavailable",
+        )
+        return
+
+    # All other skip reasons mean we never tried generation. Don't
+    # touch the anchors — the cadence gate will let us through next
+    # cycle on its own terms.
 
 
 def _collect_overnight_activity(orchestrator: Any) -> dict[str, Any]:
