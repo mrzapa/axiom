@@ -433,14 +433,15 @@ The audit is **mostly closed**. Remaining items are flagged below per phase. Clo
 | PR | Merged | Scope |
 |---|---|---|
 | [#543](https://github.com/mrzapa/metis/pull/543) | 2026-04-25 | Initial audit doc filing + triage; reduced-motion sweep on PageChrome + OnboardingStep + 15 component reveals (audit Phase 1 item 1) |
-| [#547](https://github.com/mrzapa/metis/pull/547) | 2026-04-25 | All remaining audit Phase 1–6 items + Settings deep-dive items 47–53 + skill-pass refinements 35–46. The bulk of the audit. |
+| [#547](https://github.com/mrzapa/metis/pull/547) | 2026-04-25 | Most audit Phase 1–6 items + Settings deep-dive items 47–53 + skill-pass refinements 35–46. **Excludes** the unified-FAB sweep (commit `8177535`) which was pushed AFTER this PR closed and is recovered as #553. |
 | [#549](https://github.com/mrzapa/metis/pull/549) | (open) | GSAP ambient seedling-pulse widget — replaces the M13 "Seedling heartbeat" text rows with a 6-layer SVG widget driven by real `/v1/seedling/status` data. |
+| [#553](https://github.com/mrzapa/metis/pull/553) | (open) | Unified gold FAB radial menu (audit item 8) + lens-flare follow-up (item 5) + minor tooltip follow-ups (forecast covariate `Ignore`/`Dynamic`/`Static`, RAG banner buttons, × Close in catalogue inspector). Cherry-pick recovery of orphaned `8177535`. |
 
 **Remaining open items**:
 - Item 18 (blocked-URL/PII signal) — **parked in IDEAS.md *Iced***, awaiting reproduction
 - Item 5 (UI-editable API keys) — **parked**, posture decision tied to M17 Phase 8
 - Item 19 (home FCP ~696ms) — **parked**, not user-blocking
-- Catalogue-search-by-name affordance was dropped from the home page in PR #547 (sweep 6, agent A) when consolidating the three-sparkle-icon problem into the unified gold FAB. The component file (`apps/metis-web/components/constellation/catalogue-search-overlay.tsx`) and its tests still exist but are no longer mounted on `/`. **Open question**: fold it into the unified FAB's Threads-search satellite, or delete the dead code. Flag for future polish PR.
+- Catalogue-search-by-name affordance is dropped from the home page in PR #553 (sweep 6 cherry-pick) when consolidating the three-sparkle-icon problem into the unified gold FAB. The component file (`apps/metis-web/components/constellation/catalogue-search-overlay.tsx`) and its tests still exist but are no longer mounted on `/`. **Open question**: fold it into the unified FAB's Threads-search satellite, or delete the dead code. Flag for future polish PR.
 
 **Phase 1 (P0 first-run blockers)** — all ✅ closed:
 - 1 ✅ PR #543 (PageChrome) + #547 (15 components)
@@ -449,10 +450,10 @@ The audit is **mostly closed**. Remaining items are flagged below per phase. Clo
 - 4 ✅ PR #547 (structured 422 with config-error card)
 
 **Phase 2 (P1 visual / sprite)** — all ✅ closed:
-- 5 ✅ PR #547 (lens-flare → soft warm-gold gradient)
+- 5 ✅ PR #547 first attempt + PR #553 follow-up cleanup (lens-flare → soft warm-gold gradient)
 - 6 ✅ PR #547 (sprite anchor — defensive half-pixel rounding)
 - 7 ✅ PR #547 (canvas DPR via `setTransform(dpr,...)` capped at 2)
-- 8 ✅ PR #547 (unified gold FAB with 3-satellite radial menu)
+- 8 ✅ PR #553 (unified gold FAB with 3-satellite radial menu — orphaned from #547, recovered)
 - 9 🟢 PR #547 — investigated, could not reproduce at any common viewport width
 
 **Phase 3 (P1 perf / network)**:
@@ -484,7 +485,7 @@ The audit is **mostly closed**. Remaining items are flagged below per phase. Clo
 - 37 ✅ PR #547 (WebGPU plug-and-play wizard fork — single-click to /chat)
 - 38 ✅ PR #547 ("Heretic" chat-toolbar pill — kept visible, tooltip explains it now)
 - 39 🟡 Star-creation on canvas-click — flagged but not yet refactored to a dedicated mode
-- 40 🟡 CSV-only attach icon — title attr added in PR #547 sweep 6 but icon itself unchanged
+- 40 🟡 CSV-only attach icon — title attr added in PR #553 (sweep 6) but icon itself unchanged
 - 41 🟢 Investigated — already correctly OFF at schema level; was a local override
 - 42 🟡 Outline tab still empty placeholder
 - 43 🟡 Trace tab still surfaces dev events to non-dev users
