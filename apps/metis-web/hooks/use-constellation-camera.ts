@@ -37,6 +37,19 @@ const DIVE_ZOOM_EASE = 0.18;
 /** Additional origin pull once dive focus takes over (scales 0→focusStrength). */
 const DIVE_ORIGIN_EASE_BOOST = 0.08;
 
+/**
+ * Idle drift — once the user has been silent for `IDLE_DRIFT_DELAY_MS`
+ * the camera origin gets a tiny sinusoidal wander so the cosmos never
+ * looks frozen. Two superimposed sine waves at incommensurable
+ * frequencies give a quasi-Lissajous pattern, no obvious loop.
+ */
+const IDLE_DRIFT_DELAY_MS = 1_200;
+const IDLE_DRIFT_RAMP_MS = 1_800;
+const IDLE_DRIFT_AMPLITUDE_X = 14; // world units
+const IDLE_DRIFT_AMPLITUDE_Y = 9;
+const IDLE_DRIFT_FREQ_X_HZ = 0.018; // ~55s period
+const IDLE_DRIFT_FREQ_Y_HZ = 0.013; // ~77s period — mutually irrational
+
 export interface ConstellationCameraConfig {
   /** Easing factor for origin drift when outside dive. 0..1 per frame. */
   baseOriginEase?: number;
@@ -68,6 +81,12 @@ export interface ConstellationCameraHandle {
   getState: () => BackgroundCameraState;
   getTargetState: () => BackgroundCameraState;
   registerScrollVelocity: (delta: number) => void;
+  /**
+   * Notify the camera that the user just interacted (drag, wheel,
+   * pinch, etc.). Resets the idle-drift timer so the cosmos doesn't
+   * fight the user's input.
+   */
+  notifyInteraction: () => void;
   /** Cubic-out easing in 0..1 for a time-based dive. */
   easeDive: (elapsedMs: number, durationMs?: number) => number;
 }
@@ -95,6 +114,7 @@ export function useConstellationCamera(
   const zoomRef = useRef(1);
   const zoomTargetRef = useRef(1);
   const scrollVelocityRef = useRef(0);
+  const lastInteractionAtMsRef = useRef(0);
 
   return useMemo<ConstellationCameraHandle>(() => {
     const stepCamera = ({
@@ -160,19 +180,55 @@ export function useConstellationCamera(
         scrollVelocityRef.current = 0;
       }
 
+      // --- Idle drift: tiny sinusoidal wander so the cosmos never freezes.
+      // Skipped under reduced motion. Ramps in over IDLE_DRIFT_RAMP_MS so
+      // there's no jarring snap when the user releases input. The drift is
+      // additive on top of the eased origin — never overrides user intent.
+      let driftX = 0;
+      let driftY = 0;
+      if (!reducedMotion) {
+        const nowMs = typeof performance !== "undefined"
+          ? performance.now()
+          : Date.now();
+        const idleMs = nowMs - lastInteractionAtMsRef.current;
+        if (idleMs > IDLE_DRIFT_DELAY_MS) {
+          const ramp = Math.min(
+            1,
+            (idleMs - IDLE_DRIFT_DELAY_MS) / IDLE_DRIFT_RAMP_MS,
+          );
+          const tSec = nowMs / 1000;
+          driftX =
+            Math.sin(tSec * IDLE_DRIFT_FREQ_X_HZ * Math.PI * 2)
+            * IDLE_DRIFT_AMPLITUDE_X
+            * ramp;
+          driftY =
+            Math.cos(tSec * IDLE_DRIFT_FREQ_Y_HZ * Math.PI * 2)
+            * IDLE_DRIFT_AMPLITUDE_Y
+            * ramp;
+        }
+      }
+
       return {
-        x: originRef.current.x,
-        y: originRef.current.y,
+        x: originRef.current.x + driftX,
+        y: originRef.current.y + driftY,
         zoomFactor: zoomRef.current,
       };
     };
 
+    const notifyInteraction = () => {
+      lastInteractionAtMsRef.current = typeof performance !== "undefined"
+        ? performance.now()
+        : Date.now();
+    };
+
     const setTargetOrigin = (point: Point) => {
       targetOriginRef.current = { x: point.x, y: point.y };
+      notifyInteraction();
     };
 
     const setZoomTarget = (zoom: number) => {
       zoomTargetRef.current = clampBackgroundZoomFactor(zoom);
+      notifyInteraction();
     };
 
     const jumpTo = (snapshot: { x: number; y: number; zoomFactor: number }) => {
@@ -197,6 +253,7 @@ export function useConstellationCamera(
 
     const registerScrollVelocity = (delta: number) => {
       scrollVelocityRef.current = delta;
+      notifyInteraction();
     };
 
     const easeDive = (elapsedMs: number, durationMs = diveDurationMs) => {
@@ -217,6 +274,7 @@ export function useConstellationCamera(
       getState,
       getTargetState,
       registerScrollVelocity,
+      notifyInteraction,
       easeDive,
     };
   }, [baseOriginEase, baseZoomEase, diveZoomEase, diveDurationMs]);
