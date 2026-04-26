@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { NetworkAuditFirstRunCard } from "@/components/network-audit/first-run-card";
 import { FirstRunBanner } from "@/components/home/first-run-banner";
+import { ShootingStarLayer } from "@/components/home/shooting-star-layer";
 import type { LandingStarfieldFrame, LandingWebglStar } from "@/components/home/landing-starfield-webgl.types";
 
 const LandingStarfieldWebgl = dynamic(
@@ -5320,6 +5321,8 @@ export default function Home() {
         className="metis-starfield-webgl"
         frameRef={landingStarfieldFrameRef}
       />
+
+      <ShootingStarLayer className="z-[1]" />
 
       <canvas
         ref={canvasRef}
