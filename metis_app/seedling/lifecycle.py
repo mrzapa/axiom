@@ -156,6 +156,9 @@ def _maybe_run_overnight(
 
     activity = _collect_overnight_activity(orchestrator)
     last_user_activity_at = _resolve_last_user_activity(orchestrator)
+    feedback = _collect_feedback_for_reflections(
+        orchestrator, activity.get("recent_reflections")
+    )
 
     payload = maybe_run_overnight_reflection(
         settings=settings,
@@ -163,6 +166,8 @@ def _maybe_run_overnight(
         last_overnight_attempt_at=last_attempt,
         last_user_activity_at=last_user_activity_at,
         activity=activity,
+        record_training_sample=_resolve_training_log_writer(),
+        feedback=feedback,
     )
     if worker is not None:
         try:
@@ -242,6 +247,83 @@ def _collect_overnight_activity(orchestrator: Any) -> dict[str, Any]:
         )
 
     return activity
+
+
+def _collect_feedback_for_reflections(
+    orchestrator: Any, recent_reflections: list[Any] | None
+) -> list[dict[str, Any]]:
+    """Phase 7 — assemble SessionFeedback rows for the training log.
+
+    Walks the recent reflections, extracts each ``session_id``, and
+    looks up the SessionDetail's ``feedback`` field. Empty list when
+    nothing is available — the training-log schema's ``feedback``
+    field is always a list, never null.
+
+    Only ``recent_reflections`` is consulted (not ``recent_comets`` /
+    ``recent_stars``) because only memory entries carry ``session_id``;
+    comets and stars are not session-bound. The ``seen_session_ids``
+    guard dedupes the case where multiple memories were produced from
+    the same session — we still only fetch the SessionDetail (and its
+    feedback) once.
+
+    Failures (orchestrator missing the method, session not found,
+    etc.) are silently skipped — this is auxiliary capture, not the
+    primary contract.
+    """
+    out: list[dict[str, Any]] = []
+    if not recent_reflections:
+        return out
+    seen_session_ids: set[str] = set()
+    for entry in recent_reflections:
+        if isinstance(entry, dict):
+            session_id = str(entry.get("session_id") or "").strip()
+        else:
+            session_id = str(getattr(entry, "session_id", "") or "").strip()
+        if not session_id or session_id in seen_session_ids:
+            continue
+        seen_session_ids.add(session_id)
+        try:
+            detail = orchestrator.get_session(session_id)
+        except Exception:  # noqa: BLE001
+            log.debug(
+                "Could not fetch session %s for training-log feedback",
+                session_id,
+                exc_info=True,
+            )
+            continue
+        if detail is None:
+            continue
+        feedback_rows = getattr(detail, "feedback", None) or []
+        for row in feedback_rows:
+            try:
+                out.append(
+                    {
+                        "feedback_id": str(getattr(row, "feedback_id", "")),
+                        "session_id": str(getattr(row, "session_id", "")),
+                        "run_id": str(getattr(row, "run_id", "")),
+                        "vote": int(getattr(row, "vote", 0) or 0),
+                        "note": str(getattr(row, "note", "") or ""),
+                        "ts": str(getattr(row, "ts", "") or ""),
+                    }
+                )
+            except Exception:  # noqa: BLE001
+                continue
+    return out
+
+
+def _resolve_training_log_writer():
+    """Phase 7 — return the disk-backed training-log writer.
+
+    Imported lazily so the worker module's import graph stays light;
+    a missing module / write error degrades to a no-op rather than
+    failing the overnight cycle.
+    """
+    try:
+        from .training_log import record_training_sample  # noqa: WPS433
+    except Exception:  # noqa: BLE001
+        log.debug("Training-log writer import failed", exc_info=True)
+        return None
+    return record_training_sample
 
 
 def _resolve_last_user_activity(orchestrator: Any) -> datetime | None:
