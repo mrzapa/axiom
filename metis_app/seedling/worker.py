@@ -6,10 +6,17 @@ import asyncio
 from collections.abc import Callable
 from datetime import datetime
 import logging
-from typing import Any
+from typing import Any, cast
 
 from .scheduler import SeedlingSchedule
-from .status import SeedlingStatus, SeedlingStatusCache, isoformat_utc, utc_now
+from .status import (
+    SeedlingModelStatus,
+    SeedlingStatus,
+    SeedlingStatusCache,
+    _MODEL_STATUSES,
+    isoformat_utc,
+    utc_now,
+)
 
 log = logging.getLogger(__name__)
 
@@ -85,13 +92,23 @@ class SeedlingWorker:
             current_stage=self._status.current_stage,
             next_action_at=None,
             queue_depth=0,
+            model_status=self._status.model_status,
+            last_overnight_reflection_at=self._status.last_overnight_reflection_at,
+            last_overnight_attempt_at=self._status.last_overnight_attempt_at,
         )
         self._status_cache.write(self._status)
         self._emit("completed", "Seedling lifecycle stopped")
         return self._status
 
     def tick(self) -> SeedlingStatus:
-        """Publish a no-op heartbeat for Phase 2 liveness."""
+        """Publish a no-op heartbeat for Phase 2 liveness.
+
+        Preserves Phase 4b state (``model_status``,
+        ``last_overnight_reflection_at``, ``last_overnight_attempt_at``)
+        across ticks so the overnight scheduler decisions are stable.
+        The lifecycle hook updates those fields explicitly via
+        :meth:`set_overnight_status` after each scheduling decision.
+        """
         now = self._clock()
         next_action_at = self._schedule.next_action_at(now)
         self._status = SeedlingStatus(
@@ -100,9 +117,77 @@ class SeedlingWorker:
             current_stage="seedling",
             next_action_at=isoformat_utc(next_action_at),
             queue_depth=0,
+            model_status=self._status.model_status,
+            last_overnight_reflection_at=self._status.last_overnight_reflection_at,
+            last_overnight_attempt_at=self._status.last_overnight_attempt_at,
         )
         self._status_cache.write(self._status)
         self._emit("running", "Seedling heartbeat")
+        return self._status
+
+    def set_overnight_status(
+        self,
+        *,
+        model_status: str | None = None,
+        last_overnight_reflection_at: str | None = None,
+        last_overnight_attempt_at: str | None = None,
+    ) -> SeedlingStatus:
+        """Update the Phase 4b status fields without triggering a tick.
+
+        Called by :func:`metis_app.seedling.lifecycle._default_tick_work`
+        after the overnight scheduler decides what to bump:
+
+        - ``model_status`` is recomputed every tick from settings; the
+          lifecycle also flips it to ``"backend_unavailable"`` after
+          generator failures so the dock pill matches reality
+          (Codex P1 fix from PR #550 review).
+        - ``last_overnight_reflection_at`` only bumps on *successful*
+          persistence and powers the future "morning-after" UI card.
+        - ``last_overnight_attempt_at`` bumps on *every* attempt
+          (success or failure) so a failing GGUF cannot trigger a tight
+          retry loop — the cadence gate consults this column.
+
+        Cache write happens synchronously so the next
+        ``GET /v1/seedling/status`` sees the fresh values.
+        """
+        next_model_status = self._status.model_status
+        if model_status is not None and model_status != self._status.model_status:
+            # Validate against the literal — silently fall back to the
+            # existing value rather than persist a typo. Production callers
+            # (`lifecycle._default_tick_work` -> `compute_model_status`)
+            # always feed a valid literal; the silent fallback is here so
+            # a future stray string doesn't poison the cache.
+            if model_status in _MODEL_STATUSES:
+                next_model_status = cast(SeedlingModelStatus, model_status)
+
+        next_last_overnight = self._status.last_overnight_reflection_at
+        if last_overnight_reflection_at is not None:
+            text = (last_overnight_reflection_at or "").strip()
+            next_last_overnight = text or None
+
+        next_last_attempt = self._status.last_overnight_attempt_at
+        if last_overnight_attempt_at is not None:
+            text = (last_overnight_attempt_at or "").strip()
+            next_last_attempt = text or None
+
+        if (
+            next_model_status == self._status.model_status
+            and next_last_overnight == self._status.last_overnight_reflection_at
+            and next_last_attempt == self._status.last_overnight_attempt_at
+        ):
+            return self._status
+
+        self._status = SeedlingStatus(
+            running=self._status.running,
+            last_tick_at=self._status.last_tick_at,
+            current_stage=self._status.current_stage,
+            next_action_at=self._status.next_action_at,
+            queue_depth=self._status.queue_depth,
+            model_status=next_model_status,
+            last_overnight_reflection_at=next_last_overnight,
+            last_overnight_attempt_at=next_last_attempt,
+        )
+        self._status_cache.write(self._status)
         return self._status
 
     async def _run(self) -> None:
