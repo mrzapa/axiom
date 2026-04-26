@@ -116,6 +116,13 @@ export function MetisCompanionDock({
   const prevAlwaysOnRef = useRef(alwaysOn);
   const browserCompanionScopeRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotion = useReducedMotion();
+  // Phase 5 — mirror the values the activity-subscribe effect cares
+  // about into refs so toggling minimize / reduced-motion does not
+  // tear the listener down between stage transitions (an event
+  // arriving during the gap would be lost). Mirrors the pattern
+  // alwaysOn/webgpu already use above.
+  const minimizedRef = useRef(false);
+  const prefersReducedMotionRef = useRef(false);
 
   // GSAP flourish on always-on activation — a subtle scale + glow pulse on
   // the browser companion panel the first moment the user opts in.  Honours
@@ -300,7 +307,7 @@ export function MetisCompanionDock({
   useEffect(() => {
     return subscribeCompanionActivity((event) => {
       setThoughts((prev) => [event, ...prev].slice(0, 8));
-      if (minimized) setUnseenCount((n) => n + 1);
+      if (minimizedRef.current) setUnseenCount((n) => n + 1);
       if (event.source === "autonomous_research" && event.state === "completed") {
         setToastMessage("New star added to constellation");
       }
@@ -321,7 +328,7 @@ export function MetisCompanionDock({
         // Refresh the snapshot so the badge updates.
         void load(false);
         // GSAP pulse on the badge — honours prefers-reduced-motion.
-        if (!prefersReducedMotion && stageBadgeRef.current) {
+        if (!prefersReducedMotionRef.current && stageBadgeRef.current) {
           gsap.fromTo(
             stageBadgeRef.current,
             { scale: 1, boxShadow: "0 0 0 0 rgba(139,92,246,0)" },
@@ -362,7 +369,7 @@ export function MetisCompanionDock({
         },
       ]);
     });
-  }, [minimized, load, prefersReducedMotion]);
+  }, [load]);
 
   // Dismiss toast after 3 seconds
   useEffect(() => {
@@ -407,6 +414,12 @@ export function MetisCompanionDock({
   useEffect(() => {
     webgpuRef.current = webgpu;
   }, [webgpu]);
+  useEffect(() => {
+    minimizedRef.current = minimized;
+  }, [minimized]);
+  useEffect(() => {
+    prefersReducedMotionRef.current = Boolean(prefersReducedMotion);
+  }, [prefersReducedMotion]);
 
   // Persist the always-on toggle across reloads
   useEffect(() => {
