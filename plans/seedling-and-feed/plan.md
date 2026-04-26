@@ -2,7 +2,7 @@
 Milestone: Seedling + Feed (M13)
 Status: In progress
 Claim: claude/m13-adr-0013-runtime-pivot
-Last updated: 2026-04-25 by Claude
+Last updated: 2026-04-26 by Claude
 Vision pillar: Companion
 ---
 
@@ -172,27 +172,72 @@ What's in place today that M13 will lean on:
   4b retro should add a real `last_user_input_at` if this proves too
   coarse — the seam is `_resolve_last_user_activity` in
   `metis_app/seedling/lifecycle.py`.
+- **2026-04-26 — Phase 7 complete (LoRA on-deck — training-data log).**
+  New module `metis_app/seedling/training_log.py` exports
+  `record_training_sample(...)`, `read_training_log(...)`,
+  `resolve_training_log_path(...)`, `is_enabled(...)`, and the
+  `TRAINING_LOG_SCHEMA_VERSION = "1"` constant. The overnight cycle
+  (`maybe_run_overnight_reflection`) now accepts an optional
+  `record_training_sample` callback; on success it captures the
+  `(system_prompt, user_prompt, model_output, retrieved_context,
+  trace_id, feedback)` tuple as one JSONL line per cycle. Failures
+  in the writer are swallowed — the reflection itself never demotes
+  on training-log errors. New settings:
+  `seedling_training_log_enabled` (default `true`, the privacy
+  off-switch) and `seedling_training_log_path`
+  (default `<cwd>/seedling_training_log.jsonl`). The lifecycle hooks
+  the disk-backed writer in lazily so the worker import graph stays
+  light. Feedback is gathered from `SessionDetail.feedback` for
+  sessions referenced in `recent_reflections`. **No training code,
+  no UI surface, no fine-tune button** — the deliverable is the log
+  file (per the *Phase 7 (stretch) — LoRA on-deck* contract). M16
+  (Personal evals) and M18 (LoRA stretch) are the downstream readers;
+  schema_version=1 is the stable contract. M17 coordination: no new
+  outbound HTTP, the writer is local-disk-only.
 
 ## Next up
 
 The next concrete actions:
 
-1. **Phase 6 — brain-graph densification.** Now that M10 is Landed
-   *and* Phase 5's stage machine is live, set
-   `StageThresholds.elder_brain_graph_density` to a positive value
-   so Elder is gated on real graph activity. Feed Seedling-produced
-   `AssistantBrainLink` records into
-   `BrainGraph.compute_edge_weights()` so scaffold edges carry the
-   companion's recent activity. Optional: pulse the edge when the
-   Seedling creates it (coord with M02 / `brain-graph-3d.tsx`).
-2. **Phase 7 (stretch) — LoRA training log.** Capture the overnight
-   reflection's prompt + retrieved context + completion as JSONL so
-   M18 has stable training data without M13 actually shipping
-   fine-tuning code.
-3. **Phase 5 retro — threshold tuning.** The v0 thresholds in
-   `metis_app/seedling/growth.py::DEFAULT_THRESHOLDS` are first
-   estimates; once real usage produces stage-distribution data, tune
-   them and update the plan-doc decision section accordingly.
+1. **Phase 6 — brain-graph densification.** In review on PR #558
+   (stacked on PR #555). Activates the Elder gate by setting
+   `StageThresholds.elder_brain_graph_density = 0.5` and adds
+   `BrainGraph.compute_assistant_density()` over the assistant's
+   learned-edge ratio. Edge-pulse animation deferred to a follow-up
+   item below.
+2. **Phase 5 / 6 retro — threshold tuning.** The v0 thresholds in
+   `metis_app/seedling/growth.py::DEFAULT_THRESHOLDS` (including the
+   new `elder_brain_graph_density=0.5`) and the
+   `_TARGET_EDGES_PER_ARTEFACT=2` constant in
+   `metis_app/models/brain_graph.py` are first estimates. Once real
+   usage produces stage-distribution data, tune them and update the
+   plan-doc decision sections accordingly.
+3. **Phase 6 follow-up — edge-pulse visual.** Land a one-time GSAP
+   pulse in `apps/metis-web/components/visualizations/brain-graph-3d.tsx`
+   when a Seedling-produced `AssistantBrainLink` first appears. The
+   frontend already carries the right shape via
+   `subscribeCompanionActivity`; the work is a `kind="brain_link_created"`
+   activity event marker + the visual treatment.
+4. **Phase 7 retro — feedback enrichment.** Phase 7 v0 captures
+   `SessionFeedback` for sessions referenced in `recent_reflections`,
+   but the overnight reflection itself receives no direct user
+   feedback (it's a morning card, not an interactive reply). When a
+   reaction surface ships (thumbs-up on the morning card, edit-then-
+   save), thread that feedback into the same JSONL log under a new
+   `kind="overnight_feedback"` event line. Schema_version stays 1 as
+   long as additive.
+5. **Web UI new-user audit follow-up — heartbeat label.** Translate
+   the "Seedling heartbeat" string the dock shows brand-new users
+   into something a non-developer understands (e.g. "Background
+   research tick" / "Companion checked the feed"); consider showing
+   only the latest event by default. Filed 2026-04-25 from the live
+   walkthrough; small but directly hits the *"intelligence grown,
+   not bought"* promise this milestone owns.
+6. **M13 close-out.** With Phase 7 done, the milestone has shipped
+   its full structural surface. Once Phases 5+6 land via review and
+   the heartbeat-label fix is in, flip the M13 row in
+   `plans/IMPLEMENTATION.md` to `Landed` and capture the milestone
+   retrospective.
 
 ## Blockers
 

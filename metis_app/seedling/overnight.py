@@ -36,6 +36,15 @@ log = logging.getLogger(__name__)
 OvernightGenerator = Callable[[str, str, dict[str, Any]], str]
 
 
+# Phase 7 — training-log writer signature. Called once per successful
+# overnight cycle (after persistence). The runner threads
+# ``record_training_sample`` so the lifecycle owns the disk-writer
+# binding (mirrors the ``record_external_reflection`` pattern). The
+# return value is informational; failures here do **not** invalidate
+# the reflection.
+TrainingLogWriter = Callable[..., dict[str, Any]]
+
+
 def _parse_iso(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -188,6 +197,8 @@ def maybe_run_overnight_reflection(
     last_user_activity_at: datetime | None,
     activity: dict[str, Any] | None = None,
     generator: OvernightGenerator | None = None,
+    record_training_sample: TrainingLogWriter | None = None,
+    feedback: list[dict[str, Any]] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Schedule + run one overnight reflection cycle if the gates are open.
@@ -198,6 +209,19 @@ def maybe_run_overnight_reflection(
     ``last_overnight_reflection_at`` (success only); it always bumps
     ``last_overnight_attempt_at`` after this call returns so a failing
     cycle still resets the cadence and prevents tight retries.
+
+    *record_training_sample* (Phase 7) is an optional writer that
+    receives the prompt + retrieved-context + completion + feedback
+    tuple after a successful cycle. The lifecycle binds this to
+    :func:`metis_app.seedling.training_log.record_training_sample`;
+    tests pass a stub or omit entirely. Failures here are non-fatal —
+    a write error logs a warning but the reflection itself still
+    counts as ``ran=True``.
+
+    *feedback* (Phase 7) is an optional caller-prepared list of
+    SessionFeedback rows for sessions referenced in
+    ``activity["recent_reflections"]``. Used only for the training-log
+    capture, never for prompt construction.
     """
     current = now or datetime.now(timezone.utc)
     model_status = compute_model_status(settings)
@@ -256,6 +280,35 @@ def maybe_run_overnight_reflection(
             "reason": f"persist_skipped:{payload.get('reason') or 'unknown'}",
             "result": payload,
         }
+
+    # Phase 7 — capture the training tuple for M18 (LoRA) / M16
+    # (Personal evals). Best-effort; a write failure is logged but does
+    # NOT demote the reflection itself. The runner stays focused on its
+    # primary contract (persisting a memory entry); the training log is
+    # an audit-trail side effect.
+    if record_training_sample is not None:
+        memory_entry = (payload.get("memory_entry") or {})
+        trace_id = ""
+        entry_id = str(memory_entry.get("entry_id") or "")
+        if entry_id:
+            trace_id = f"memory:{entry_id}"
+        try:
+            record_training_sample(
+                kind="overnight",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model_output=cleaned,
+                retrieved_context=activity_payload,
+                trace_id=trace_id,
+                feedback=list(feedback or []),
+                settings=settings,
+                now=current,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "Training-log writer raised: %s", exc, exc_info=True
+            )
+
     return {"ran": True, "reason": None, "result": payload}
 
 

@@ -36,7 +36,9 @@ app_state.db
 skill_candidates.db
 network_audit.db
 network_audit.db-*
+news_items.db
 agentic_rag_runs.jsonl
+seedling_training_log.jsonl
 trace_store/
 indexes/
 logs/
